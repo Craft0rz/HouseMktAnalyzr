@@ -21,7 +21,7 @@ Build a residential real estate investment analyzer for Greater Montreal. Start 
 **Plans**: TBD after planning
 
 Plans:
-- [ ] 01-01: Project setup, dependencies, configuration system
+- [x] 01-01: Project setup, dependencies, configuration system
 - [ ] 01-02: Property and investment data models
 
 ### Phase 2: Data Collection
@@ -73,7 +73,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/2 | Not started | - |
+| 1. Foundation | 1/2 | In progress | - |
 | 2. Data Collection | 0/2 | Not started | - |
 | 3. Analysis Engine | 0/2 | Not started | - |
 | 4. Dashboard | 0/2 | Not started | - |
