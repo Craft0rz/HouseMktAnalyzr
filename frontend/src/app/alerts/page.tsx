@@ -406,6 +406,7 @@ function CreateAlertDialog({ onCreated }: { onCreated: () => void }) {
                 <Input
                   id="min-price"
                   type="number"
+                  step="10000"
                   placeholder="Min price"
                   value={minPrice}
                   onChange={(e) => setMinPrice(e.target.value)}
@@ -417,6 +418,7 @@ function CreateAlertDialog({ onCreated }: { onCreated: () => void }) {
                 <Input
                   id="max-price"
                   type="number"
+                  step="10000"
                   placeholder="Max price"
                   value={maxPrice}
                   onChange={(e) => setMaxPrice(e.target.value)}
@@ -459,6 +461,7 @@ function CreateAlertDialog({ onCreated }: { onCreated: () => void }) {
                 <Input
                   id="min-cash-flow"
                   type="number"
+                  step="100"
                   placeholder="e.g., 200"
                   value={minCashFlow}
                   onChange={(e) => setMinCashFlow(e.target.value)}
@@ -469,6 +472,7 @@ function CreateAlertDialog({ onCreated }: { onCreated: () => void }) {
                 <Input
                   id="max-price-per-unit"
                   type="number"
+                  step="10000"
                   placeholder="e.g., 200000"
                   value={maxPricePerUnit}
                   onChange={(e) => setMaxPricePerUnit(e.target.value)}

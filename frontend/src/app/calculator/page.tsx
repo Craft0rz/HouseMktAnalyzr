@@ -74,6 +74,7 @@ export default function CalculatorPage() {
                 <Input
                   id="calc-price"
                   type="number"
+                  step="10000"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="500000"
@@ -85,6 +86,7 @@ export default function CalculatorPage() {
                 <Input
                   id="calc-rent"
                   type="number"
+                  step="100"
                   value={monthlyRent}
                   onChange={(e) => setMonthlyRent(e.target.value)}
                   placeholder="3500"

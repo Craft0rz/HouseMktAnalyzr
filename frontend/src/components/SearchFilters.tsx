@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search, Zap } from 'lucide-react';
+import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,8 +12,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 
 const REGIONS = [
   { value: 'montreal', label: 'Montreal Island' },
@@ -43,8 +41,6 @@ export interface SearchFilters {
   propertyTypes: string[];
   minPrice?: number;
   maxPrice?: number;
-  comprehensiveSearch?: boolean;
-  maxPages?: number;
 }
 
 export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
@@ -52,7 +48,6 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
   const [propertyTypes, setPropertyTypes] = useState<string[]>(['DUPLEX', 'TRIPLEX', 'QUADPLEX']);
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
-  const [comprehensiveSearch, setComprehensiveSearch] = useState(false);
 
   const handleSearch = () => {
     onSearch({
@@ -60,8 +55,6 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
       propertyTypes,
       minPrice: minPrice ? parseInt(minPrice) : undefined,
       maxPrice: maxPrice ? parseInt(maxPrice) : undefined,
-      comprehensiveSearch,
-      maxPages: comprehensiveSearch ? 10 : undefined,
     });
   };
 
@@ -101,6 +94,7 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
               <Input
                 id="search-min-price"
                 type="number"
+                step="10000"
                 placeholder="e.g. 400000"
                 value={minPrice}
                 onChange={(e) => setMinPrice(e.target.value)}
@@ -114,6 +108,7 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
               <Input
                 id="search-max-price"
                 type="number"
+                step="10000"
                 placeholder="e.g. 800000"
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
@@ -148,26 +143,6 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
               ))}
             </div>
           </fieldset>
-
-          {/* Comprehensive Search Toggle */}
-          <div className="flex items-center justify-between pt-2 border-t">
-            <div className="flex items-center gap-2">
-              <Zap className="h-4 w-4 text-amber-500" />
-              <div>
-                <Label htmlFor="comprehensive-search" className="text-sm font-medium cursor-pointer">
-                  Comprehensive Search
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Fetch up to 200 listings (slower but more thorough)
-                </p>
-              </div>
-            </div>
-            <Switch
-              id="comprehensive-search"
-              checked={comprehensiveSearch}
-              onCheckedChange={setComprehensiveSearch}
-            />
-          </div>
         </div>
       </CardContent>
     </Card>

@@ -362,6 +362,7 @@ function AddPropertyDialog({ onAdded }: { onAdded: () => void }) {
                   <Input
                     id="purchase-price"
                     type="number"
+                    step="10000"
                     placeholder="500000"
                     value={purchasePrice}
                     onChange={(e) => setPurchasePrice(e.target.value)}
@@ -382,6 +383,7 @@ function AddPropertyDialog({ onAdded }: { onAdded: () => void }) {
                   <Input
                     id="down-payment"
                     type="number"
+                    step="5000"
                     placeholder="100000"
                     value={downPayment}
                     onChange={(e) => setDownPayment(e.target.value)}
@@ -405,6 +407,7 @@ function AddPropertyDialog({ onAdded }: { onAdded: () => void }) {
                   <Input
                     id="current-rent"
                     type="number"
+                    step="100"
                     placeholder="3500"
                     value={currentRent}
                     onChange={(e) => setCurrentRent(e.target.value)}
@@ -416,6 +419,7 @@ function AddPropertyDialog({ onAdded }: { onAdded: () => void }) {
                   <Input
                     id="current-expenses"
                     type="number"
+                    step="100"
                     placeholder="1000"
                     value={currentExpenses}
                     onChange={(e) => setCurrentExpenses(e.target.value)}
