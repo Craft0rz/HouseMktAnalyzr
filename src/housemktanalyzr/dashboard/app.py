@@ -1,15 +1,29 @@
 """Streamlit dashboard for HouseMktAnalyzr."""
 
 import asyncio
+import sys
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
-from ..alerts import AlertCriteria, CriteriaManager
-from ..analysis import InvestmentCalculator, PropertyRanker
-from ..collectors.centris import CentrisScraper
-from ..models.property import InvestmentMetrics, PropertyListing, PropertyType
+# Handle both relative and absolute imports for Streamlit compatibility
+try:
+    from ..alerts import AlertCriteria, CriteriaManager
+    from ..analysis import InvestmentCalculator, PropertyRanker
+    from ..collectors.centris import CentrisScraper
+    from ..models.property import InvestmentMetrics, PropertyListing, PropertyType
+except ImportError:
+    # Add src to path when running directly with streamlit
+    src_path = Path(__file__).parent.parent.parent
+    if str(src_path) not in sys.path:
+        sys.path.insert(0, str(src_path))
+
+    from housemktanalyzr.alerts import AlertCriteria, CriteriaManager
+    from housemktanalyzr.analysis import InvestmentCalculator, PropertyRanker
+    from housemktanalyzr.collectors.centris import CentrisScraper
+    from housemktanalyzr.models.property import InvestmentMetrics, PropertyListing, PropertyType
 
 # Page configuration
 st.set_page_config(
