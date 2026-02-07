@@ -63,12 +63,31 @@ async def geocode_address(
 def _build_walkscore_slug(address: str, city: str) -> str:
     """Build a URL slug for walkscore.com from address and city.
 
-    Example: "3878 Rue La Fontaine", "Montreal" -> "3878-rue-la-fontaine-montreal-qc"
+    Handles Centris-style addresses like "3878 - 3882, Rue La Fontaine"
+    and city names like "Montréal (Mercier/Hochelaga-Maisonneuve)".
+
+    Example: "3878 - 3882, Rue La Fontaine", "Montréal (Mercier/Hochelaga-Maisonneuve)"
+          -> "3878-rue-la-fontaine-montreal-qc"
     """
-    raw = f"{address} {city} QC"
-    # Remove special chars, replace spaces/commas with hyphens
-    slug = re.sub(r"[^\w\s-]", "", raw)
-    slug = re.sub(r"[\s]+", "-", slug.strip())
+    # For multi-number addresses (3878 - 3882), just use the first number
+    addr = re.sub(r"(\d+)\s*-\s*\d+", r"\1", address)
+    # Strip borough/neighborhood in parentheses from city
+    clean_city = re.sub(r"\s*\(.*?\)", "", city)
+    # Fix double-encoded UTF-8 (Ã© -> é) before accent removal
+    text = f"{addr} {clean_city} QC"
+    try:
+        text = text.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    # Remove accents (basic: é->e, è->e, ê->e, à->a, etc.)
+    for src, dst in [("é", "e"), ("è", "e"), ("ê", "e"), ("ë", "e"),
+                     ("à", "a"), ("â", "a"), ("ô", "o"), ("î", "i"),
+                     ("ù", "u"), ("û", "u"), ("ç", "c")]:
+        text = text.replace(src, dst).replace(src.upper(), dst.upper())
+    # Remove non-alphanumeric (keep spaces and hyphens)
+    slug = re.sub(r"[^\w\s-]", "", text)
+    # Collapse multiple spaces/hyphens into single hyphen
+    slug = re.sub(r"[\s-]+", "-", slug.strip())
     return slug.lower()
 
 
