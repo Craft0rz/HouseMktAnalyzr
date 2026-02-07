@@ -6,6 +6,7 @@ from typing import Optional
 import pandas as pd
 import streamlit as st
 
+from ..alerts import AlertCriteria, CriteriaManager
 from ..analysis import InvestmentCalculator, PropertyRanker
 from ..collectors.centris import CentrisScraper
 from ..models.property import InvestmentMetrics, PropertyListing, PropertyType
@@ -313,6 +314,50 @@ def main():
         st.divider()
 
         search_clicked = st.button("🔎 Search Properties", type="primary", use_container_width=True)
+
+        # Saved Searches section
+        st.divider()
+        st.header("💾 Saved Searches")
+
+        criteria_mgr = CriteriaManager()
+        saved_criteria = criteria_mgr.list_all()
+
+        # Save current search
+        with st.expander("Save Current Search"):
+            alert_name = st.text_input("Alert Name", placeholder="e.g., South Shore Triplexes")
+            if st.button("💾 Save as Alert", use_container_width=True):
+                if alert_name:
+                    new_criteria = AlertCriteria(
+                        name=alert_name,
+                        regions=[REGIONS[region]],
+                        property_types=[PROPERTY_TYPES[t] for t in property_types if t in PROPERTY_TYPES],
+                        min_price=int(min_price) if min_price else None,
+                        max_price=int(max_price) if max_price else None,
+                        min_score=float(min_score) if min_score else None,
+                        min_cap_rate=float(min_cap_rate) if min_cap_rate else None,
+                    )
+                    criteria_mgr.save(new_criteria)
+                    st.success(f"Saved alert: {alert_name}")
+                    st.rerun()
+                else:
+                    st.warning("Please enter a name for the alert")
+
+        # Display saved searches
+        if saved_criteria:
+            for criteria in saved_criteria:
+                with st.container():
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        status = "🟢" if criteria.enabled else "⚪"
+                        st.markdown(f"{status} **{criteria.name}**")
+                        regions_str = ", ".join(criteria.regions)
+                        st.caption(f"{regions_str} | Score ≥ {criteria.min_score or 0}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_{criteria.id}", help="Delete"):
+                            criteria_mgr.delete(criteria.id)
+                            st.rerun()
+        else:
+            st.caption("No saved searches yet")
 
     # Main content area
     if search_clicked:
