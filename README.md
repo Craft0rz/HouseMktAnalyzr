@@ -125,7 +125,7 @@ Properties are scored based on:
 - **Down Payment**: 20% (Canadian investment property minimum)
 - **Mortgage Rate**: 5% (configurable)
 - **Expense Ratio**: 35% of gross rent
-- **Amortization**: 25 years
+- **Amortization**: 30 years
 - **Canadian Mortgage**: Semi-annual compounding
 
 ## Configuration

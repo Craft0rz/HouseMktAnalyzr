@@ -72,8 +72,18 @@ class TestGrossRentMultiplier:
 class TestMortgagePayment:
     """Test Canadian mortgage calculations."""
 
-    def test_standard_mortgage(self, calculator: InvestmentCalculator):
-        """Test standard 25-year mortgage at 5%."""
+    def test_standard_mortgage_30yr(self, calculator: InvestmentCalculator):
+        """Test standard 30-year mortgage at 5% (default)."""
+        # $400k loan at 5% for 30 years
+        payment = calculator.calculate_mortgage_payment(
+            principal=400000,
+            annual_rate=0.05,
+        )
+        # Expected ~$2,138/mo with Canadian semi-annual compounding
+        assert 2100 <= payment <= 2175
+
+    def test_25_year_mortgage(self, calculator: InvestmentCalculator):
+        """Test 25-year mortgage at 5%."""
         # $400k loan at 5% for 25 years
         payment = calculator.calculate_mortgage_payment(
             principal=400000,

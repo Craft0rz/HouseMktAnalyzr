@@ -222,7 +222,7 @@ class InvestmentCalculator:
         self,
         principal: int,
         annual_rate: float,
-        amortization_years: int = 25,
+        amortization_years: int = 30,
     ) -> int:
         """Calculate monthly mortgage payment.
 
@@ -231,7 +231,7 @@ class InvestmentCalculator:
         Args:
             principal: Loan amount (price - down payment)
             annual_rate: Annual interest rate (e.g., 0.05 for 5%)
-            amortization_years: Amortization period in years (default 25)
+            amortization_years: Amortization period in years (default 30)
 
         Returns:
             Monthly payment in CAD
