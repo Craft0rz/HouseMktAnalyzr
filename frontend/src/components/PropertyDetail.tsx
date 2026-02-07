@@ -389,6 +389,44 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </CardContent>
           </Card>
 
+          {/* Walk Score */}
+          {(listing.walk_score != null || listing.transit_score != null || listing.bike_score != null) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Walkability
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-3 gap-3 text-sm">
+                {listing.walk_score != null && (
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className={`text-2xl font-bold ${getScoreColor(listing.walk_score)}`}>
+                      {listing.walk_score}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Walk</div>
+                  </div>
+                )}
+                {listing.transit_score != null && (
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className={`text-2xl font-bold ${getScoreColor(listing.transit_score)}`}>
+                      {listing.transit_score}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Transit</div>
+                  </div>
+                )}
+                {listing.bike_score != null && (
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className={`text-2xl font-bold ${getScoreColor(listing.bike_score)}`}>
+                      {listing.bike_score}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">Bike</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Score Breakdown */}
           <Card>
             <CardHeader className="pb-2">

@@ -216,33 +216,54 @@ async def get_all_listings(
 
 @router.get("/{listing_id}", response_model=PropertyListing)
 async def get_property_details(listing_id: str) -> PropertyListing:
-    """Get full details for a specific listing. Checks DB first."""
+    """Get full details for a specific listing. Checks DB first, enriches with Walk Score."""
+    listing = None
+
     if _has_db():
         try:
             from ..db import get_cached_listing
             cached = await get_cached_listing(listing_id)
             if cached:
-                return PropertyListing(**cached)
+                listing = PropertyListing(**cached)
         except Exception as e:
             logger.warning(f"DB read failed: {e}")
 
-    try:
-        async with CentrisScraper() as scraper:
-            listing = await scraper.get_listing_details(listing_id)
+    if listing is None:
+        try:
+            async with CentrisScraper() as scraper:
+                listing = await scraper.get_listing_details(listing_id)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to get details: {str(e)}")
 
         if not listing:
             raise HTTPException(status_code=404, detail="Listing not found")
 
-        if _has_db():
-            try:
-                from ..db import cache_listings, DETAIL_CACHE_TTL_HOURS
-                await cache_listings([listing], ttl_hours=DETAIL_CACHE_TTL_HOURS)
-            except Exception as e:
-                logger.warning(f"Cache write failed: {e}")
+    # Enrich with Walk Score if not already populated
+    if listing.walk_score is None:
+        try:
+            from housemktanalyzr.enrichment.walkscore import enrich_with_walk_score
 
-        return listing
+            result = await enrich_with_walk_score(
+                address=listing.address,
+                city=listing.city,
+                latitude=listing.latitude,
+                longitude=listing.longitude,
+            )
+            if result:
+                listing.walk_score = result.walk_score
+                listing.transit_score = result.transit_score
+                listing.bike_score = result.bike_score
+                listing.latitude = result.latitude
+                listing.longitude = result.longitude
+        except Exception as e:
+            logger.warning(f"Walk Score enrichment failed: {e}")
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get details: {str(e)}")
+    # Cache (or re-cache with Walk Score data)
+    if _has_db():
+        try:
+            from ..db import cache_listings, DETAIL_CACHE_TTL_HOURS
+            await cache_listings([listing], ttl_hours=DETAIL_CACHE_TTL_HOURS)
+        except Exception as e:
+            logger.warning(f"Cache write failed: {e}")
+
+    return listing

@@ -67,6 +67,15 @@ class PropertyListing(BaseModel):
         default=None, ge=0, description="Total annual property taxes"
     )
 
+    # Walkability scores (from Walk Score API)
+    walk_score: int | None = Field(default=None, ge=0, le=100, description="Walk Score (0-100)")
+    transit_score: int | None = Field(default=None, ge=0, le=100, description="Transit Score (0-100)")
+    bike_score: int | None = Field(default=None, ge=0, le=100, description="Bike Score (0-100)")
+
+    # Geocoded coordinates
+    latitude: float | None = Field(default=None, description="Latitude from geocoding")
+    longitude: float | None = Field(default=None, description="Longitude from geocoding")
+
     # Listing info
     listing_date: date | None = Field(default=None, description="Date property listed")
     url: str = Field(..., description="URL to listing")

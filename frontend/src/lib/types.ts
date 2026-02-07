@@ -22,6 +22,11 @@ export interface PropertyListing {
   gross_revenue: number | null;
   municipal_assessment: number | null;
   annual_taxes: number | null;
+  walk_score: number | null;
+  transit_score: number | null;
+  bike_score: number | null;
+  latitude: number | null;
+  longitude: number | null;
   listing_date: string | null;
   url: string;
   raw_data: Record<string, unknown> | null;
