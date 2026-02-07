@@ -107,21 +107,20 @@ async def search_multi_type(
     ),
     min_price: Optional[int] = Query(default=None, ge=0),
     max_price: Optional[int] = Query(default=None, ge=0),
-    limit: int = Query(default=500, ge=1, le=1000),
     enrich: bool = Query(default=False),
 ) -> PropertySearchResponse:
-    """Search across multiple property types. Returns DB results when available."""
+    """Search across multiple property types. Returns all matching DB results."""
     types_list = None
     if property_types:
         types_list = [t.strip().upper() for t in property_types.split(",")]
 
-    # DB-first
+    # DB-first — no limit, frontend handles pagination
     if _has_db():
         try:
             from ..db import get_cached_listings
             cached = await get_cached_listings(
                 property_types=types_list, min_price=min_price,
-                max_price=max_price, region=region, limit=limit,
+                max_price=max_price, region=region, limit=10000,
             )
             if cached:
                 listings = [PropertyListing(**d) for d in cached]
