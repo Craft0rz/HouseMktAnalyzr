@@ -9,7 +9,7 @@ Build a residential real estate investment analyzer for Greater Montreal. Start 
 - [x] **Phase 1: Foundation** - Project structure, data models, configuration
 - [x] **Phase 2: Data Collection** - Research APIs, implement property data fetching
 - [x] **Phase 3: Analysis Engine** - Investment scoring, ROI calculations, ranking
-- [ ] **Phase 4: Dashboard** - Property comparison interface
+- [x] **Phase 4: Dashboard** - Property comparison interface
 - [ ] **Phase 5: Alerts** - Notification system for matching criteria
 - [ ] **Phase 6: Polish** - Testing, documentation, refinements
 
@@ -48,8 +48,8 @@ Plans:
 **Plans**: TBD after planning
 
 Plans:
-- [ ] 04-01: Property listing and detail views
-- [ ] 04-02: Side-by-side comparison feature
+- [x] 04-01: Property listing and detail views
+- [x] 04-02: Side-by-side comparison feature
 
 ### Phase 5: Alerts
 **Goal**: Notify user when properties matching criteria appear
@@ -76,6 +76,6 @@ Plans:
 | 1. Foundation | 1/1 | Complete | 2026-02-06 |
 | 2. Data Collection | 3/3 | Complete | 2026-02-06 |
 | 3. Analysis Engine | 2/2 | Complete | 2026-02-06 |
-| 4. Dashboard | 0/2 | Not started | - |
+| 4. Dashboard | 2/2 | Complete | 2026-02-06 |
 | 5. Alerts | 0/2 | Not started | - |
 | 6. Polish | 0/2 | Not started | - |
