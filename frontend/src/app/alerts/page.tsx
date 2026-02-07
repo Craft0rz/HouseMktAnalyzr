@@ -55,15 +55,18 @@ import type { AlertCriteria, CreateAlertRequest } from '@/lib/types';
 const REGIONS = [
   { value: 'montreal', label: 'Montreal' },
   { value: 'laval', label: 'Laval' },
-  { value: 'longueuil', label: 'South Shore' },
+  { value: 'longueuil', label: 'Longueuil' },
+  { value: 'south-shore', label: 'South Shore' },
   { value: 'north-shore', label: 'North Shore' },
+  { value: 'laurentides', label: 'Laurentides' },
+  { value: 'lanaudiere', label: 'Lanaudière' },
+  { value: 'monteregie', label: 'Montérégie' },
 ];
 
 const PROPERTY_TYPES = [
   { value: 'DUPLEX', label: 'Duplex' },
   { value: 'TRIPLEX', label: 'Triplex' },
-  { value: 'QUADPLEX', label: 'Quadplex' },
-  { value: 'MULTIPLEX', label: 'Multiplex' },
+  { value: 'ALL_PLEX', label: 'All Plex' },
   { value: 'HOUSE', label: 'House' },
 ];
 

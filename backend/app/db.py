@@ -103,6 +103,32 @@ async def _create_tables():
             )
         """)
 
+        # Price history for tracking price drops
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS price_history (
+                id SERIAL PRIMARY KEY,
+                property_id TEXT NOT NULL,
+                old_price INTEGER NOT NULL,
+                new_price INTEGER NOT NULL,
+                recorded_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_price_history_property
+            ON price_history(property_id, recorded_at DESC)
+        """)
+
+        # Alert-to-listing match tracking
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS alert_matches (
+                alert_id TEXT NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+                property_id TEXT NOT NULL,
+                first_matched_at TIMESTAMPTZ DEFAULT NOW(),
+                notified BOOLEAN DEFAULT FALSE,
+                PRIMARY KEY (alert_id, property_id)
+            )
+        """)
+
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS portfolio (
                 id TEXT PRIMARY KEY,
@@ -148,8 +174,34 @@ async def cache_listings(
     expires = now + timedelta(hours=ttl_hours)
 
     async with pool.acquire() as conn:
+        # Fetch current prices to detect changes
+        listing_ids = [l.id for l in listings]
+        if listing_ids:
+            placeholders = ", ".join(f"${i+1}" for i in range(len(listing_ids)))
+            existing = await conn.fetch(
+                f"SELECT id, price FROM properties WHERE id IN ({placeholders})",
+                *listing_ids,
+            )
+            old_prices = {r["id"]: r["price"] for r in existing}
+        else:
+            old_prices = {}
+
+        price_changes = 0
         for listing in listings:
             data = json.dumps(listing.model_dump(mode="json"))
+
+            # Record price change if price differs
+            old_price = old_prices.get(listing.id)
+            if old_price is not None and listing.price and old_price != listing.price:
+                await conn.execute(
+                    """
+                    INSERT INTO price_history (property_id, old_price, new_price, recorded_at)
+                    VALUES ($1, $2, $3, $4)
+                    """,
+                    listing.id, old_price, listing.price, now,
+                )
+                price_changes += 1
+
             await conn.execute(
                 """
                 INSERT INTO properties (id, source, city, property_type, price, data, region, fetched_at, expires_at)
@@ -166,6 +218,8 @@ async def cache_listings(
                 data, region, now, expires,
             )
 
+    if price_changes:
+        logger.info(f"Detected {price_changes} price changes")
     logger.info(f"Cached {len(listings)} listings (TTL: {ttl_hours}h)")
     return len(listings)
 

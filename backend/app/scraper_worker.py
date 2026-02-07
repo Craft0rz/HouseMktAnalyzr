@@ -137,3 +137,15 @@ class ScraperWorker:
                 f"Scrape cycle finished: {total_stored} listings stored, "
                 f"{len(errors)} errors, {duration:.0f}s elapsed"
             )
+
+        # Run alert checker after scrape completes
+        try:
+            from .alert_checker import check_all_alerts
+            result = await check_all_alerts()
+            logger.info(
+                f"Alert check complete: {result['alerts_checked']} alerts checked, "
+                f"{result['total_new_matches']} new matches, "
+                f"{result['notifications_sent']} notifications sent"
+            )
+        except Exception:
+            logger.exception("Alert check failed after scrape cycle")
