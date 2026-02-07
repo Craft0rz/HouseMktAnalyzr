@@ -1,15 +1,33 @@
 'use client';
 
+import { useState } from 'react';
 import { Building2, TrendingUp, Calculator, Bell, BarChart3, Search } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { LoadingCard } from '@/components/LoadingCard';
 import { useTopOpportunities } from '@/hooks/useProperties';
 import { MetricsBar, PriceCapScatter, PriceDistribution } from '@/components/charts';
 import { formatPrice, getScoreColor } from '@/lib/formatters';
+
+const REGIONS = [
+  { value: 'montreal', label: 'Montreal Island' },
+  { value: 'laval', label: 'Laval' },
+  { value: 'longueuil', label: 'Longueuil' },
+  { value: 'south-shore', label: 'South Shore' },
+  { value: 'north-shore', label: 'North Shore' },
+  { value: 'laurentides', label: 'Laurentides' },
+  { value: 'lanaudiere', label: 'Lanaudière' },
+];
 
 const features = [
   {
@@ -43,8 +61,9 @@ const features = [
 ];
 
 export default function Home() {
+  const [region, setRegion] = useState('montreal');
   const { data: topOpportunities, isLoading } = useTopOpportunities(
-    { limit: 10, min_score: 50 },
+    { region, limit: 10, min_score: 50 },
     true
   );
 
@@ -94,6 +113,23 @@ export default function Home() {
             </Card>
           </Link>
         ))}
+      </div>
+
+      {/* Region Selector */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-semibold tracking-tight">Market Overview</h2>
+        <Select value={region} onValueChange={setRegion}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Select region" />
+          </SelectTrigger>
+          <SelectContent>
+            {REGIONS.map((r) => (
+              <SelectItem key={r.value} value={r.value}>
+                {r.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Analytics Section */}
