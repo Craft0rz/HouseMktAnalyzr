@@ -7,8 +7,8 @@ Build a residential real estate investment analyzer for Greater Montreal. Start 
 ## Phases
 
 - [x] **Phase 1: Foundation** - Project structure, data models, configuration
-- [ ] **Phase 2: Data Collection** - Research APIs, implement property data fetching
-- [ ] **Phase 3: Analysis Engine** - Investment scoring, ROI calculations, ranking
+- [x] **Phase 2: Data Collection** - Research APIs, implement property data fetching
+- [x] **Phase 3: Analysis Engine** - Investment scoring, ROI calculations, ranking
 - [ ] **Phase 4: Dashboard** - Property comparison interface
 - [ ] **Phase 5: Alerts** - Notification system for matching criteria
 - [ ] **Phase 6: Polish** - Testing, documentation, refinements
@@ -31,7 +31,7 @@ Plans:
 Plans:
 - [x] 02-01: Research data sources (FINDINGS.md complete)
 - [x] 02-02: Data collector framework and Centris scraper
-- [ ] 02-03: Supplementary data sources (CMHC, Quebec assessments)
+- [x] 02-03: Supplementary data sources (CMHC, Quebec assessments)
 
 ### Phase 3: Analysis Engine
 **Goal**: Score and rank properties based on investment potential
@@ -39,8 +39,8 @@ Plans:
 **Plans**: TBD after planning
 
 Plans:
-- [ ] 03-01: Investment metrics (ROI, cap rate, rental yield)
-- [ ] 03-02: Scoring algorithm and ranking system
+- [x] 03-01: Investment metrics (ROI, cap rate, rental yield)
+- [x] 03-02: Scoring algorithm and ranking system
 
 ### Phase 4: Dashboard
 **Goal**: Interface for viewing and comparing investment opportunities
@@ -74,8 +74,8 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 1/1 | Complete | 2026-02-06 |
-| 2. Data Collection | 2/3 | In progress | - |
-| 3. Analysis Engine | 0/2 | Not started | - |
+| 2. Data Collection | 3/3 | Complete | 2026-02-06 |
+| 3. Analysis Engine | 2/2 | Complete | 2026-02-06 |
 | 4. Dashboard | 0/2 | Not started | - |
 | 5. Alerts | 0/2 | Not started | - |
 | 6. Polish | 0/2 | Not started | - |
