@@ -1,5 +1,6 @@
 """FastAPI application for HouseMktAnalyzr API."""
 
+import os
 import sys
 from pathlib import Path
 
@@ -21,12 +22,18 @@ app = FastAPI(
 )
 
 # CORS for frontend
+allowed_origins = [
+    "http://localhost:3000",  # Next.js dev
+    "http://127.0.0.1:3000",
+]
+# Add production frontend URL from env var
+frontend_url = os.environ.get("FRONTEND_URL")
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
