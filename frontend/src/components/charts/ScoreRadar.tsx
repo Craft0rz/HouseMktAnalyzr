@@ -95,7 +95,7 @@ export function ScoreRadar({ scoreBreakdown, className }: ScoreRadarProps) {
               boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
             }}
             labelStyle={{ color: 'hsl(var(--popover-foreground))', fontWeight: 600 }}
-            formatter={(value: number) => [`${value}/20`, 'Score']}
+            formatter={(value?: number) => [`${value ?? 0}/20`, 'Score']}
           />
           <Legend
             wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
