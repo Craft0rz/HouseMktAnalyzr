@@ -37,7 +37,7 @@ async def search_properties(
     ),
     min_price: Optional[int] = Query(default=None, ge=0),
     max_price: Optional[int] = Query(default=None, ge=0),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=100, ge=1, le=1000),
     enrich: bool = Query(default=False, description="Fetch full listing details"),
 ) -> PropertySearchResponse:
     """Search for property listings. Returns DB results when available."""
@@ -107,6 +107,7 @@ async def search_multi_type(
     ),
     min_price: Optional[int] = Query(default=None, ge=0),
     max_price: Optional[int] = Query(default=None, ge=0),
+    limit: int = Query(default=500, ge=1, le=1000),
     enrich: bool = Query(default=False),
 ) -> PropertySearchResponse:
     """Search across multiple property types. Returns DB results when available."""
@@ -120,7 +121,7 @@ async def search_multi_type(
             from ..db import get_cached_listings
             cached = await get_cached_listings(
                 property_types=types_list, min_price=min_price,
-                max_price=max_price, region=region, limit=100,
+                max_price=max_price, region=region, limit=limit,
             )
             if cached:
                 listings = [PropertyListing(**d) for d in cached]
