@@ -195,16 +195,28 @@ class CentrisScraper(DataSource):
         raise DataSourceError(self.name, "Max retries exceeded")
 
     def _is_captcha_response(self, response: httpx.Response) -> bool:
-        """Check if the response contains a CAPTCHA challenge."""
+        """Check if the response contains a CAPTCHA challenge.
+
+        Note: We check for actual CAPTCHA challenges, not just script references.
+        Centris pages normally include recaptcha.js but that doesn't mean we're blocked.
+        """
         content = response.text.lower()
-        captcha_indicators = [
-            "captcha",
-            "recaptcha",
+
+        # If we see property listings, it's not a CAPTCHA page
+        if "property-thumbnail-item" in content or "property-thumbnail-summary" in content:
+            return False
+
+        # Check for actual CAPTCHA challenge indicators (not just script refs)
+        captcha_challenge_indicators = [
+            "g-recaptcha-response",  # Actual reCAPTCHA widget
+            "please verify you are human",
+            "i'm not a robot",
+            "captcha-container",
             "challenge-form",
-            "robot",
-            "verify you are human",
+            "cf-challenge",  # Cloudflare challenge
+            "access denied",
         ]
-        return any(indicator in content for indicator in captcha_indicators)
+        return any(indicator in content for indicator in captcha_challenge_indicators)
 
     def _parse_price(self, price_str: str) -> Optional[int]:
         """Parse price string to integer."""
