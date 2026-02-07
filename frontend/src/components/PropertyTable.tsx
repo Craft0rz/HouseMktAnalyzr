@@ -9,7 +9,7 @@ import {
   SortingState,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowUpDown, ExternalLink } from 'lucide-react';
+import { ArrowUpDown, ExternalLink, Plus, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -20,12 +20,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useComparison } from '@/lib/comparison-context';
 import type { PropertyWithMetrics } from '@/lib/types';
 
 interface PropertyTableProps {
   data: PropertyWithMetrics[];
   onRowClick?: (property: PropertyWithMetrics) => void;
   isLoading?: boolean;
+  showCompareColumn?: boolean;
 }
 
 const formatPrice = (price: number) => {
@@ -68,12 +70,41 @@ const getPropertyTypeLabel = (type: string) => {
   return labels[type] || type;
 };
 
-export function PropertyTable({ data, onRowClick, isLoading }: PropertyTableProps) {
+export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn = true }: PropertyTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
-    { id: 'score', desc: true },
+    { id: 'metrics_score', desc: true },
   ]);
+  const { addProperty, removeProperty, isSelected, canAdd } = useComparison();
+
+  const handleCompareToggle = (e: React.MouseEvent, property: PropertyWithMetrics) => {
+    e.stopPropagation();
+    if (isSelected(property.listing.id)) {
+      removeProperty(property.listing.id);
+    } else if (canAdd) {
+      addProperty(property);
+    }
+  };
 
   const columns: ColumnDef<PropertyWithMetrics>[] = [
+    ...(showCompareColumn ? [{
+      id: 'compare',
+      header: () => <span className="sr-only">Compare</span>,
+      cell: ({ row }: { row: { original: PropertyWithMetrics } }) => {
+        const selected = isSelected(row.original.listing.id);
+        return (
+          <Button
+            variant={selected ? 'default' : 'outline'}
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => handleCompareToggle(e, row.original)}
+            disabled={!selected && !canAdd}
+            title={selected ? 'Remove from comparison' : 'Add to comparison'}
+          >
+            {selected ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          </Button>
+        );
+      },
+    }] : []),
     {
       accessorKey: 'metrics.score',
       header: ({ column }) => (
@@ -229,8 +260,8 @@ export function PropertyTable({ data, onRowClick, isLoading }: PropertyTableProp
   }
 
   return (
-    <div className="rounded-md border">
-      <Table>
+    <div className="rounded-md border overflow-x-auto">
+      <Table className="min-w-[900px]">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -251,7 +282,7 @@ export function PropertyTable({ data, onRowClick, isLoading }: PropertyTableProp
           {table.getRowModel().rows.map((row) => (
             <TableRow
               key={row.id}
-              className="cursor-pointer hover:bg-muted/50"
+              className={`cursor-pointer hover:bg-muted/50 ${isSelected(row.original.listing.id) ? 'bg-muted/30' : ''}`}
               onClick={() => onRowClick?.(row.original)}
             >
               {row.getVisibleCells().map((cell) => (

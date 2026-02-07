@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 const REGIONS = [
   { value: 'montreal', label: 'Montreal Island' },
@@ -41,6 +43,8 @@ export interface SearchFilters {
   propertyTypes: string[];
   minPrice?: number;
   maxPrice?: number;
+  comprehensiveSearch?: boolean;
+  maxPages?: number;
 }
 
 export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
@@ -48,6 +52,7 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
   const [propertyTypes, setPropertyTypes] = useState<string[]>(['DUPLEX', 'TRIPLEX', 'QUADPLEX']);
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
+  const [comprehensiveSearch, setComprehensiveSearch] = useState(false);
 
   const handleSearch = () => {
     onSearch({
@@ -55,6 +60,8 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
       propertyTypes,
       minPrice: minPrice ? parseInt(minPrice) : undefined,
       maxPrice: maxPrice ? parseInt(maxPrice) : undefined,
+      comprehensiveSearch,
+      maxPages: comprehensiveSearch ? 10 : undefined,
     });
   };
 
@@ -73,9 +80,9 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Region */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Region</label>
+              <label htmlFor="search-region" className="text-sm font-medium">Region</label>
               <Select value={region} onValueChange={setRegion}>
-                <SelectTrigger>
+                <SelectTrigger id="search-region">
                   <SelectValue placeholder="Select region" />
                 </SelectTrigger>
                 <SelectContent>
@@ -90,29 +97,33 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
 
             {/* Min Price */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Min Price</label>
+              <label htmlFor="search-min-price" className="text-sm font-medium">Min Price</label>
               <Input
+                id="search-min-price"
                 type="number"
                 placeholder="e.g. 400000"
                 value={minPrice}
                 onChange={(e) => setMinPrice(e.target.value)}
+                min="0"
               />
             </div>
 
             {/* Max Price */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Max Price</label>
+              <label htmlFor="search-max-price" className="text-sm font-medium">Max Price</label>
               <Input
+                id="search-max-price"
                 type="number"
                 placeholder="e.g. 800000"
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
+                min="0"
               />
             </div>
 
             {/* Search Button */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">&nbsp;</label>
+              <span className="text-sm font-medium invisible block">Search</span>
               <Button onClick={handleSearch} disabled={isLoading} className="w-full">
                 <Search className="mr-2 h-4 w-4" />
                 {isLoading ? 'Searching...' : 'Search'}
@@ -121,20 +132,41 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
           </div>
 
           {/* Property Types */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Property Types</label>
-            <div className="flex flex-wrap gap-2">
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Property Types</legend>
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Property type filters">
               {PROPERTY_TYPES.map((type) => (
                 <Button
                   key={type.value}
                   variant={propertyTypes.includes(type.value) ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => togglePropertyType(type.value)}
+                  aria-pressed={propertyTypes.includes(type.value)}
                 >
                   {type.label}
                 </Button>
               ))}
             </div>
+          </fieldset>
+
+          {/* Comprehensive Search Toggle */}
+          <div className="flex items-center justify-between pt-2 border-t">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-amber-500" />
+              <div>
+                <Label htmlFor="comprehensive-search" className="text-sm font-medium cursor-pointer">
+                  Comprehensive Search
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Fetch up to 200 listings (slower but more thorough)
+                </p>
+              </div>
+            </div>
+            <Switch
+              id="comprehensive-search"
+              checked={comprehensiveSearch}
+              onCheckedChange={setComprehensiveSearch}
+            />
           </div>
         </div>
       </CardContent>

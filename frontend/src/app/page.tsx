@@ -1,35 +1,41 @@
 'use client';
 
-import { Building2, TrendingUp, Calculator, Bell } from 'lucide-react';
+import { Building2, TrendingUp, Calculator, Bell, BarChart3, Search } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { LoadingCard } from '@/components/LoadingCard';
+import { useTopOpportunities } from '@/hooks/useProperties';
+import { MetricsBar, PriceCapScatter, PriceDistribution } from '@/components/charts';
+import { formatPrice, getScoreColor } from '@/lib/formatters';
 
 const features = [
   {
     title: 'Property Search',
-    description: 'Search multi-family properties across Greater Montreal with real-time data from Centris.',
-    icon: Building2,
+    description: 'Search multi-family properties with filters',
+    icon: Search,
     href: '/search',
     color: 'text-blue-500',
   },
   {
-    title: 'Investment Analysis',
-    description: 'Calculate cap rates, cash flow, ROI and more with our comprehensive analysis tools.',
-    icon: TrendingUp,
+    title: 'Compare Properties',
+    description: 'Side-by-side investment comparison',
+    icon: BarChart3,
     href: '/compare',
     color: 'text-green-500',
   },
   {
-    title: 'Quick Calculator',
-    description: 'Run quick what-if scenarios with our investment calculator.',
+    title: 'Calculator',
+    description: 'Quick investment scenarios',
     icon: Calculator,
     href: '/calculator',
     color: 'text-purple-500',
   },
   {
-    title: 'Smart Alerts',
-    description: 'Get notified when properties matching your investment criteria hit the market.',
+    title: 'Alerts',
+    description: 'Get notified on matches',
     icon: Bell,
     href: '/alerts',
     color: 'text-orange-500',
@@ -37,15 +43,23 @@ const features = [
 ];
 
 export default function Home() {
+  const { data: topOpportunities, isLoading } = useTopOpportunities(
+    { limit: 10, min_score: 50 },
+    true
+  );
+
+  const properties = topOpportunities?.results || [];
+  const hasData = properties.length > 0;
+
   return (
     <div className="space-y-8">
+      {/* Hero Section */}
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold tracking-tight">
-          Find Your Next Investment Property
+          Montreal Investment Analyzer
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Analyze multi-family properties in Greater Montreal. Compare cap rates,
-          cash flow, and ROI to find the best investment opportunities.
+          Find the best multi-family investment opportunities in Greater Montreal
         </p>
         <div className="flex gap-4 justify-center pt-4">
           <Button size="lg" asChild>
@@ -63,53 +77,212 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      {/* Quick Links */}
+      <div className="grid gap-4 md:grid-cols-4">
         {features.map((feature) => (
           <Link key={feature.href} href={feature.href}>
             <Card className="h-full transition-colors hover:bg-muted/50">
-              <CardHeader>
-                <feature.icon className={`h-10 w-10 ${feature.color}`} />
-                <CardTitle className="mt-4">{feature.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <CardDescription>{feature.description}</CardDescription>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <feature.icon className={`h-8 w-8 ${feature.color}`} />
+                  <div>
+                    <h3 className="font-semibold">{feature.title}</h3>
+                    <p className="text-sm text-muted-foreground">{feature.description}</p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </Link>
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Getting Started</CardTitle>
-          <CardDescription>
-            Make sure the FastAPI backend is running to use this application.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Start the backend server:
-          </p>
-          <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
-            <code>
-              cd HouseMktAnalyzr{'\n'}
-              set PYTHONPATH=src{'\n'}
-              python -m uvicorn backend.app.main:app --reload
-            </code>
-          </pre>
-          <p className="text-sm text-muted-foreground mt-4">
-            API documentation available at{' '}
-            <a
-              href="http://localhost:8000/docs"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-primary underline"
-            >
-              http://localhost:8000/docs
-            </a>
-          </p>
-        </CardContent>
-      </Card>
+      {/* Analytics Section */}
+      {isLoading ? (
+        <LoadingCard message="Loading market data..." description="Fetching top investment opportunities" />
+      ) : hasData ? (
+        <>
+          {/* Market Overview */}
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Properties Analyzed</CardDescription>
+                <CardTitle className="text-3xl">{properties.length}</CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Avg Score</CardDescription>
+                <CardTitle className="text-3xl">
+                  {Math.round(
+                    properties.reduce((sum, p) => sum + p.metrics.score, 0) / properties.length
+                  )}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Avg Cap Rate</CardDescription>
+                <CardTitle className="text-3xl">
+                  {(
+                    properties
+                      .filter((p) => p.metrics.cap_rate != null)
+                      .reduce((sum, p) => sum + (p.metrics.cap_rate || 0), 0) /
+                    properties.filter((p) => p.metrics.cap_rate != null).length
+                  ).toFixed(1)}
+                  %
+                </CardTitle>
+              </CardHeader>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardDescription>Positive Cash Flow</CardDescription>
+                <CardTitle className="text-3xl">
+                  {properties.filter((p) => p.metrics.is_positive_cash_flow).length}/
+                  {properties.length}
+                </CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+
+          {/* Charts Row */}
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Top Properties by Score
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MetricsBar properties={properties} metric="score" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Price vs Cap Rate</CardTitle>
+                <CardDescription>
+                  Bubble size indicates investment score
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PriceCapScatter properties={properties} />
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>Price Distribution</CardTitle>
+                <CardDescription>Number of properties by price range</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <PriceDistribution properties={properties} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Cap Rate Comparison</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <MetricsBar properties={properties} metric="cap_rate" />
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Top Opportunities Table */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" />
+                  Top Investment Opportunities
+                </span>
+                <Button variant="outline" size="sm" asChild>
+                  <Link href="/search">View All</Link>
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {properties.slice(0, 5).map((property, index) => (
+                  <div key={property.listing.id}>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${getScoreColor(
+                            property.metrics.score
+                          )}`}
+                        >
+                          {property.metrics.score}
+                        </div>
+                        <div>
+                          <p className="font-medium">{property.listing.address}</p>
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                            <Badge variant="outline">{property.listing.property_type}</Badge>
+                            <span>{property.listing.units} units</span>
+                            <span>•</span>
+                            <span>{formatPrice(property.listing.price)}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">
+                          {property.metrics.cap_rate?.toFixed(1)}% cap
+                        </p>
+                        <p
+                          className={`text-sm ${
+                            property.metrics.is_positive_cash_flow
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                          }`}
+                        >
+                          {property.metrics.cash_flow_monthly != null
+                            ? `${formatPrice(property.metrics.cash_flow_monthly)}/mo`
+                            : '-'}
+                        </p>
+                      </div>
+                    </div>
+                    {index < 4 && <Separator className="mt-4" />}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Getting Started</CardTitle>
+            <CardDescription>
+              Make sure the FastAPI backend is running to see market analytics.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-muted-foreground">Start the backend server:</p>
+            <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
+              <code>
+                cd HouseMktAnalyzr{'\n'}
+                set PYTHONPATH=src{'\n'}
+                python -m uvicorn backend.app.main:app --reload
+              </code>
+            </pre>
+            <p className="text-sm text-muted-foreground mt-4">
+              API docs:{' '}
+              <a
+                href="http://localhost:8000/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary underline"
+              >
+                http://localhost:8000/docs
+              </a>
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

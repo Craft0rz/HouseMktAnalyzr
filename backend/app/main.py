@@ -10,7 +10,7 @@ sys.path.insert(0, str(src_path))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import alerts, analysis, properties
+from .routers import alerts, analysis, portfolio, properties
 
 app = FastAPI(
     title="HouseMktAnalyzr API",
@@ -36,6 +36,7 @@ app.add_middleware(
 app.include_router(properties.router, prefix="/api/properties", tags=["Properties"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
+app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 
 
 @app.get("/")

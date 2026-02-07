@@ -1,12 +1,15 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { Loader2 } from 'lucide-react';
 import { SearchFilters, type SearchFilters as SearchFiltersType } from '@/components/SearchFilters';
 import { PropertyTable } from '@/components/PropertyTable';
 import { PropertyDetail } from '@/components/PropertyDetail';
+import { ComparisonBar } from '@/components/ComparisonBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { analysisApi, propertiesApi } from '@/lib/api';
 import type { PropertyWithMetrics, BatchAnalysisResponse } from '@/lib/types';
 
@@ -14,28 +17,109 @@ export default function SearchPage() {
   const [results, setResults] = useState<BatchAnalysisResponse | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<'idle' | 'fetching' | 'analyzing'>('idle');
+  const [progress, setProgress] = useState(0);
+  const [listingsCount, setListingsCount] = useState(0);
+  const [isComprehensive, setIsComprehensive] = useState(false);
+
+  // Track actual stage timing for more accurate progress
+  const stageStartTimeRef = useRef(0);
+
+  // Animate progress based on stage and expected duration
+  useEffect(() => {
+    if (loadingStage === 'idle') {
+      setProgress(0);
+      return;
+    }
+
+    const startTime = Date.now();
+    stageStartTimeRef.current = startTime;
+
+    // Expected durations (ms) - comprehensive fetching takes much longer
+    const expectedFetchDuration = isComprehensive ? 30000 : 8000; // 30s vs 8s
+    const expectedAnalyzeDuration = Math.max(3000, listingsCount * 50); // ~50ms per listing
+
+    const maxProgress = loadingStage === 'fetching' ? 60 : 100;
+    const baseProgress = loadingStage === 'fetching' ? 0 : 60;
+    const expectedDuration = loadingStage === 'fetching' ? expectedFetchDuration : expectedAnalyzeDuration;
+
+    setProgress(baseProgress);
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      // Use asymptotic curve: progress approaches max but never quite reaches it
+      // This gives realistic feeling - fast at first, slows as it approaches completion
+      const progressRatio = 1 - Math.exp(-elapsed / (expectedDuration * 0.4));
+      const targetProgress = baseProgress + (maxProgress - baseProgress) * progressRatio * 0.95;
+
+      setProgress(Math.min(targetProgress, maxProgress - 2));
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [loadingStage, isComprehensive, listingsCount]);
 
   const searchMutation = useMutation({
     mutationFn: async (filters: SearchFiltersType) => {
-      // First search for properties
-      const searchResponse = await propertiesApi.searchMultiType({
-        region: filters.region,
-        property_types: filters.propertyTypes.join(','),
-        min_price: filters.minPrice,
-        max_price: filters.maxPrice,
-        enrich: true,
-      });
+      // Stage 1: Fetching properties
+      setIsComprehensive(filters.comprehensiveSearch ?? false);
+      setListingsCount(0);
+      setLoadingStage('fetching');
 
-      // Then analyze them
-      if (searchResponse.listings.length === 0) {
+      let listings;
+
+      if (filters.comprehensiveSearch) {
+        // Use AJAX pagination for more comprehensive results
+        // Map property types to API format (use ALL_PLEX for multi-family)
+        const propertyType = filters.propertyTypes.some(t =>
+          ['DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX'].includes(t)
+        ) ? 'ALL_PLEX' : 'HOUSE';
+
+        const allListingsResponse = await propertiesApi.getAllListings({
+          region: filters.region,
+          property_type: propertyType,
+          min_price: filters.minPrice,
+          max_price: filters.maxPrice,
+          max_pages: filters.maxPages || 10,
+          enrich: true,
+        });
+
+        // Filter by selected property types on the client side
+        listings = allListingsResponse.listings.filter(l =>
+          filters.propertyTypes.includes(l.property_type)
+        );
+      } else {
+        // Standard multi-type search
+        const searchResponse = await propertiesApi.searchMultiType({
+          region: filters.region,
+          property_types: filters.propertyTypes.join(','),
+          min_price: filters.minPrice,
+          max_price: filters.maxPrice,
+          enrich: true,
+        });
+        listings = searchResponse.listings;
+      }
+
+      if (listings.length === 0) {
         return { results: [], count: 0, summary: {} } as BatchAnalysisResponse;
       }
 
-      const analysisResponse = await analysisApi.analyzeBatch(searchResponse.listings);
+      // Stage 2: Analyzing properties
+      setListingsCount(listings.length);
+      setProgress(60); // Jump to 60% when fetching complete
+      setLoadingStage('analyzing');
+
+      const analysisResponse = await analysisApi.analyzeBatch(listings);
       return analysisResponse;
     },
     onSuccess: (data) => {
-      setResults(data);
+      setProgress(100);
+      setTimeout(() => {
+        setLoadingStage('idle');
+        setResults(data);
+      }, 300);
+    },
+    onError: () => {
+      setLoadingStage('idle');
     },
   });
 
@@ -58,6 +142,32 @@ export default function SearchPage() {
       </div>
 
       <SearchFilters onSearch={handleSearch} isLoading={searchMutation.isPending} />
+
+      {/* Loading Progress */}
+      {searchMutation.isPending && (
+        <Card>
+          <CardContent className="py-6">
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                <span className="font-medium">
+                  {loadingStage === 'fetching'
+                    ? 'Fetching properties from Centris...'
+                    : 'Analyzing investment metrics...'}
+                </span>
+              </div>
+              <Progress value={progress} className="h-2" />
+              <p className="text-sm text-muted-foreground">
+                {loadingStage === 'fetching'
+                  ? isComprehensive
+                    ? 'Comprehensive search: fetching multiple pages from Centris...'
+                    : 'Searching for properties matching your criteria'
+                  : `Analyzing ${listingsCount} properties: calculating scores, cap rates, and cash flow`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {searchMutation.isError && (
         <Card className="border-destructive">
@@ -129,6 +239,8 @@ export default function SearchPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />
+
+      <ComparisonBar />
     </div>
   );
 }

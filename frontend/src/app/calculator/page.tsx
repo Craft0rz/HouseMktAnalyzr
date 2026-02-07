@@ -1,20 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Calculator, DollarSign, Percent, Home, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { LoadingCard } from '@/components/LoadingCard';
 import { useQuickCalc, useMortgage } from '@/hooks/useProperties';
-
-const formatPrice = (price: number) => {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: 'CAD',
-    maximumFractionDigits: 0,
-  }).format(price);
-};
+import { formatPrice } from '@/lib/formatters';
 
 export default function CalculatorPage() {
   const [price, setPrice] = useState<string>('500000');
@@ -76,26 +70,31 @@ export default function CalculatorPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Purchase Price ($)</label>
+                <label htmlFor="calc-price" className="text-sm font-medium">Purchase Price ($)</label>
                 <Input
+                  id="calc-price"
                   type="number"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="500000"
+                  min="0"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Monthly Rent ($)</label>
+                <label htmlFor="calc-rent" className="text-sm font-medium">Monthly Rent ($)</label>
                 <Input
+                  id="calc-rent"
                   type="number"
                   value={monthlyRent}
                   onChange={(e) => setMonthlyRent(e.target.value)}
                   placeholder="3500"
+                  min="0"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Units</label>
+                <label htmlFor="calc-units" className="text-sm font-medium">Units</label>
                 <Input
+                  id="calc-units"
                   type="number"
                   value={units}
                   onChange={(e) => setUnits(e.target.value)}
@@ -104,8 +103,9 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Down Payment (%)</label>
+                <label htmlFor="calc-down-payment" className="text-sm font-medium">Down Payment (%)</label>
                 <Input
+                  id="calc-down-payment"
                   type="number"
                   value={downPaymentPct}
                   onChange={(e) => setDownPaymentPct(e.target.value)}
@@ -115,18 +115,21 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Interest Rate (%)</label>
+                <label htmlFor="calc-interest" className="text-sm font-medium">Interest Rate (%)</label>
                 <Input
+                  id="calc-interest"
                   type="number"
                   value={interestRate}
                   onChange={(e) => setInterestRate(e.target.value)}
                   placeholder="5"
                   step="0.1"
+                  min="0"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Expense Ratio (%)</label>
+                <label htmlFor="calc-expense" className="text-sm font-medium">Expense Ratio (%)</label>
                 <Input
+                  id="calc-expense"
                   type="number"
                   value={expenseRatio}
                   onChange={(e) => setExpenseRatio(e.target.value)}
@@ -285,9 +288,7 @@ export default function CalculatorPage() {
       )}
 
       {!calcData && priceNum > 0 && rentNum > 0 && calcLoading && (
-        <div className="text-center py-8 text-muted-foreground">
-          Calculating...
-        </div>
+        <LoadingCard message="Calculating..." description="Running investment analysis" />
       )}
 
       {(!priceNum || !rentNum) && (

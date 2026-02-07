@@ -1,10 +1,11 @@
 'use client';
 
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
+import { Progress } from '@/components/ui/progress';
 import {
   Sheet,
   SheetContent,
@@ -12,6 +13,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { ScoreRadar } from '@/components/charts';
+import { useComparison } from '@/lib/comparison-context';
 import type { PropertyWithMetrics } from '@/lib/types';
 
 interface PropertyDetailProps {
@@ -50,15 +53,135 @@ const getPropertyTypeLabel = (type: string) => {
   return labels[type] || type;
 };
 
+// Circular score gauge component
+function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
+  const radius = (size - 12) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const progress = (score / 100) * circumference;
+  const strokeWidth = 8;
+
+  const getColor = (s: number) => {
+    if (s >= 70) return '#22c55e'; // green-500
+    if (s >= 50) return '#eab308'; // yellow-500
+    return '#ef4444'; // red-500
+  };
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg className="transform -rotate-90" width={size} height={size}>
+        {/* Background circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          fill="none"
+          className="text-muted/20"
+        />
+        {/* Progress circle */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={getColor(score)}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference - progress}
+          className="transition-all duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-3xl font-bold" style={{ color: getColor(score) }}>
+          {score.toFixed(0)}
+        </span>
+        <span className="text-xs text-muted-foreground">/ 100</span>
+      </div>
+    </div>
+  );
+}
+
+// Metric bar with comparison
+function MetricBar({
+  label,
+  value,
+  benchmark,
+  unit = '',
+  higherIsBetter = true,
+}: {
+  label: string;
+  value: number | null | undefined;
+  benchmark: number;
+  unit?: string;
+  higherIsBetter?: boolean;
+}) {
+  if (value == null) return null;
+
+  const percentage = Math.min((value / (benchmark * 1.5)) * 100, 100);
+  const isGood = higherIsBetter ? value >= benchmark : value <= benchmark;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-sm">
+        <span className="text-muted-foreground">{label}</span>
+        <span className={`font-medium ${isGood ? 'text-green-600' : 'text-amber-600'}`}>
+          {value.toFixed(1)}{unit}
+        </span>
+      </div>
+      <div className="relative">
+        <Progress value={percentage} className="h-2" />
+        {/* Benchmark indicator */}
+        <div
+          className="absolute top-0 w-0.5 h-2 bg-foreground/50"
+          style={{ left: `${(benchmark / (benchmark * 1.5)) * 100}%` }}
+          title={`Benchmark: ${benchmark}${unit}`}
+        />
+      </div>
+      <div className="flex justify-between text-xs text-muted-foreground">
+        <span>0{unit}</span>
+        <span className="text-xs">Target: {benchmark}{unit}</span>
+      </div>
+    </div>
+  );
+}
+
 export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailProps) {
+  const { addProperty, selectedProperties } = useComparison();
+
   if (!property) return null;
 
   const { listing, metrics } = property;
 
+  // Calculate mortgage estimates (20% down, 5% rate, 25 years)
+  const downPaymentPct = 0.20;
+  const interestRate = 0.05;
+  const amortizationYears = 25;
+  const downPayment = listing.price * downPaymentPct;
+  const principal = listing.price - downPayment;
+  const monthlyRate = interestRate / 12;
+  const numPayments = amortizationYears * 12;
+  const monthlyMortgage = principal * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1);
+
+  // Cash flow breakdown
+  const monthlyIncome = metrics.estimated_monthly_rent;
+  const monthlyExpenses = {
+    mortgage: monthlyMortgage,
+    taxes: (listing.annual_taxes || listing.price * 0.012) / 12, // ~1.2% of price if unknown
+    insurance: listing.price * 0.004 / 12, // ~0.4% of price
+    maintenance: monthlyIncome * 0.05, // 5% of rent
+    vacancy: monthlyIncome * 0.05, // 5% vacancy allowance
+  };
+  const totalExpenses = Object.values(monthlyExpenses).reduce((a, b) => a + b, 0);
+  const netCashFlow = monthlyIncome - totalExpenses;
+
+  const isInComparison = selectedProperties.some(p => p.listing.id === listing.id);
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
-        <SheetHeader>
+      <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
+        <SheetHeader className="px-6 pt-6">
           <SheetTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5" />
             {listing.address}
@@ -69,140 +192,198 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6 space-y-6">
-          {/* Score and Price */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-muted-foreground">Investment Score</div>
-              <div className={`text-4xl font-bold ${getScoreColor(metrics.score)}`}>
-                {metrics.score.toFixed(0)}
+        <div className="mt-4 px-6 pb-8 space-y-5">
+          {/* Score and Price Hero */}
+          <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
+            <div className="flex items-center gap-4">
+              <ScoreGauge score={metrics.score} size={100} />
+              <div>
+                <div className="text-sm text-muted-foreground">Investment Score</div>
+                <div className="text-sm mt-1">
+                  {metrics.score >= 70 ? (
+                    <Badge className="bg-green-500">Excellent</Badge>
+                  ) : metrics.score >= 50 ? (
+                    <Badge className="bg-yellow-500">Good</Badge>
+                  ) : (
+                    <Badge variant="destructive">Below Average</Badge>
+                  )}
+                </div>
               </div>
             </div>
             <div className="text-right">
               <div className="text-sm text-muted-foreground">Asking Price</div>
-              <div className="text-3xl font-bold">{formatPrice(listing.price)}</div>
+              <div className="text-2xl font-bold">{formatPrice(listing.price)}</div>
+              <div className="text-xs text-muted-foreground">
+                {formatPrice(metrics.price_per_unit)}/unit
+              </div>
             </div>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex gap-2">
+            <Button asChild variant="outline" className="flex-1">
+              <a href={listing.url} target="_blank" rel="noopener noreferrer">
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View on Centris
+              </a>
+            </Button>
+            <Button
+              variant={isInComparison ? 'secondary' : 'default'}
+              onClick={() => !isInComparison && addProperty(property)}
+              disabled={isInComparison || selectedProperties.length >= 4}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              {isInComparison ? 'In Compare' : 'Compare'}
+            </Button>
           </div>
 
           <Separator />
 
-          {/* Property Details */}
+          {/* Monthly Cash Flow Breakdown */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <Home className="h-4 w-4" />
-                Property Details
+                <PiggyBank className="h-4 w-4" />
+                Monthly Cash Flow
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4 text-sm">
+            <CardContent className="space-y-4">
+              {/* Income */}
               <div>
-                <div className="text-muted-foreground">Type</div>
-                <div className="font-medium">
-                  <Badge variant="outline">
-                    {getPropertyTypeLabel(listing.property_type)}
-                  </Badge>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium flex items-center gap-2">
+                    <ArrowUpRight className="h-4 w-4 text-green-500" />
+                    Rental Income
+                  </span>
+                  <span className="font-bold text-green-600">
+                    +{formatPrice(monthlyIncome)}
+                  </span>
                 </div>
               </div>
-              <div>
-                <div className="text-muted-foreground">Units</div>
-                <div className="font-medium">{listing.units}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Bedrooms</div>
-                <div className="font-medium">{listing.bedrooms}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Bathrooms</div>
-                <div className="font-medium">{listing.bathrooms}</div>
-              </div>
-              {listing.sqft && (
-                <div>
-                  <div className="text-muted-foreground">Living Area</div>
-                  <div className="font-medium">{listing.sqft.toLocaleString()} sqft</div>
+
+              <Separator />
+
+              {/* Expenses */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground flex items-center gap-2">
+                    <ArrowDownRight className="h-4 w-4 text-red-500" />
+                    Expenses
+                  </span>
                 </div>
-              )}
-              {listing.year_built && (
-                <div>
-                  <div className="text-muted-foreground">Year Built</div>
-                  <div className="font-medium">{listing.year_built}</div>
+                <div className="pl-6 space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Mortgage</span>
+                    <span className="text-red-600">-{formatPrice(monthlyExpenses.mortgage)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Property Taxes</span>
+                    <span className="text-red-600">-{formatPrice(monthlyExpenses.taxes)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Insurance</span>
+                    <span className="text-red-600">-{formatPrice(monthlyExpenses.insurance)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Maintenance (5%)</span>
+                    <span className="text-red-600">-{formatPrice(monthlyExpenses.maintenance)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Vacancy (5%)</span>
+                    <span className="text-red-600">-{formatPrice(monthlyExpenses.vacancy)}</span>
+                  </div>
                 </div>
-              )}
+                <div className="flex justify-between pt-2 border-t">
+                  <span className="text-sm font-medium">Total Expenses</span>
+                  <span className="font-bold text-red-600">-{formatPrice(totalExpenses)}</span>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Net Cash Flow */}
+              <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
+                <span className="font-semibold">Net Monthly Cash Flow</span>
+                <span className={`text-xl font-bold ${netCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {netCashFlow >= 0 ? '+' : ''}{formatPrice(netCashFlow)}
+                </span>
+              </div>
+
+              <div className="text-xs text-muted-foreground text-center">
+                Annual: {formatPrice(netCashFlow * 12)} |
+                {' '}ROI: {((netCashFlow * 12) / downPayment * 100).toFixed(1)}% on down payment
+              </div>
             </CardContent>
           </Card>
 
-          {/* Financial Details */}
+          {/* Mortgage Details */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <DollarSign className="h-4 w-4" />
-                Financial Details
+                <Landmark className="h-4 w-4" />
+                Mortgage Estimate
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="text-muted-foreground">Price per Unit</div>
-                <div className="font-medium">{formatPrice(metrics.price_per_unit)}</div>
-              </div>
-              {metrics.price_per_sqft && (
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <div className="text-muted-foreground">Price per sqft</div>
-                  <div className="font-medium">${metrics.price_per_sqft.toFixed(0)}</div>
+                  <div className="text-muted-foreground">Down Payment (20%)</div>
+                  <div className="font-medium">{formatPrice(downPayment)}</div>
                 </div>
-              )}
-              <div>
-                <div className="text-muted-foreground">Est. Monthly Rent</div>
-                <div className="font-medium">{formatPrice(metrics.estimated_monthly_rent)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Annual Rent</div>
-                <div className="font-medium">{formatPrice(metrics.annual_rent)}</div>
-              </div>
-              {listing.annual_taxes && (
                 <div>
-                  <div className="text-muted-foreground">Annual Taxes</div>
-                  <div className="font-medium">{formatPrice(listing.annual_taxes)}</div>
+                  <div className="text-muted-foreground">Loan Amount</div>
+                  <div className="font-medium">{formatPrice(principal)}</div>
                 </div>
-              )}
-              {listing.municipal_assessment && (
                 <div>
-                  <div className="text-muted-foreground">Assessment</div>
-                  <div className="font-medium">{formatPrice(listing.municipal_assessment)}</div>
+                  <div className="text-muted-foreground">Monthly Payment</div>
+                  <div className="font-medium">{formatPrice(monthlyMortgage)}</div>
                 </div>
-              )}
+                <div>
+                  <div className="text-muted-foreground">Interest Rate</div>
+                  <div className="font-medium">{(interestRate * 100).toFixed(1)}%</div>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Based on {amortizationYears}-year amortization. Actual terms may vary.
+              </div>
             </CardContent>
           </Card>
 
-          {/* Investment Metrics */}
+          {/* Key Investment Metrics */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Investment Metrics
+                Key Metrics
               </CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <div className="text-muted-foreground">Cap Rate</div>
-                <div className="font-medium">{formatPercent(metrics.cap_rate)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Gross Yield</div>
-                <div className="font-medium">{formatPercent(metrics.gross_rental_yield)}</div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Monthly Cash Flow</div>
-                <div className={`font-medium ${metrics.cash_flow_monthly && metrics.cash_flow_monthly > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {metrics.cash_flow_monthly != null
-                    ? `${metrics.cash_flow_monthly >= 0 ? '' : '-'}${formatPrice(Math.abs(metrics.cash_flow_monthly))}`
-                    : '-'}
+            <CardContent className="space-y-4">
+              <MetricBar
+                label="Cap Rate"
+                value={metrics.cap_rate}
+                benchmark={5}
+                unit="%"
+                higherIsBetter={true}
+              />
+              <MetricBar
+                label="Gross Yield"
+                value={metrics.gross_rental_yield}
+                benchmark={7}
+                unit="%"
+                higherIsBetter={true}
+              />
+              <div className="grid grid-cols-2 gap-4 pt-2 text-sm">
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <div className="text-muted-foreground">Price/sqft</div>
+                  <div className="font-bold">
+                    {metrics.price_per_sqft ? `$${metrics.price_per_sqft.toFixed(0)}` : 'N/A'}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-muted-foreground">Cash Flow Status</div>
-                <div className="font-medium">
-                  <Badge variant={metrics.is_positive_cash_flow ? 'default' : 'destructive'}>
-                    {metrics.is_positive_cash_flow ? 'Positive' : 'Negative'}
-                  </Badge>
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <div className="text-muted-foreground">Assessment</div>
+                  <div className="font-bold">
+                    {listing.municipal_assessment ? formatPrice(listing.municipal_assessment) : 'N/A'}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -210,38 +391,76 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
           {/* Score Breakdown */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <Calculator className="h-4 w-4" />
                 Score Breakdown
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              {Object.entries(metrics.score_breakdown).map(([key, value]) => (
-                <div key={key} className="flex justify-between">
-                  <div className="text-muted-foreground capitalize">
-                    {key.replace(/_/g, ' ')}
-                  </div>
-                  <div className="font-medium">{value.toFixed(1)} pts</div>
-                </div>
-              ))}
-              <Separator className="my-2" />
-              <div className="flex justify-between font-medium">
-                <div>Total Score</div>
-                <div className={getScoreColor(metrics.score)}>{metrics.score.toFixed(1)}</div>
+            <CardContent className="space-y-4">
+              <div className="h-56">
+                <ScoreRadar scoreBreakdown={metrics.score_breakdown} />
+              </div>
+              <div className="grid grid-cols-5 gap-1 text-center">
+                {Object.entries(metrics.score_breakdown).map(([key, value]) => {
+                  const percentage = (value / 20) * 100;
+                  const color = percentage >= 75 ? 'text-green-600' : percentage >= 50 ? 'text-yellow-600' : 'text-red-600';
+                  return (
+                    <div key={key} className="p-2 rounded bg-muted/50">
+                      <div className={`text-lg font-bold ${color}`}>{value.toFixed(0)}</div>
+                      <div className="text-[10px] text-muted-foreground capitalize leading-tight">
+                        {key.replace('_score', '').replace('_', ' ')}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            <Button asChild className="flex-1">
-              <a href={listing.url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="mr-2 h-4 w-4" />
-                View on Centris
-              </a>
-            </Button>
-          </div>
+          {/* Property Details (collapsed) */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                Property Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 gap-3 text-sm">
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">{listing.units}</div>
+                <div className="text-xs text-muted-foreground">Units</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">{listing.bedrooms}</div>
+                <div className="text-xs text-muted-foreground">Beds</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">{listing.bathrooms}</div>
+                <div className="text-xs text-muted-foreground">Baths</div>
+              </div>
+              {listing.sqft && (
+                <div className="text-center p-2 rounded bg-muted/50">
+                  <div className="text-lg font-bold">{(listing.sqft / 1000).toFixed(1)}k</div>
+                  <div className="text-xs text-muted-foreground">sqft</div>
+                </div>
+              )}
+              {listing.year_built && (
+                <div className="text-center p-2 rounded bg-muted/50">
+                  <div className="text-lg font-bold">{listing.year_built}</div>
+                  <div className="text-xs text-muted-foreground">Built</div>
+                </div>
+              )}
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">
+                  <Badge variant="outline" className="text-xs">
+                    {getPropertyTypeLabel(listing.property_type)}
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground">Type</div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </SheetContent>
     </Sheet>
