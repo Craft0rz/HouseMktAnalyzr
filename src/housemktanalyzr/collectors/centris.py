@@ -48,6 +48,29 @@ PROPERTY_TYPE_MAPPING = {
     "MULTIPLEX": ["Quintuplex or more", "Multi-family (5+)"],
 }
 
+# URL patterns for property-type specific searches
+# These give different result sets than the generic search
+# Note: QUADPLEX and MULTIPLEX don't have separate URLs, use ALL_PLEX
+PROPERTY_TYPE_URLS = {
+    "DUPLEX": "/en/duplexes~for-sale~{region}",
+    "TRIPLEX": "/en/triplexes~for-sale~{region}",
+    "HOUSE": "/en/houses~for-sale~{region}",
+    "ALL_PLEX": "/en/plexes~for-sale~{region}",  # All multi-family (duplex-quintuplex)
+}
+
+# Region name mappings for URL construction
+REGION_URL_MAPPING = {
+    "montreal": "montreal-island",
+    "laval": "laval",
+    "longueuil": "longueuil",
+    "south-shore": "montreal-south-shore",  # Rive-Sud
+    "rive-sud": "montreal-south-shore",
+    "monteregie": "monteregie",
+    "north-shore": "north-shore",
+    "laurentides": "laurentides",
+    "lanaudiere": "lanaudiere",
+}
+
 
 class CentrisScraper(DataSource):
     """Web scraper for Centris.ca property listings.
@@ -118,6 +141,7 @@ class CentrisScraper(DataSource):
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Language": "en-US,en;q=0.5",
                     "Accept-Encoding": "gzip, deflate, br",
+                    "Accept-Charset": "utf-8",
                     "Connection": "keep-alive",
                 },
                 follow_redirects=True,
@@ -293,6 +317,17 @@ class CentrisScraper(DataSource):
     def _parse_listing_card(self, card: BeautifulSoup) -> Optional[PropertyListing]:
         """Parse a single listing card from the search results page.
 
+        Centris HTML structure:
+        - .address contains two child <div>: street (first) and city (second)
+        - .cac = bedrooms (chambres à coucher)
+        - .sdb = bathrooms (salles de bain)
+        - .price = price display
+        - meta[itemprop="price"] = raw price value
+        - meta[itemprop="sku"] or data-mlsnumber attribute = MLS ID
+
+        Note: Square footage is NOT available in search result cards.
+        It would require fetching individual listing details.
+
         Args:
             card: BeautifulSoup element containing the listing card
 
@@ -300,6 +335,19 @@ class CentrisScraper(DataSource):
             PropertyListing or None if parsing fails
         """
         try:
+            # Extract MLS ID - try multiple sources
+            mls_id = card.get("data-mlsnumber", "")
+            if not mls_id:
+                # Try meta[itemprop="sku"]
+                sku_meta = card.find("meta", itemprop="sku")
+                if sku_meta:
+                    mls_id = sku_meta.get("content", "")
+            if not mls_id:
+                # Try link with data-mlsnumber
+                mls_link = card.find("a", attrs={"data-mlsnumber": True})
+                if mls_link:
+                    mls_id = mls_link.get("data-mlsnumber", "")
+
             # Extract URL
             link = card.find("a", class_="property-thumbnail-summary-link")
             if not link:
@@ -308,42 +356,71 @@ class CentrisScraper(DataSource):
             if url and not url.startswith("http"):
                 url = f"{self.BASE_URL}{url}"
 
-            # Extract address
-            address_elem = card.find(class_=re.compile(r"address|location"))
-            address_text = address_elem.get_text(strip=True) if address_elem else ""
-
-            # Try alternative address extraction
-            if not address_text:
-                address_parts = card.find_all(class_=re.compile(r"street|city"))
-                address_text = ", ".join(p.get_text(strip=True) for p in address_parts)
-
-            # Extract city from address
+            # Extract address - Centris uses .address with two child divs
+            address_elem = card.find(class_="address")
+            street = ""
             city = "Montreal"  # Default
-            if "," in address_text:
-                parts = address_text.split(",")
-                city = parts[-1].strip() if len(parts) > 1 else city
 
-            # Extract price
-            price_elem = card.find(class_=re.compile(r"price"))
-            price_text = price_elem.get_text(strip=True) if price_elem else ""
-            price = self._parse_price(price_text)
+            if address_elem:
+                # Find child divs - first is street, second is city
+                address_divs = address_elem.find_all("div", recursive=False)
+                if len(address_divs) >= 2:
+                    street = address_divs[0].get_text(strip=True)
+                    city = address_divs[1].get_text(strip=True)
+                elif len(address_divs) == 1:
+                    street = address_divs[0].get_text(strip=True)
+                else:
+                    # Fallback to direct text
+                    street = address_elem.get_text(strip=True)
+
+            # Combine address
+            address_text = street if street else "Unknown"
+
+            # Extract price - try meta tag first (raw value), then .price element
+            price = None
+            price_meta = card.find("meta", itemprop="price")
+            if price_meta:
+                price = self._parse_price(price_meta.get("content", ""))
+
+            if not price:
+                price_elem = card.find(class_="price")
+                if price_elem:
+                    price = self._parse_price(price_elem.get_text(strip=True))
 
             if not price:
                 return None  # Skip listings without price
 
-            # Extract property details
-            details_text = card.get_text(" ", strip=True)
+            # Extract bedrooms from .cac element (chambres à coucher)
+            bedrooms = 0
+            cac_elem = card.find(class_="cac")
+            if cac_elem:
+                cac_text = cac_elem.get_text(strip=True)
+                match = re.search(r"(\d+)", cac_text)
+                if match:
+                    bedrooms = int(match.group(1))
 
-            bedrooms = self._parse_bedrooms(details_text)
-            bathrooms = self._parse_bathrooms(details_text)
-            sqft = self._parse_sqft(details_text)
+            # Extract bathrooms from .sdb element (salles de bain)
+            bathrooms = 0.0
+            sdb_elem = card.find(class_="sdb")
+            if sdb_elem:
+                sdb_text = sdb_elem.get_text(strip=True)
+                match = re.search(r"(\d+(?:\.\d+)?)", sdb_text)
+                if match:
+                    bathrooms = float(match.group(1))
 
-            # Determine property type
-            type_elem = card.find(class_=re.compile(r"category|type"))
+            # Extract square footage from teaser/description
+            sqft = None
+            teaser_elem = card.find(class_="teaser")
+            if teaser_elem:
+                sqft = self._parse_sqft(teaser_elem.get_text())
+
+            # Determine property type from category
+            type_elem = card.find(class_="category")
             type_text = type_elem.get_text(strip=True) if type_elem else ""
 
             # Count units for multi-family
             units = 1
+            details_text = card.get_text(" ", strip=True)
             unit_match = re.search(r"(\d+)\s*(?:unit|logement)", details_text, re.IGNORECASE)
             if unit_match:
                 units = int(unit_match.group(1))
@@ -356,13 +433,16 @@ class CentrisScraper(DataSource):
 
             property_type = self._determine_property_type(type_text, units)
 
-            # Generate ID
-            listing_id = self._generate_listing_id(url, address_text)
+            # Generate ID - prefer MLS ID
+            if mls_id:
+                listing_id = f"centris-{mls_id}"
+            else:
+                listing_id = self._generate_listing_id(url, address_text)
 
             return PropertyListing(
                 id=listing_id,
                 source=self.name,
-                address=address_text or "Unknown",
+                address=address_text,
                 city=city,
                 postal_code=None,  # Often not shown in search results
                 price=price,
@@ -376,7 +456,7 @@ class CentrisScraper(DataSource):
                 estimated_rent=None,
                 listing_date=None,
                 url=url or self.SEARCH_URL,
-                raw_data={"source_html": str(card)[:500]},  # Truncate for storage
+                raw_data={"mls_id": mls_id} if mls_id else None,
             )
 
         except Exception as e:
@@ -423,7 +503,8 @@ class CentrisScraper(DataSource):
         # Make request
         try:
             response = await self._make_request(url, params=params)
-            soup = BeautifulSoup(response.text, "html.parser")
+            # Use content with explicit UTF-8 to properly handle French characters
+            soup = BeautifulSoup(response.content, "html.parser", from_encoding="utf-8")
 
             # Find listing cards
             listings = []
@@ -450,9 +531,15 @@ class CentrisScraper(DataSource):
                     class_=re.compile(r"property|listing|result", re.IGNORECASE),
                 )
 
+            seen_ids = set()
             for card in cards:
                 listing = self._parse_listing_card(card)
                 if listing:
+                    # Skip duplicates
+                    if listing.id in seen_ids:
+                        continue
+                    seen_ids.add(listing.id)
+
                     # Apply property type filter
                     if property_types:
                         if listing.property_type.value not in property_types:
@@ -493,43 +580,67 @@ class CentrisScraper(DataSource):
             DataSourceError: For other errors
         """
         limit = limit or 100
-        all_listings: list[PropertyListing] = []
-        page = 1
-        max_pages = 10  # Safety limit
 
         logger.info(
             f"Fetching Centris listings: region={region}, "
             f"types={property_types}, price={min_price}-{max_price}"
         )
 
-        while len(all_listings) < limit and page <= max_pages:
-            page_listings = await self._fetch_search_page(
-                region=region,
-                property_types=property_types,
-                min_price=min_price,
-                max_price=max_price,
-                page=page,
-            )
-
-            if not page_listings:
-                break  # No more results
-
-            all_listings.extend(page_listings)
-            page += 1
+        # Note: Centris uses infinite scroll/AJAX for pagination, not URL params.
+        # For now, we only fetch the first page (20 listings).
+        # TODO: Implement AJAX-based pagination for more results.
+        page_listings = await self._fetch_search_page(
+            region=region,
+            property_types=property_types,
+            min_price=min_price,
+            max_price=max_price,
+            page=1,
+        )
 
         # Apply limit
-        result = all_listings[:limit]
+        result = page_listings[:limit]
         logger.info(f"Found {len(result)} listings from Centris")
 
         return result
 
+    def _parse_characteristics(self, soup: BeautifulSoup) -> dict[str, str]:
+        """Parse all carac-container sections into a dict.
+
+        Centris detail pages have structured data in .carac-container divs
+        with .carac-title and .carac-value children.
+        """
+        characteristics = {}
+
+        for container in soup.find_all(class_="carac-container"):
+            title_elem = container.find(class_="carac-title")
+            value_elem = container.find(class_="carac-value")
+
+            if title_elem:
+                title = title_elem.get_text(strip=True)
+                if value_elem:
+                    value = value_elem.get_text(" ", strip=True)
+                else:
+                    # Some just have title with text after
+                    text = container.get_text(" ", strip=True)
+                    value = text.replace(title, "").strip()
+
+                if value:
+                    characteristics[title] = value
+
+        return characteristics
+
     async def get_listing_details(
-        self, listing_id: str
+        self, listing_id: str, url: Optional[str] = None
     ) -> Optional[PropertyListing]:
         """Get full details for a single listing.
 
+        Fetches the individual listing page and extracts comprehensive data
+        including square footage, lot size, year built, taxes, assessment,
+        gross revenue, and other details not available in search results.
+
         Args:
             listing_id: The Centris listing ID (e.g., "centris-12345678")
+            url: Optional full URL to the listing detail page
 
         Returns:
             PropertyListing with full details, or None if not found
@@ -537,60 +648,687 @@ class CentrisScraper(DataSource):
         # Extract numeric ID
         match = re.search(r"centris-(\d+)", listing_id)
         if not match:
+            logger.warning(f"Invalid listing ID format: {listing_id}")
             return None
 
         centris_id = match.group(1)
-        url = f"{self.BASE_URL}/en/{centris_id}"
+
+        # Use provided URL or search for the listing
+        if not url:
+            url = f"{self.BASE_URL}/en/{centris_id}"
 
         try:
             response = await self._make_request(url)
-            soup = BeautifulSoup(response.text, "html.parser")
+            soup = BeautifulSoup(response.content, "html.parser", from_encoding="utf-8")
+            page_text = soup.get_text(" ", strip=True)
 
-            # Parse detailed listing page
-            # This would need more specific parsing for the detail page
-            # For now, return a basic listing
+            # Parse structured characteristics
+            chars = self._parse_characteristics(soup)
 
-            # Extract address
-            address_elem = soup.find("h1", class_=re.compile(r"address"))
-            if not address_elem:
-                address_elem = soup.find("span", itemprop="streetAddress")
-            address = address_elem.get_text(strip=True) if address_elem else "Unknown"
+            # === PRICE ===
+            price = 0
+            price_meta = soup.find("meta", itemprop="price")
+            if price_meta:
+                price = self._parse_price(price_meta.get("content", "")) or 0
+            if not price:
+                price_elem = soup.find(class_="price")
+                if price_elem:
+                    price = self._parse_price(price_elem.get_text(strip=True)) or 0
 
-            # Extract price
-            price_elem = soup.find(class_=re.compile(r"price"))
-            price_text = price_elem.get_text(strip=True) if price_elem else "0"
-            price = self._parse_price(price_text) or 0
+            # === ADDRESS & LOCATION ===
+            address = "Unknown"
+            city = "Montreal"
+            title = soup.find("title")
+            if title:
+                title_text = title.get_text(strip=True)
+                # Title format varies:
+                # "House for sale in City, Address, MLS# - Centris.ca"
+                # "Triplex for sale in City1, City2, Address, MLS# - Centris.ca"
+                # Split by comma and find the street address (contains numbers)
+                parts = title_text.split(",")
+                for i, part in enumerate(parts):
+                    part = part.strip()
+                    # Street address usually has a number at the start
+                    if re.match(r"^\d+", part):
+                        address = part
+                        # City is usually the part after "in" before the address
+                        if i >= 1:
+                            # Look backwards for the city (after "in")
+                            for j in range(i - 1, -1, -1):
+                                prev_part = parts[j].strip()
+                                if "in " in prev_part:
+                                    city = prev_part.split("in ")[-1].strip()
+                                    break
+                                elif j == i - 1:
+                                    city = prev_part
+                        break
 
-            # Extract city
+            # Try schema.org if not found
+            addr_elem = soup.find("span", itemprop="streetAddress")
+            if addr_elem and address == "Unknown":
+                address = addr_elem.get_text(strip=True)
             city_elem = soup.find("span", itemprop="addressLocality")
-            city = city_elem.get_text(strip=True) if city_elem else "Montreal"
+            if city_elem:
+                city = city_elem.get_text(strip=True)
+            postal_elem = soup.find("span", itemprop="postalCode")
+            postal_code = postal_elem.get_text(strip=True) if postal_elem else None
 
-            # Extract full details
-            details_text = soup.get_text(" ", strip=True)
+            # === BEDROOMS & BATHROOMS ===
+            bedrooms = 0
+            bathrooms = 0.0
+            rooms = 0
+
+            # Try teaser section first (single-family properties)
+            teaser = soup.find(class_="teaser")
+            if teaser:
+                cac = teaser.find(class_="cac")
+                if cac:
+                    m = re.search(r"(\d+)", cac.get_text())
+                    if m:
+                        bedrooms = int(m.group(1))
+                sdb = teaser.find(class_="sdb")
+                if sdb:
+                    m = re.search(r"(\d+(?:\.\d+)?)", sdb.get_text())
+                    if m:
+                        bathrooms = float(m.group(1))
+                piece = teaser.find(class_="piece")
+                if piece:
+                    m = re.search(r"(\d+)", piece.get_text())
+                    if m:
+                        rooms = int(m.group(1))
+
+            # For multi-family, try "Main unit" characteristic
+            if bedrooms == 0 and "Main unit" in chars:
+                main_unit = chars["Main unit"]
+                # Format: "4 rooms, 2 bedrooms, 1 bathroom"
+                bed_match = re.search(r"(\d+)\s*bedroom", main_unit, re.I)
+                if bed_match:
+                    bedrooms = int(bed_match.group(1))
+                bath_match = re.search(r"(\d+(?:\.\d+)?)\s*bathroom", main_unit, re.I)
+                if bath_match:
+                    bathrooms = float(bath_match.group(1))
+                room_match = re.search(r"(\d+)\s*room", main_unit, re.I)
+                if room_match:
+                    rooms = int(room_match.group(1))
+
+            # === PROPERTY CHARACTERISTICS ===
+            # Living area / Building area
+            sqft = None
+            sqft_match = re.search(
+                r"(?:Living area|Building area)[:\s]*([\d,]+)\s*sqft",
+                page_text, re.I
+            )
+            if sqft_match:
+                sqft = int(sqft_match.group(1).replace(",", ""))
+
+            # Lot area (from characteristics or text)
+            lot_sqft = None
+            if "Lot area" in chars:
+                lot_match = re.search(r"([\d,]+)\s*sqft", chars["Lot area"])
+                if lot_match:
+                    lot_sqft = int(lot_match.group(1).replace(",", ""))
+            if not lot_sqft:
+                lot_match = re.search(r"Lot area[:\s]*([\d,]+)\s*sqft", page_text, re.I)
+                if lot_match:
+                    lot_sqft = int(lot_match.group(1).replace(",", ""))
+
+            # Year built
+            year_built = None
+            if "Year built" in chars:
+                m = re.search(r"(\d{4})", chars["Year built"])
+                if m:
+                    year_built = int(m.group(1))
+
+            # Building style
+            building_style = chars.get("Building style", "")
+
+            # === UNITS (for multi-family) ===
+            units = 1
+            url_lower = url.lower()
+            if "duplex" in url_lower:
+                units = 2
+            elif "triplex" in url_lower:
+                units = 3
+            elif "quadruplex" in url_lower:
+                units = 4
+            elif "quintuplex" in url_lower or "5-plex" in url_lower:
+                units = 5
+
+            # Override from characteristics if available
+            if "Number of units" in chars:
+                m = re.search(r"(\d+)", chars["Number of units"])
+                if m:
+                    units = int(m.group(1))
+
+            # === INCOME (for investment properties) ===
+            gross_revenue = None
+            if "Potential gross revenue" in chars:
+                m = re.search(r"([\d,]+)", chars["Potential gross revenue"].replace("$", ""))
+                if m:
+                    gross_revenue = int(m.group(1).replace(",", ""))
+
+            # === TAXES & ASSESSMENT ===
+            municipal_assessment = None
+            annual_taxes = None
+
+            # Assessment - look for "Total $xxx,xxx" pattern
+            assess_match = re.search(
+                r"Municipal assessment.*?Total\s*\$?([\d,]+)",
+                page_text, re.I | re.S
+            )
+            if assess_match:
+                municipal_assessment = int(assess_match.group(1).replace(",", ""))
+
+            # Taxes - find the second occurrence (first is filter UI)
+            tax_matches = re.findall(
+                r"Taxes\s*Municipal.*?\$?([\d,]+)\s*School.*?\$?([\d,]+)\s*Total\s*\$?([\d,]+)",
+                page_text, re.I
+            )
+            if len(tax_matches) >= 2:
+                annual_taxes = int(tax_matches[1][2].replace(",", ""))
+
+            # === PARKING ===
+            parking_spaces = 0
+            garage_spaces = 0
+            if "Parking (total)" in chars:
+                parking_text = chars["Parking (total)"]
+                # Parse "Driveway (1)" or "Garage (2), Driveway (1)"
+                p_match = re.search(r"\((\d+)\)", parking_text)
+                if p_match:
+                    parking_spaces = int(p_match.group(1))
+                g_match = re.search(r"[Gg]arage.*?\((\d+)\)", parking_text)
+                if g_match:
+                    garage_spaces = int(g_match.group(1))
+
+            # === PROPERTY TYPE ===
+            # Check title first (more reliable than URL)
+            type_text = ""
+            title_lower = title.get_text().lower() if title else ""
+            check_text = title_lower + " " + url_lower
+
+            if "triplex" in check_text:
+                type_text = "triplex"
+            elif "duplex" in check_text:
+                type_text = "duplex"
+            elif "quadruplex" in check_text:
+                type_text = "quadruplex"
+            elif "quintuplex" in check_text or "5-plex" in check_text:
+                type_text = "multiplex"
+            elif "condo" in check_text:
+                type_text = "house"
+            elif "house" in check_text:
+                type_text = "house"
+
+            property_type = self._determine_property_type(type_text, units)
+
+            # === BUILD RAW DATA with all extra info ===
+            raw_data = {
+                "centris_id": centris_id,
+                "rooms": rooms,
+                "building_style": building_style,
+                "parking_spaces": parking_spaces,
+                "garage_spaces": garage_spaces,
+            }
+
+            # Add all characteristics
+            for key, value in chars.items():
+                snake_key = key.lower().replace(" ", "_").replace("(", "").replace(")", "")
+                if snake_key not in raw_data:
+                    raw_data[snake_key] = value
 
             return PropertyListing(
                 id=listing_id,
                 source=self.name,
                 address=address,
                 city=city,
-                postal_code=None,
+                postal_code=postal_code,
                 price=price,
-                property_type=PropertyType.HOUSE,  # Would need better detection
-                bedrooms=self._parse_bedrooms(details_text),
-                bathrooms=self._parse_bathrooms(details_text),
-                sqft=self._parse_sqft(details_text),
-                lot_sqft=None,
-                year_built=None,
-                units=1,
+                property_type=property_type,
+                bedrooms=bedrooms,
+                bathrooms=bathrooms,
+                sqft=sqft,
+                lot_sqft=lot_sqft,
+                year_built=year_built,
+                units=units,
                 estimated_rent=None,
+                gross_revenue=gross_revenue,
+                municipal_assessment=municipal_assessment,
+                annual_taxes=annual_taxes,
                 listing_date=date.today(),
                 url=url,
-                raw_data=None,
+                raw_data=raw_data,
             )
 
+        except (CaptchaError, RateLimitError):
+            raise
         except Exception as e:
-            logger.error(f"Error fetching listing details: {e}")
+            logger.error(f"Error fetching listing details for {listing_id}: {e}")
             return None
+
+    async def enrich_listing(
+        self, listing: PropertyListing
+    ) -> PropertyListing:
+        """Enrich a search result listing with detail page data.
+
+        Fetches the detail page for a listing and merges additional data
+        (sqft, lot_sqft, year_built, postal_code) into the existing listing.
+
+        Args:
+            listing: A PropertyListing from search results
+
+        Returns:
+            The same listing with additional fields populated
+        """
+        if not listing.url or listing.url == self.SEARCH_URL:
+            return listing
+
+        try:
+            detailed = await self.get_listing_details(listing.id, url=listing.url)
+            if detailed:
+                # Merge detail data into original listing
+                # Keep original values where detail is missing
+                return PropertyListing(
+                    id=listing.id,
+                    source=listing.source,
+                    address=listing.address,
+                    city=listing.city,
+                    postal_code=detailed.postal_code or listing.postal_code,
+                    price=listing.price,  # Keep original price
+                    property_type=listing.property_type,
+                    bedrooms=listing.bedrooms or detailed.bedrooms,
+                    bathrooms=listing.bathrooms or detailed.bathrooms,
+                    sqft=detailed.sqft or listing.sqft,
+                    lot_sqft=detailed.lot_sqft or listing.lot_sqft,
+                    year_built=detailed.year_built or listing.year_built,
+                    units=listing.units,
+                    estimated_rent=listing.estimated_rent,
+                    gross_revenue=detailed.gross_revenue or listing.gross_revenue,
+                    municipal_assessment=detailed.municipal_assessment or listing.municipal_assessment,
+                    annual_taxes=detailed.annual_taxes or listing.annual_taxes,
+                    listing_date=listing.listing_date,
+                    url=listing.url,
+                    raw_data={
+                        **(listing.raw_data or {}),
+                        **(detailed.raw_data or {}),
+                        "enriched": True,
+                    },
+                )
+        except Exception as e:
+            logger.warning(f"Failed to enrich listing {listing.id}: {e}")
+
+        return listing
+
+    async def fetch_listings_with_details(
+        self,
+        region: str,
+        property_types: Optional[list[str]] = None,
+        min_price: Optional[int] = None,
+        max_price: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> list[PropertyListing]:
+        """Fetch listings and enrich each with detail page data.
+
+        This is slower than fetch_listings but provides complete data
+        including square footage, lot size, and year built.
+
+        Args:
+            region: Geographic region
+            property_types: Filter by property types
+            min_price: Minimum price
+            max_price: Maximum price
+            limit: Maximum listings to return
+
+        Returns:
+            List of fully enriched PropertyListing objects
+        """
+        # First get search results
+        listings = await self.fetch_listings(
+            region=region,
+            property_types=property_types,
+            min_price=min_price,
+            max_price=max_price,
+            limit=limit,
+        )
+
+        # Enrich each listing with detail page data
+        enriched = []
+        for listing in listings:
+            enriched_listing = await self.enrich_listing(listing)
+            enriched.append(enriched_listing)
+            logger.debug(f"Enriched listing {listing.id}")
+
+        return enriched
+
+    async def _fetch_by_type_url(
+        self,
+        property_type: str,
+        region: str,
+    ) -> list[PropertyListing]:
+        """Fetch listings using a property-type specific URL.
+
+        Centris has different URL patterns for each property type that return
+        different result sets (e.g., /en/duplexes~for-sale~montreal-island).
+
+        Args:
+            property_type: Property type key (DUPLEX, TRIPLEX, etc.)
+            region: Region key (montreal, laval, etc.)
+
+        Returns:
+            List of PropertyListing objects from this type-specific search
+        """
+        url_pattern = PROPERTY_TYPE_URLS.get(property_type)
+        if not url_pattern:
+            logger.warning(f"No URL pattern for type: {property_type}")
+            return []
+
+        region_slug = REGION_URL_MAPPING.get(region.lower(), region)
+        url = f"{self.BASE_URL}{url_pattern.format(region=region_slug)}"
+
+        try:
+            response = await self._make_request(url)
+            soup = BeautifulSoup(response.content, "html.parser", from_encoding="utf-8")
+
+            listings = []
+            cards = soup.select("div.property-thumbnail-item")
+
+            seen_ids = set()
+            for card in cards:
+                listing = self._parse_listing_card(card)
+                if listing and listing.id not in seen_ids:
+                    seen_ids.add(listing.id)
+                    listings.append(listing)
+
+            return listings
+
+        except Exception as e:
+            logger.error(f"Error fetching {property_type} listings: {e}")
+            return []
+
+    async def fetch_listings_multi_type(
+        self,
+        region: str = "montreal",
+        property_types: Optional[list[str]] = None,
+        enrich: bool = False,
+        min_price: Optional[int] = None,
+        max_price: Optional[int] = None,
+    ) -> list[PropertyListing]:
+        """Fetch listings across multiple property types for more results.
+
+        Centris returns ~20 listings per search due to AJAX pagination.
+        This method works around that by searching property-type specific URLs
+        (e.g., /duplexes~for-sale, /triplexes~for-sale) and combining results.
+
+        Args:
+            region: Geographic region (e.g., "montreal", "laval")
+            property_types: Types to search. Defaults to all multi-family
+                           (DUPLEX, TRIPLEX, QUADPLEX, MULTIPLEX)
+            enrich: If True, fetch detail page for each listing (slower)
+            min_price: Optional minimum price filter (applied client-side)
+            max_price: Optional maximum price filter (applied client-side)
+
+        Returns:
+            Deduplicated list of PropertyListing objects from all types
+
+        Example:
+            # Get ~60-80 multi-family listings
+            listings = await scraper.fetch_listings_multi_type(
+                region="montreal",
+                property_types=["DUPLEX", "TRIPLEX", "QUADPLEX"],
+                min_price=400000,
+                max_price=1000000,
+            )
+        """
+        # Default to all multi-family types
+        if property_types is None:
+            property_types = ["DUPLEX", "TRIPLEX", "ALL_PLEX"]
+
+        # Map types without dedicated URLs to ALL_PLEX
+        search_types = []
+        for t in property_types:
+            if t in ("QUADPLEX", "MULTIPLEX"):
+                if "ALL_PLEX" not in search_types:
+                    search_types.append("ALL_PLEX")
+            else:
+                if t not in search_types:
+                    search_types.append(t)
+
+        all_listings: dict[str, PropertyListing] = {}
+
+        for prop_type in search_types:
+            logger.info(f"Searching {prop_type} listings in {region}...")
+
+            try:
+                type_listings = await self._fetch_by_type_url(prop_type, region)
+
+                # Apply price filters client-side
+                filtered = type_listings
+                if min_price:
+                    filtered = [l for l in filtered if l.price >= min_price]
+                if max_price:
+                    filtered = [l for l in filtered if l.price <= max_price]
+
+                # Deduplicate by listing ID
+                new_count = 0
+                for listing in filtered:
+                    if listing.id not in all_listings:
+                        all_listings[listing.id] = listing
+                        new_count += 1
+
+                logger.info(
+                    f"{prop_type}: found {len(type_listings)}, "
+                    f"{len(filtered)} in price range, {new_count} new unique"
+                )
+
+            except (CaptchaError, RateLimitError) as e:
+                logger.warning(f"Search stopped due to: {e}")
+                break
+            except Exception as e:
+                logger.error(f"Error searching {prop_type}: {e}")
+
+        logger.info(
+            f"Multi-type search complete: {len(property_types)} types, "
+            f"{len(all_listings)} unique listings"
+        )
+
+        result = list(all_listings.values())
+
+        # Optionally enrich with detail page data
+        if enrich:
+            logger.info(f"Enriching {len(result)} listings with detail data...")
+            enriched = []
+            for i, listing in enumerate(result):
+                enriched_listing = await self.enrich_listing(listing)
+                enriched.append(enriched_listing)
+                if (i + 1) % 10 == 0:
+                    logger.info(f"Enriched {i + 1}/{len(result)} listings")
+            return enriched
+
+        return result
+
+    async def fetch_listings_multi_band(
+        self,
+        region: str,
+        property_types: Optional[list[str]] = None,
+        min_price: int = 300000,
+        max_price: int = 1500000,
+        band_size: int = 200000,
+        enrich: bool = False,
+        limit_per_band: Optional[int] = None,
+    ) -> list[PropertyListing]:
+        """Fetch listings across multiple price bands for more results.
+
+        NOTE: Centris ignores URL-based price parameters. This method now
+        delegates to fetch_listings_multi_type() which uses property-type
+        specific URLs and applies price filters client-side.
+
+        For more listings, use fetch_listings_multi_type() directly.
+
+        Args:
+            region: Geographic region (e.g., "montreal", "laval")
+            property_types: Filter by types (e.g., ["DUPLEX", "TRIPLEX"])
+            min_price: Minimum price (applied client-side)
+            max_price: Maximum price (applied client-side)
+            band_size: Ignored (kept for API compatibility)
+            enrich: If True, fetch detail page for each listing (slower)
+            limit_per_band: Ignored (kept for API compatibility)
+
+        Returns:
+            Deduplicated list of PropertyListing objects
+        """
+        # Delegate to the more effective multi-type approach
+        return await self.fetch_listings_multi_type(
+            region=region,
+            property_types=property_types,
+            enrich=enrich,
+            min_price=min_price,
+            max_price=max_price,
+        )
+
+    async def fetch_all_listings(
+        self,
+        search_url: str,
+        enrich: bool = False,
+        min_price: Optional[int] = None,
+        max_price: Optional[int] = None,
+        max_pages: int = 20,
+    ) -> list[PropertyListing]:
+        """Fetch ALL listings from a search URL using AJAX pagination.
+
+        This method uses Centris's internal pagination API to retrieve all
+        results, not just the first 20. It works by:
+        1. Getting the first page via GET request
+        2. Calling /Property/GetInscriptions with startPosition for subsequent pages
+
+        Args:
+            search_url: Full Centris search URL
+                       (e.g., "https://www.centris.ca/en/plexes~for-sale~montreal-south-shore")
+            enrich: If True, fetch detail page for each listing (slower)
+            min_price: Optional minimum price filter (applied client-side)
+            max_price: Optional maximum price filter (applied client-side)
+            max_pages: Maximum pages to fetch (default 20 = 400 listings)
+
+        Returns:
+            List of all PropertyListing objects from the search
+
+        Example:
+            # Get all ~229 plex listings on South Shore
+            listings = await scraper.fetch_all_listings(
+                "https://www.centris.ca/en/plexes~for-sale~montreal-south-shore",
+                min_price=400000,
+                max_price=1000000,
+            )
+        """
+        client = await self._get_client()
+        all_listings: dict[str, PropertyListing] = {}
+        page = 1
+
+        # Fetch first page
+        try:
+            await self._rate_limit()
+            response = await client.get(search_url)
+
+            if response.status_code != 200:
+                logger.error(f"Initial page failed: {response.status_code}")
+                return []
+
+            soup = BeautifulSoup(response.content, "html.parser", from_encoding="utf-8")
+            cards = soup.select("div.property-thumbnail-item")
+
+            for card in cards:
+                listing = self._parse_listing_card(card)
+                if listing and listing.id not in all_listings:
+                    all_listings[listing.id] = listing
+
+            logger.info(f"Page 1: {len(cards)} cards, {len(all_listings)} unique")
+
+            if len(cards) == 0:
+                return []
+
+        except Exception as e:
+            logger.error(f"Error fetching first page: {e}")
+            return []
+
+        # Paginate using AJAX API
+        api_url = f"{self.BASE_URL}/Property/GetInscriptions"
+
+        for page in range(2, max_pages + 1):
+            start_pos = (page - 1) * 20
+
+            try:
+                await self._rate_limit()
+
+                # AJAX request requires specific headers
+                response = await client.post(
+                    api_url,
+                    json={"startPosition": start_pos},
+                    headers={
+                        "X-Requested-With": "XMLHttpRequest",
+                        "Content-Type": "application/json",
+                    },
+                )
+
+                if response.status_code != 200:
+                    logger.warning(f"Page {page} failed: {response.status_code}")
+                    break
+
+                data = response.json()
+                html = data.get("d", {}).get("Result", {}).get("html", "")
+
+                if not html:
+                    logger.info(f"No more results after page {page - 1}")
+                    break
+
+                soup = BeautifulSoup(html, "html.parser")
+                cards = soup.select("div.property-thumbnail-item")
+
+                if not cards:
+                    break
+
+                new_count = 0
+                for card in cards:
+                    listing = self._parse_listing_card(card)
+                    if listing and listing.id not in all_listings:
+                        all_listings[listing.id] = listing
+                        new_count += 1
+
+                logger.info(
+                    f"Page {page}: {len(cards)} cards, {new_count} new "
+                    f"(total: {len(all_listings)})"
+                )
+
+                # If we got less than 20, we're on the last page
+                if len(cards) < 20:
+                    break
+
+            except (CaptchaError, RateLimitError):
+                raise
+            except Exception as e:
+                logger.error(f"Error on page {page}: {e}")
+                break
+
+        logger.info(f"Pagination complete: {len(all_listings)} total listings")
+
+        # Apply price filters
+        result = list(all_listings.values())
+        if min_price:
+            result = [l for l in result if l.price >= min_price]
+        if max_price:
+            result = [l for l in result if l.price <= max_price]
+
+        logger.info(f"After price filter: {len(result)} listings")
+
+        # Optionally enrich
+        if enrich:
+            logger.info(f"Enriching {len(result)} listings...")
+            enriched = []
+            for i, listing in enumerate(result):
+                enriched_listing = await self.enrich_listing(listing)
+                enriched.append(enriched_listing)
+                if (i + 1) % 20 == 0:
+                    logger.info(f"Enriched {i + 1}/{len(result)}")
+            return enriched
+
+        return result
 
     def is_available(self) -> bool:
         """Check if Centris scraper is available.

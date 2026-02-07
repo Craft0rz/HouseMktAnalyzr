@@ -55,6 +55,17 @@ class PropertyListing(BaseModel):
     estimated_rent: int | None = Field(
         default=None, ge=0, description="Estimated monthly rent (per unit or total)"
     )
+    gross_revenue: int | None = Field(
+        default=None, ge=0, description="Annual gross revenue (for multi-family)"
+    )
+
+    # Tax and assessment
+    municipal_assessment: int | None = Field(
+        default=None, ge=0, description="Total municipal assessment value"
+    )
+    annual_taxes: int | None = Field(
+        default=None, ge=0, description="Total annual property taxes"
+    )
 
     # Listing info
     listing_date: date | None = Field(default=None, description="Date property listed")
