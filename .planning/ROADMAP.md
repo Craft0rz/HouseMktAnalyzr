@@ -80,7 +80,7 @@ Plans:
 | 4. Dashboard | 2/2 | Complete | 2026-02-06 |
 | 5. Alerts | 2/2 | Complete | 2026-02-06 |
 | 6. Polish | 2/2 | Complete | 2026-02-06 |
-| 7. Modern Frontend | 2/6 | In Progress | - |
+| 7. Modern Frontend | 3/6 | In Progress | - |
 
 ## v1.0 Complete
 
@@ -97,7 +97,7 @@ All phases complete. Project ready for use.
 Plans:
 - [x] 07-01: FastAPI backend setup
 - [x] 07-02: Next.js project initialization
-- [ ] 07-03: Property search and table
+- [x] 07-03: Property search and table
 - [ ] 07-04: Comparison and analysis views
 - [ ] 07-05: Charts and analytics
 - [ ] 07-06: Portfolio tracking (new feature)

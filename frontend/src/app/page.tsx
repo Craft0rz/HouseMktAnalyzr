@@ -10,7 +10,7 @@ const features = [
     title: 'Property Search',
     description: 'Search multi-family properties across Greater Montreal with real-time data from Centris.',
     icon: Building2,
-    href: '/',
+    href: '/search',
     color: 'text-blue-500',
   },
   {
@@ -49,7 +49,7 @@ export default function Home() {
         </p>
         <div className="flex gap-4 justify-center pt-4">
           <Button size="lg" asChild>
-            <Link href="/">
+            <Link href="/search">
               <Building2 className="mr-2 h-5 w-5" />
               Search Properties
             </Link>

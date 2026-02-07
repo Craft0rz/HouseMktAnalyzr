@@ -6,7 +6,7 @@ import { Building2, BarChart3, Bell, Calculator, Briefcase } from 'lucide-react'
 import { cn } from '@/lib/utils';
 
 const navigation = [
-  { name: 'Search', href: '/', icon: Building2 },
+  { name: 'Search', href: '/search', icon: Building2 },
   { name: 'Compare', href: '/compare', icon: BarChart3 },
   { name: 'Calculator', href: '/calculator', icon: Calculator },
   { name: 'Alerts', href: '/alerts', icon: Bell },
