@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 
 from .constants import SCRAPE_MATRIX
-from .db import cache_listings, get_pool
+from .db import cache_listings, get_pool, get_listings_without_walk_score, update_walk_scores
 
 logger = logging.getLogger(__name__)
 
@@ -149,3 +149,57 @@ class ScraperWorker:
             )
         except Exception:
             logger.exception("Alert check failed after scrape cycle")
+
+        # Enrich listings with Walk Scores
+        await self._enrich_walk_scores()
+
+    async def _enrich_walk_scores(self):
+        """Fetch walk/transit/bike scores for listings that don't have them."""
+        from housemktanalyzr.enrichment.walkscore import enrich_with_walk_score
+
+        batch_size = int(os.environ.get("WALKSCORE_BATCH_SIZE", 50))
+        delay = float(os.environ.get("WALKSCORE_DELAY", 3.0))
+
+        try:
+            listings = await get_listings_without_walk_score(limit=batch_size)
+        except Exception:
+            logger.exception("Failed to query listings for Walk Score enrichment")
+            return
+
+        if not listings:
+            logger.info("Walk Score: all listings already enriched")
+            return
+
+        logger.info(f"Walk Score: enriching {len(listings)} listings (delay={delay}s)")
+        enriched = 0
+        failed = 0
+
+        for item in listings:
+            try:
+                result = await enrich_with_walk_score(
+                    address=item["address"],
+                    city=item["city"],
+                    latitude=item.get("latitude"),
+                    longitude=item.get("longitude"),
+                )
+                if result:
+                    await update_walk_scores(
+                        listing_id=item["id"],
+                        walk_score=result.walk_score,
+                        transit_score=result.transit_score,
+                        bike_score=result.bike_score,
+                        latitude=result.latitude,
+                        longitude=result.longitude,
+                    )
+                    enriched += 1
+                else:
+                    failed += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning(f"Walk Score failed for {item['id']}: {e}")
+                failed += 1
+
+            await asyncio.sleep(delay)
+
+        logger.info(f"Walk Score enrichment done: {enriched} enriched, {failed} failed")

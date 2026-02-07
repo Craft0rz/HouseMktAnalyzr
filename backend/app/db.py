@@ -306,6 +306,73 @@ async def get_cache_count(property_types: Optional[list[str]] = None) -> int:
         return await conn.fetchval(query, *params)
 
 
+async def get_listings_without_walk_score(limit: int = 50) -> list[dict]:
+    """Get cached listings that don't have walk scores yet.
+
+    Returns list of dicts with id, address, city, latitude, longitude.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, data FROM properties
+            WHERE expires_at > $1
+              AND (data->>'walk_score') IS NULL
+            ORDER BY fetched_at DESC
+            LIMIT $2
+            """,
+            now, limit,
+        )
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        results.append({
+            "id": row["id"],
+            "address": data.get("address", ""),
+            "city": data.get("city", ""),
+            "latitude": data.get("latitude"),
+            "longitude": data.get("longitude"),
+        })
+    return results
+
+
+async def update_walk_scores(
+    listing_id: str,
+    walk_score: int | None,
+    transit_score: int | None,
+    bike_score: int | None,
+    latitude: float | None,
+    longitude: float | None,
+) -> bool:
+    """Update walk scores in a listing's JSONB data."""
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT data FROM properties WHERE id = $1", listing_id
+        )
+        if not row:
+            return False
+
+        data = json.loads(row["data"])
+        data["walk_score"] = walk_score
+        data["transit_score"] = transit_score
+        data["bike_score"] = bike_score
+        if latitude:
+            data["latitude"] = latitude
+        if longitude:
+            data["longitude"] = longitude
+
+        await conn.execute(
+            "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+            json.dumps(data), listing_id,
+        )
+    return True
+
+
 async def get_scraper_stats() -> dict:
     """Get listing counts grouped by region and property_type."""
     pool = get_pool()
