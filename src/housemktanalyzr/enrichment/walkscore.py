@@ -1,16 +1,21 @@
-"""Walk Score API integration with Nominatim geocoding."""
+"""Walk Score scraper with Nominatim geocoding.
+
+Fetches walk/transit/bike scores from walkscore.com by scraping
+the public score page. No API key required.
+"""
 
 import logging
-import os
+import re
 from dataclasses import dataclass
 from typing import Optional
 
 import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
-WALKSCORE_URL = "https://api.walkscore.com/score"
+WALKSCORE_BASE = "https://www.walkscore.com/score"
 
 
 @dataclass
@@ -55,42 +60,62 @@ async def geocode_address(
         return None
 
 
-async def fetch_walk_score(
+def _build_walkscore_slug(address: str, city: str) -> str:
+    """Build a URL slug for walkscore.com from address and city.
+
+    Example: "3878 Rue La Fontaine", "Montreal" -> "3878-rue-la-fontaine-montreal-qc"
+    """
+    raw = f"{address} {city} QC"
+    # Remove special chars, replace spaces/commas with hyphens
+    slug = re.sub(r"[^\w\s-]", "", raw)
+    slug = re.sub(r"[\s]+", "-", slug.strip())
+    return slug.lower()
+
+
+def _extract_score(soup: BeautifulSoup, score_type: str) -> int | None:
+    """Extract a score from Walk Score page HTML.
+
+    Looks for badge images matching: //pp.walk.sc/badge/{score_type}/score/{N}.svg
+    """
+    pattern = re.compile(rf"pp\.walk\.sc/badge/{score_type}/score/(\d+)\.svg")
+    img = soup.find("img", src=pattern)
+    if img:
+        match = pattern.search(img["src"])
+        if match:
+            return int(match.group(1))
+    return None
+
+
+async def scrape_walk_score(
     address: str,
-    latitude: float,
-    longitude: float,
-    api_key: str,
+    city: str,
     client: httpx.AsyncClient,
-) -> Optional[WalkScoreResult]:
-    """Fetch Walk Score, Transit Score, and Bike Score from the Walk Score API."""
-    params = {
-        "format": "json",
-        "address": address,
-        "lat": str(latitude),
-        "lon": str(longitude),
-        "transit": "1",
-        "bike": "1",
-        "wsapikey": api_key,
-    }
+) -> Optional[dict[str, int | None]]:
+    """Scrape walk/transit/bike scores from walkscore.com."""
+    slug = _build_walkscore_slug(address, city)
+    url = f"{WALKSCORE_BASE}/{slug}"
 
     try:
-        resp = await client.get(WALKSCORE_URL, params=params)
-        resp.raise_for_status()
-        data = resp.json()
+        resp = await client.get(url)
 
-        if data.get("status") != 1:
-            logger.warning(f"Walk Score API status {data.get('status')} for {address}")
+        if resp.status_code != 200:
+            logger.warning(f"Walk Score page returned {resp.status_code} for {url}")
             return None
 
-        return WalkScoreResult(
-            walk_score=data.get("walkscore"),
-            transit_score=data.get("transit", {}).get("score"),
-            bike_score=data.get("bike", {}).get("score"),
-            latitude=latitude,
-            longitude=longitude,
-        )
+        soup = BeautifulSoup(resp.content, "html.parser")
+
+        walk = _extract_score(soup, "walk")
+        transit = _extract_score(soup, "transit")
+        bike = _extract_score(soup, "bike")
+
+        if walk is None and transit is None and bike is None:
+            logger.warning(f"No scores found on Walk Score page: {url}")
+            return None
+
+        return {"walk_score": walk, "transit_score": transit, "bike_score": bike}
+
     except Exception as e:
-        logger.error(f"Walk Score API call failed: {e}")
+        logger.error(f"Walk Score scrape failed for {url}: {e}")
         return None
 
 
@@ -100,21 +125,37 @@ async def enrich_with_walk_score(
     latitude: float | None = None,
     longitude: float | None = None,
 ) -> Optional[WalkScoreResult]:
-    """Geocode (if needed) and fetch Walk Score for an address.
+    """Geocode (if needed) and scrape Walk Score for an address.
 
-    Reads WALKSCORE_API_KEY from environment. Returns None if no key
-    is configured or if any step fails.
+    No API key required — scrapes the public walkscore.com page.
     """
-    api_key = os.environ.get("WALKSCORE_API_KEY")
-    if not api_key:
-        return None
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+    }
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True) as client:
+        # Geocode if we don't have coordinates
         if latitude is None or longitude is None:
             geo = await geocode_address(address, city, client)
-            if not geo:
-                return None
-            latitude, longitude = geo
+            if geo:
+                latitude, longitude = geo
+            else:
+                # Still try scraping even without coordinates
+                latitude = latitude or 0.0
+                longitude = longitude or 0.0
 
-        full_address = f"{address}, {city}, QC, Canada"
-        return await fetch_walk_score(full_address, latitude, longitude, api_key, client)
+        scores = await scrape_walk_score(address, city, client)
+        if not scores:
+            return None
+
+        return WalkScoreResult(
+            walk_score=scores["walk_score"],
+            transit_score=scores["transit_score"],
+            bike_score=scores["bike_score"],
+            latitude=latitude,
+            longitude=longitude,
+        )
