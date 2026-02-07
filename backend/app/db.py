@@ -70,6 +70,14 @@ async def _create_tables():
             CREATE INDEX IF NOT EXISTS idx_properties_type_price
             ON properties(property_type, price)
         """)
+        # Add region column for background scraper (safe to run repeatedly)
+        await conn.execute("""
+            ALTER TABLE properties ADD COLUMN IF NOT EXISTS region TEXT
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_properties_region_type
+            ON properties(region, property_type)
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
@@ -117,12 +125,17 @@ async def _create_tables():
 
 # --- Property cache helpers ---
 
-async def cache_listings(listings: list, ttl_hours: int = SEARCH_CACHE_TTL_HOURS) -> int:
+async def cache_listings(
+    listings: list,
+    ttl_hours: int = SEARCH_CACHE_TTL_HOURS,
+    region: Optional[str] = None,
+) -> int:
     """Save listings to the cache.
 
     Args:
         listings: List of PropertyListing objects (Pydantic models)
         ttl_hours: Cache TTL in hours
+        region: Optional region tag for the listings
 
     Returns:
         Number of listings cached
@@ -139,17 +152,18 @@ async def cache_listings(listings: list, ttl_hours: int = SEARCH_CACHE_TTL_HOURS
             data = json.dumps(listing.model_dump(mode="json"))
             await conn.execute(
                 """
-                INSERT INTO properties (id, source, city, property_type, price, data, fetched_at, expires_at)
-                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+                INSERT INTO properties (id, source, city, property_type, price, data, region, fetched_at, expires_at)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
                 ON CONFLICT (id) DO UPDATE SET
                     data = EXCLUDED.data,
                     price = EXCLUDED.price,
+                    region = COALESCE(EXCLUDED.region, properties.region),
                     fetched_at = EXCLUDED.fetched_at,
                     expires_at = EXCLUDED.expires_at
                 """,
                 listing.id, listing.source, listing.city,
                 listing.property_type.value, listing.price,
-                data, now, expires,
+                data, region, now, expires,
             )
 
     logger.info(f"Cached {len(listings)} listings (TTL: {ttl_hours}h)")
@@ -160,6 +174,7 @@ async def get_cached_listings(
     property_types: Optional[list[str]] = None,
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
+    region: Optional[str] = None,
     limit: int = 100,
 ) -> list[dict]:
     """Get non-expired cached listings matching filters.
@@ -172,6 +187,11 @@ async def get_cached_listings(
     conditions = ["expires_at > $1"]
     params: list = [now]
     idx = 2
+
+    if region is not None:
+        conditions.append(f"region = ${idx}")
+        params.append(region)
+        idx += 1
 
     if property_types:
         placeholders = ", ".join(f"${idx + i}" for i in range(len(property_types)))
@@ -230,3 +250,37 @@ async def get_cache_count(property_types: Optional[list[str]] = None) -> int:
 
     async with pool.acquire() as conn:
         return await conn.fetchval(query, *params)
+
+
+async def get_scraper_stats() -> dict:
+    """Get listing counts grouped by region and property_type."""
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT region, property_type, COUNT(*) as count,
+                   MIN(fetched_at) as oldest, MAX(fetched_at) as newest
+            FROM properties
+            WHERE expires_at > $1
+            GROUP BY region, property_type
+            ORDER BY region, property_type
+            """,
+            now,
+        )
+        total = await conn.fetchval(
+            "SELECT COUNT(*) FROM properties WHERE expires_at > $1", now
+        )
+    return {
+        "groups": [
+            {
+                "region": r["region"],
+                "property_type": r["property_type"],
+                "count": r["count"],
+                "oldest": r["oldest"].isoformat() if r["oldest"] else None,
+                "newest": r["newest"].isoformat() if r["newest"] else None,
+            }
+            for r in rows
+        ],
+        "total": total or 0,
+    }

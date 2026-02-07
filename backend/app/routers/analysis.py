@@ -241,21 +241,21 @@ async def get_top_opportunities(
 
     listings = []
 
-    # Try cache first
+    # DB-first: query Postgres for cached listings
     if os.environ.get("DATABASE_URL"):
         try:
             from ..db import get_cached_listings
             cached = await get_cached_listings(
                 property_types=types_list, min_price=min_price,
-                max_price=max_price, limit=200,
+                max_price=max_price, region=region, limit=200,
             )
             if cached:
                 listings = [PropertyListing(**d) for d in cached]
-                logger.info(f"Top-opportunities cache hit: {len(listings)} listings")
+                logger.info(f"Top-opportunities DB hit: {len(listings)} listings")
         except Exception as e:
-            logger.warning(f"Cache read failed: {e}")
+            logger.warning(f"DB read failed: {e}")
 
-    # Cache miss — scrape
+    # Fallback: scrape only if DB is empty
     if not listings:
         try:
             async with CentrisScraper() as scraper:
@@ -264,11 +264,10 @@ async def get_top_opportunities(
                     min_price=min_price, max_price=max_price, enrich=True,
                 )
 
-            # Cache the scraped results
             if os.environ.get("DATABASE_URL") and listings:
                 try:
                     from ..db import cache_listings
-                    await cache_listings(listings)
+                    await cache_listings(listings, region=region)
                 except Exception as e:
                     logger.warning(f"Cache write failed: {e}")
 

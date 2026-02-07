@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 from housemktanalyzr.collectors.centris import CentrisScraper
 from housemktanalyzr.models.property import PropertyListing, PropertyType
 
+from ..constants import PROPERTY_TYPE_URLS, REGION_URL_MAPPING
+
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ async def search_properties(
     limit: int = Query(default=20, ge=1, le=100),
     enrich: bool = Query(default=False, description="Fetch full listing details"),
 ) -> PropertySearchResponse:
-    """Search for property listings. Returns cached results if available."""
+    """Search for property listings. Returns DB results when available."""
     types_list = None
     if property_types:
         types_list = [t.strip().upper() for t in property_types.split(",")]
@@ -50,24 +52,24 @@ async def search_properties(
                 detail=f"Invalid property types: {invalid}. Valid types: {valid_types}",
             )
 
-    # Try cache first
+    # DB-first: query Postgres for cached listings
     if _has_db():
         try:
             from ..db import get_cached_listings
             cached = await get_cached_listings(
                 property_types=types_list, min_price=min_price,
-                max_price=max_price, limit=limit,
+                max_price=max_price, region=region, limit=limit,
             )
             if cached:
                 listings = [PropertyListing(**d) for d in cached]
-                logger.info(f"Cache hit: {len(listings)} listings")
+                logger.info(f"DB hit: {len(listings)} listings for {region}")
                 return PropertySearchResponse(
                     listings=listings, count=len(listings), region=region, cached=True,
                 )
         except Exception as e:
-            logger.warning(f"Cache read failed, falling back to scraper: {e}")
+            logger.warning(f"DB read failed, falling back to scraper: {e}")
 
-    # Cache miss — scrape
+    # Fallback: scrape only if DB is empty (first run or no data yet)
     try:
         async with CentrisScraper() as scraper:
             if enrich:
@@ -81,11 +83,10 @@ async def search_properties(
                     min_price=min_price, max_price=max_price, limit=limit,
                 )
 
-        # Cache the results
         if _has_db() and listings:
             try:
                 from ..db import cache_listings
-                await cache_listings(listings)
+                await cache_listings(listings, region=region)
             except Exception as e:
                 logger.warning(f"Cache write failed: {e}")
 
@@ -108,28 +109,29 @@ async def search_multi_type(
     max_price: Optional[int] = Query(default=None, ge=0),
     enrich: bool = Query(default=False),
 ) -> PropertySearchResponse:
-    """Search across multiple property types. Returns cached results if available."""
+    """Search across multiple property types. Returns DB results when available."""
     types_list = None
     if property_types:
         types_list = [t.strip().upper() for t in property_types.split(",")]
 
-    # Try cache first
+    # DB-first
     if _has_db():
         try:
             from ..db import get_cached_listings
             cached = await get_cached_listings(
                 property_types=types_list, min_price=min_price,
-                max_price=max_price, limit=100,
+                max_price=max_price, region=region, limit=100,
             )
             if cached:
                 listings = [PropertyListing(**d) for d in cached]
-                logger.info(f"Cache hit: {len(listings)} listings")
+                logger.info(f"DB hit: {len(listings)} listings for {region}")
                 return PropertySearchResponse(
                     listings=listings, count=len(listings), region=region, cached=True,
                 )
         except Exception as e:
-            logger.warning(f"Cache read failed, falling back to scraper: {e}")
+            logger.warning(f"DB read failed, falling back to scraper: {e}")
 
+    # Fallback
     try:
         async with CentrisScraper() as scraper:
             listings = await scraper.fetch_listings_multi_type(
@@ -140,7 +142,7 @@ async def search_multi_type(
         if _has_db() and listings:
             try:
                 from ..db import cache_listings
-                await cache_listings(listings)
+                await cache_listings(listings, region=region)
             except Exception as e:
                 logger.warning(f"Cache write failed: {e}")
 
@@ -160,26 +162,6 @@ class AllListingsResponse(BaseModel):
     pages_fetched: int
 
 
-PROPERTY_TYPE_URLS = {
-    "DUPLEX": "/en/duplexes~for-sale~{region}",
-    "TRIPLEX": "/en/triplexes~for-sale~{region}",
-    "HOUSE": "/en/houses~for-sale~{region}",
-    "ALL_PLEX": "/en/plexes~for-sale~{region}",
-}
-
-REGION_URL_MAPPING = {
-    "montreal": "montreal-island",
-    "laval": "laval",
-    "longueuil": "longueuil",
-    "south-shore": "montreal-south-shore",
-    "rive-sud": "montreal-south-shore",
-    "monteregie": "monteregie",
-    "north-shore": "north-shore",
-    "laurentides": "laurentides",
-    "lanaudiere": "lanaudiere",
-}
-
-
 @router.get("/all-listings", response_model=AllListingsResponse)
 async def get_all_listings(
     region: str = Query(default="montreal", description="Region to search"),
@@ -192,7 +174,7 @@ async def get_all_listings(
     max_pages: int = Query(default=10, ge=1, le=20),
     enrich: bool = Query(default=False),
 ) -> AllListingsResponse:
-    """Fetch ALL listings using AJAX pagination."""
+    """Fetch ALL listings using AJAX pagination. Use /search for normal queries."""
     url_pattern = PROPERTY_TYPE_URLS.get(property_type.upper())
     if not url_pattern:
         raise HTTPException(
@@ -219,7 +201,7 @@ async def get_all_listings(
         if _has_db() and listings:
             try:
                 from ..db import cache_listings, DETAIL_CACHE_TTL_HOURS
-                await cache_listings(listings, ttl_hours=DETAIL_CACHE_TTL_HOURS)
+                await cache_listings(listings, ttl_hours=DETAIL_CACHE_TTL_HOURS, region=region)
             except Exception as e:
                 logger.warning(f"Cache write failed: {e}")
 
@@ -234,7 +216,7 @@ async def get_all_listings(
 
 @router.get("/{listing_id}", response_model=PropertyListing)
 async def get_property_details(listing_id: str) -> PropertyListing:
-    """Get full details for a specific listing. Checks cache first."""
+    """Get full details for a specific listing. Checks DB first."""
     if _has_db():
         try:
             from ..db import get_cached_listing
@@ -242,7 +224,7 @@ async def get_property_details(listing_id: str) -> PropertyListing:
             if cached:
                 return PropertyListing(**cached)
         except Exception as e:
-            logger.warning(f"Cache read failed: {e}")
+            logger.warning(f"DB read failed: {e}")
 
     try:
         async with CentrisScraper() as scraper:

@@ -1,5 +1,5 @@
 """API routers."""
 
-from . import alerts, analysis, properties
+from . import alerts, analysis, portfolio, properties, scraper
 
-__all__ = ["properties", "analysis", "alerts"]
+__all__ = ["properties", "analysis", "alerts", "portfolio", "scraper"]

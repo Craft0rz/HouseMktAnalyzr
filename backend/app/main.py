@@ -14,20 +14,31 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_pool, close_pool, get_pool
-from .routers import alerts, analysis, portfolio, properties
+from .routers import alerts, analysis, portfolio, properties, scraper
+from .scraper_worker import ScraperWorker
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage startup/shutdown: DB pool lifecycle."""
+    """Manage startup/shutdown: DB pool + scraper worker lifecycle."""
     if os.environ.get("DATABASE_URL"):
-        await init_pool()
+        pool = await init_pool()
         logger.info("Database connected")
+
+        worker = ScraperWorker(pool=pool)
+        app.state.scraper_worker = worker
+        await worker.start()
+        logger.info("Background scraper worker started")
     else:
         logger.warning("DATABASE_URL not set — running without database")
+        app.state.scraper_worker = None
+
     yield
+
+    if app.state.scraper_worker:
+        await app.state.scraper_worker.stop()
     await close_pool()
 
 
@@ -63,6 +74,7 @@ app.include_router(properties.router, prefix="/api/properties", tags=["Propertie
 app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
+app.include_router(scraper.router, prefix="/api/scraper", tags=["Scraper"])
 
 
 @app.get("/")
