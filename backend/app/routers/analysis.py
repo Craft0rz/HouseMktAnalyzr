@@ -1,5 +1,7 @@
 """Investment analysis API endpoints."""
 
+import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -10,6 +12,7 @@ from housemktanalyzr.analysis.ranker import PropertyRanker
 from housemktanalyzr.models.property import InvestmentMetrics, PropertyListing
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Shared calculator and ranker instances
 calculator = InvestmentCalculator()
@@ -227,9 +230,8 @@ async def get_top_opportunities(
 ) -> BatchAnalysisResponse:
     """Find top investment opportunities.
 
-    Searches for properties, analyzes them, and returns the best opportunities
-    based on investment score. This is a convenience endpoint that combines
-    search + analysis.
+    Uses cached listings when available, otherwise scrapes and caches.
+    Analysis scoring always runs fresh on the listings.
     """
     from housemktanalyzr.collectors.centris import CentrisScraper
 
@@ -237,45 +239,65 @@ async def get_top_opportunities(
     if property_types:
         types_list = [t.strip().upper() for t in property_types.split(",")]
 
-    try:
-        async with CentrisScraper() as scraper:
-            listings = await scraper.fetch_listings_multi_type(
-                region=region,
-                property_types=types_list,
-                min_price=min_price,
-                max_price=max_price,
-                enrich=True,  # Get full details for better analysis
+    listings = []
+
+    # Try cache first
+    if os.environ.get("DATABASE_URL"):
+        try:
+            from ..db import get_cached_listings
+            cached = await get_cached_listings(
+                property_types=types_list, min_price=min_price,
+                max_price=max_price, limit=200,
             )
+            if cached:
+                listings = [PropertyListing(**d) for d in cached]
+                logger.info(f"Top-opportunities cache hit: {len(listings)} listings")
+        except Exception as e:
+            logger.warning(f"Cache read failed: {e}")
 
-        if not listings:
-            return BatchAnalysisResponse(results=[], count=0, summary={})
+    # Cache miss — scrape
+    if not listings:
+        try:
+            async with CentrisScraper() as scraper:
+                listings = await scraper.fetch_listings_multi_type(
+                    region=region, property_types=types_list,
+                    min_price=min_price, max_price=max_price, enrich=True,
+                )
 
-        # Analyze all listings
-        results = ranker.analyze_batch(listings)
+            # Cache the scraped results
+            if os.environ.get("DATABASE_URL") and listings:
+                try:
+                    from ..db import cache_listings
+                    await cache_listings(listings)
+                except Exception as e:
+                    logger.warning(f"Cache write failed: {e}")
 
-        # Filter by minimum score
-        filtered = [(l, m) for l, m in results if m.score >= min_score]
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
-        # Get top N by score (already sorted by analyze_batch)
-        top_results = filtered[:limit]
+    if not listings:
+        return BatchAnalysisResponse(results=[], count=0, summary={})
 
-        # Build response
-        response_results = [
-            PropertyWithMetrics(listing=l, metrics=m) for l, m in top_results
-        ]
+    # Analyze all listings (always fresh)
+    results = ranker.analyze_batch(listings)
 
-        summary = {
-            "total_found": len(listings),
-            "passed_score_filter": len(filtered),
-            "returned": len(top_results),
-            "min_score_threshold": min_score,
-        }
+    # Filter by minimum score
+    filtered = [(l, m) for l, m in results if m.score >= min_score]
 
-        return BatchAnalysisResponse(
-            results=response_results,
-            count=len(top_results),
-            summary=summary,
-        )
+    # Get top N by score
+    top_results = filtered[:limit]
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+    response_results = [
+        PropertyWithMetrics(listing=l, metrics=m) for l, m in top_results
+    ]
+
+    summary = {
+        "total_found": len(listings),
+        "passed_score_filter": len(filtered),
+        "returned": len(top_results),
+        "min_score_threshold": min_score,
+    }
+
+    return BatchAnalysisResponse(
+        results=response_results, count=len(top_results), summary=summary,
+    )

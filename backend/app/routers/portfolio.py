@@ -1,20 +1,18 @@
-"""Portfolio management API endpoints."""
+"""Portfolio management API endpoints backed by Postgres."""
 
-import json
+import logging
 import uuid
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, Literal
+from datetime import datetime, timezone
 from enum import Enum
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-router = APIRouter()
+from ..db import get_pool
 
-# Storage location
-DATA_DIR = Path("data")
-PORTFOLIO_FILE = DATA_DIR / "portfolio.json"
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class PortfolioStatus(str, Enum):
@@ -29,15 +27,12 @@ class PortfolioItemBase(BaseModel):
     status: PortfolioStatus
     address: str
     property_type: str
-    # Purchase details (for owned)
     purchase_price: Optional[int] = None
     purchase_date: Optional[str] = None
     down_payment: Optional[int] = None
     mortgage_rate: Optional[float] = None
-    # Current performance (for owned)
     current_rent: Optional[int] = None
     current_expenses: Optional[int] = None
-    # Notes
     notes: Optional[str] = None
 
 
@@ -63,7 +58,6 @@ class PortfolioItemResponse(PortfolioItemBase):
     id: str
     created_at: str
     updated_at: str
-    # Calculated metrics for owned properties
     monthly_cash_flow: Optional[int] = None
     annual_return: Optional[float] = None
     equity: Optional[int] = None
@@ -76,91 +70,48 @@ class PortfolioListResponse(BaseModel):
     summary: dict
 
 
-class PortfolioSummary(BaseModel):
-    """Portfolio summary metrics."""
-    total_owned: int
-    total_watching: int
-    total_invested: int
-    total_equity: int
-    monthly_cash_flow: int
-    annual_cash_flow: int
-    avg_return: float
-
-
-def _ensure_data_dir():
-    """Ensure data directory exists."""
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _load_portfolio() -> dict:
-    """Load portfolio from file."""
-    _ensure_data_dir()
-    if PORTFOLIO_FILE.exists():
-        with open(PORTFOLIO_FILE, "r") as f:
-            return json.load(f)
-    return {"items": {}}
-
-
-def _save_portfolio(data: dict):
-    """Save portfolio to file."""
-    _ensure_data_dir()
-    with open(PORTFOLIO_FILE, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-def _calculate_metrics(item: dict) -> dict:
+def _calculate_metrics(row) -> dict:
     """Calculate performance metrics for owned properties."""
-    metrics = {
-        "monthly_cash_flow": None,
-        "annual_return": None,
-        "equity": None,
-    }
+    metrics = {"monthly_cash_flow": None, "annual_return": None, "equity": None}
 
-    if item.get("status") != "owned":
+    if row["status"] != "owned":
         return metrics
 
-    purchase_price = item.get("purchase_price")
-    current_rent = item.get("current_rent")
-    current_expenses = item.get("current_expenses", 0) or 0
-    down_payment = item.get("down_payment")
-    mortgage_rate = item.get("mortgage_rate")
+    purchase_price = row["purchase_price"]
+    current_rent = row["current_rent"]
+    current_expenses = row["current_expenses"] or 0
+    down_payment = row["down_payment"]
 
     if purchase_price and current_rent:
-        # Simple monthly cash flow (rent - expenses)
-        # Note: doesn't include mortgage for simplicity
         monthly_cf = current_rent - current_expenses
         metrics["monthly_cash_flow"] = monthly_cf
 
-        if down_payment:
-            # Annual return on investment
+        if down_payment and down_payment > 0:
             annual_cf = monthly_cf * 12
-            annual_return = (annual_cf / down_payment) * 100 if down_payment > 0 else 0
-            metrics["annual_return"] = round(annual_return, 2)
-
-            # Rough equity estimate (down payment only, ignoring appreciation)
+            metrics["annual_return"] = round((annual_cf / down_payment) * 100, 2)
             metrics["equity"] = down_payment
 
     return metrics
 
 
-def _item_to_response(item_id: str, item: dict) -> PortfolioItemResponse:
-    """Convert stored item to response."""
-    metrics = _calculate_metrics(item)
+def _row_to_response(row) -> PortfolioItemResponse:
+    """Convert a database row to PortfolioItemResponse."""
+    metrics = _calculate_metrics(row)
     return PortfolioItemResponse(
-        id=item_id,
-        property_id=item["property_id"],
-        status=PortfolioStatus(item["status"]),
-        address=item["address"],
-        property_type=item["property_type"],
-        purchase_price=item.get("purchase_price"),
-        purchase_date=item.get("purchase_date"),
-        down_payment=item.get("down_payment"),
-        mortgage_rate=item.get("mortgage_rate"),
-        current_rent=item.get("current_rent"),
-        current_expenses=item.get("current_expenses"),
-        notes=item.get("notes"),
-        created_at=item["created_at"],
-        updated_at=item["updated_at"],
+        id=row["id"],
+        property_id=row["property_id"],
+        status=PortfolioStatus(row["status"]),
+        address=row["address"],
+        property_type=row["property_type"],
+        purchase_price=row["purchase_price"],
+        purchase_date=row["purchase_date"],
+        down_payment=row["down_payment"],
+        mortgage_rate=row["mortgage_rate"],
+        current_rent=row["current_rent"],
+        current_expenses=row["current_expenses"],
+        notes=row["notes"],
+        created_at=row["created_at"].isoformat() if row["created_at"] else "",
+        updated_at=row["updated_at"].isoformat() if row["updated_at"] else "",
         monthly_cash_flow=metrics["monthly_cash_flow"],
         annual_return=metrics["annual_return"],
         equity=metrics["equity"],
@@ -196,21 +147,19 @@ async def list_portfolio(
 ) -> PortfolioListResponse:
     """List all portfolio items."""
     try:
-        data = _load_portfolio()
-        items = []
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            if status:
+                rows = await conn.fetch(
+                    "SELECT * FROM portfolio WHERE status = $1 ORDER BY updated_at DESC",
+                    status.value,
+                )
+            else:
+                rows = await conn.fetch("SELECT * FROM portfolio ORDER BY updated_at DESC")
 
-        for item_id, item in data.get("items", {}).items():
-            if status and item.get("status") != status.value:
-                continue
-            items.append(_item_to_response(item_id, item))
-
-        # Sort by updated_at descending
-        items.sort(key=lambda x: x.updated_at, reverse=True)
-
+        items = [_row_to_response(row) for row in rows]
         return PortfolioListResponse(
-            items=items,
-            count=len(items),
-            summary=_calculate_summary(items),
+            items=items, count=len(items), summary=_calculate_summary(items),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list portfolio: {str(e)}")
@@ -220,41 +169,42 @@ async def list_portfolio(
 async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItemResponse:
     """Add a property to portfolio."""
     try:
-        data = _load_portfolio()
-
-        # Check if property already in portfolio
-        for item_id, item in data.get("items", {}).items():
-            if item["property_id"] == request.property_id:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Property already in portfolio"
-                )
-
+        pool = get_pool()
         item_id = str(uuid.uuid4())
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc)
 
-        item = {
-            "property_id": request.property_id,
-            "status": request.status.value,
-            "address": request.address,
-            "property_type": request.property_type,
-            "purchase_price": request.purchase_price,
-            "purchase_date": request.purchase_date,
-            "down_payment": request.down_payment,
-            "mortgage_rate": request.mortgage_rate,
-            "current_rent": request.current_rent,
-            "current_expenses": request.current_expenses,
-            "notes": request.notes,
-            "created_at": now,
-            "updated_at": now,
-        }
+        async with pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT id FROM portfolio WHERE property_id = $1", request.property_id,
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="Property already in portfolio")
 
-        if "items" not in data:
-            data["items"] = {}
-        data["items"][item_id] = item
-        _save_portfolio(data)
+            await conn.execute(
+                """
+                INSERT INTO portfolio (
+                    id, property_id, status, address, property_type,
+                    purchase_price, purchase_date, down_payment, mortgage_rate,
+                    current_rent, current_expenses, notes,
+                    created_at, updated_at
+                ) VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9,
+                    $10, $11, $12,
+                    $13, $13
+                )
+                """,
+                item_id, request.property_id, request.status.value,
+                request.address, request.property_type,
+                request.purchase_price, request.purchase_date,
+                request.down_payment, request.mortgage_rate,
+                request.current_rent, request.current_expenses,
+                request.notes, now,
+            )
 
-        return _item_to_response(item_id, item)
+            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+
+        return _row_to_response(row)
 
     except HTTPException:
         raise
@@ -266,13 +216,14 @@ async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItem
 async def get_portfolio_item(item_id: str) -> PortfolioItemResponse:
     """Get a specific portfolio item."""
     try:
-        data = _load_portfolio()
-        item = data.get("items", {}).get(item_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
 
-        if not item:
+        if not row:
             raise HTTPException(status_code=404, detail="Portfolio item not found")
 
-        return _item_to_response(item_id, item)
+        return _row_to_response(row)
 
     except HTTPException:
         raise
@@ -284,34 +235,63 @@ async def get_portfolio_item(item_id: str) -> PortfolioItemResponse:
 async def update_portfolio_item(item_id: str, request: UpdatePortfolioItemRequest) -> PortfolioItemResponse:
     """Update a portfolio item."""
     try:
-        data = _load_portfolio()
-        item = data.get("items", {}).get(item_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="Portfolio item not found")
 
-        if not item:
-            raise HTTPException(status_code=404, detail="Portfolio item not found")
+            updates = []
+            params = []
+            idx = 1
 
-        # Update fields
-        if request.status is not None:
-            item["status"] = request.status.value
-        if request.purchase_price is not None:
-            item["purchase_price"] = request.purchase_price
-        if request.purchase_date is not None:
-            item["purchase_date"] = request.purchase_date
-        if request.down_payment is not None:
-            item["down_payment"] = request.down_payment
-        if request.mortgage_rate is not None:
-            item["mortgage_rate"] = request.mortgage_rate
-        if request.current_rent is not None:
-            item["current_rent"] = request.current_rent
-        if request.current_expenses is not None:
-            item["current_expenses"] = request.current_expenses
-        if request.notes is not None:
-            item["notes"] = request.notes
+            if request.status is not None:
+                updates.append(f"status = ${idx}")
+                params.append(request.status.value)
+                idx += 1
+            if request.purchase_price is not None:
+                updates.append(f"purchase_price = ${idx}")
+                params.append(request.purchase_price)
+                idx += 1
+            if request.purchase_date is not None:
+                updates.append(f"purchase_date = ${idx}")
+                params.append(request.purchase_date)
+                idx += 1
+            if request.down_payment is not None:
+                updates.append(f"down_payment = ${idx}")
+                params.append(request.down_payment)
+                idx += 1
+            if request.mortgage_rate is not None:
+                updates.append(f"mortgage_rate = ${idx}")
+                params.append(request.mortgage_rate)
+                idx += 1
+            if request.current_rent is not None:
+                updates.append(f"current_rent = ${idx}")
+                params.append(request.current_rent)
+                idx += 1
+            if request.current_expenses is not None:
+                updates.append(f"current_expenses = ${idx}")
+                params.append(request.current_expenses)
+                idx += 1
+            if request.notes is not None:
+                updates.append(f"notes = ${idx}")
+                params.append(request.notes)
+                idx += 1
 
-        item["updated_at"] = datetime.utcnow().isoformat()
-        _save_portfolio(data)
+            updates.append(f"updated_at = ${idx}")
+            params.append(datetime.now(timezone.utc))
+            idx += 1
 
-        return _item_to_response(item_id, item)
+            params.append(item_id)
+            set_clause = ", ".join(updates)
+            await conn.execute(
+                f"UPDATE portfolio SET {set_clause} WHERE id = ${idx}",
+                *params,
+            )
+
+            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+
+        return _row_to_response(row)
 
     except HTTPException:
         raise
@@ -323,13 +303,12 @@ async def update_portfolio_item(item_id: str, request: UpdatePortfolioItemReques
 async def remove_from_portfolio(item_id: str) -> None:
     """Remove a property from portfolio."""
     try:
-        data = _load_portfolio()
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM portfolio WHERE id = $1", item_id)
 
-        if item_id not in data.get("items", {}):
+        if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Portfolio item not found")
-
-        del data["items"][item_id]
-        _save_portfolio(data)
 
     except HTTPException:
         raise
@@ -341,19 +320,21 @@ async def remove_from_portfolio(item_id: str) -> None:
 async def toggle_status(item_id: str) -> PortfolioItemResponse:
     """Toggle between owned and watching status."""
     try:
-        data = _load_portfolio()
-        item = data.get("items", {}).get(item_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="Portfolio item not found")
 
-        if not item:
-            raise HTTPException(status_code=404, detail="Portfolio item not found")
+            new_status = "owned" if row["status"] == "watching" else "watching"
+            await conn.execute(
+                "UPDATE portfolio SET status = $1, updated_at = $2 WHERE id = $3",
+                new_status, datetime.now(timezone.utc), item_id,
+            )
 
-        # Toggle status
-        current = item["status"]
-        item["status"] = "owned" if current == "watching" else "watching"
-        item["updated_at"] = datetime.utcnow().isoformat()
-        _save_portfolio(data)
+            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
 
-        return _item_to_response(item_id, item)
+        return _row_to_response(row)
 
     except HTTPException:
         raise

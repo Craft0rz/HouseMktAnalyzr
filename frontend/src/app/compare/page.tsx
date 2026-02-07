@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useComparison } from '@/lib/comparison-context';
-import { ScoreRadar } from '@/components/charts';
+import { ScoreBreakdown } from '@/components/charts';
 import type { PropertyWithMetrics } from '@/lib/types';
 
 const formatPrice = (price: number) => {
@@ -301,7 +301,7 @@ export default function ComparePage() {
                 <p className="text-sm font-medium mb-2 truncate">
                   {p.listing.address.split(',')[0]}
                 </p>
-                <ScoreRadar scoreBreakdown={p.metrics.score_breakdown} />
+                <ScoreBreakdown scoreBreakdown={p.metrics.score_breakdown} />
                 <p className={`text-2xl font-bold mt-2 ${getScoreColor(p.metrics.score)}`}>
                   {p.metrics.score.toFixed(0)}
                 </p>

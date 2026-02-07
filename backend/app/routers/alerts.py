@@ -1,22 +1,22 @@
-"""Alerts CRUD API endpoints."""
+"""Alerts CRUD API endpoints backed by Postgres."""
 
+import json
+import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from housemktanalyzr.alerts.criteria import AlertCriteria, CriteriaManager
-from housemktanalyzr.models.property import PropertyType
+from ..db import get_pool
 
 router = APIRouter()
-
-# Shared manager instance
-manager = CriteriaManager()
+logger = logging.getLogger(__name__)
 
 
 class CreateAlertRequest(BaseModel):
     """Request body for creating an alert."""
-
     name: str = Field(min_length=1, max_length=100)
     regions: list[str] = Field(default_factory=list)
     property_types: list[str] = Field(default_factory=list)
@@ -34,7 +34,6 @@ class CreateAlertRequest(BaseModel):
 
 class UpdateAlertRequest(BaseModel):
     """Request body for updating an alert."""
-
     name: Optional[str] = Field(default=None, min_length=1, max_length=100)
     enabled: Optional[bool] = None
     regions: Optional[list[str]] = None
@@ -53,7 +52,6 @@ class UpdateAlertRequest(BaseModel):
 
 class AlertResponse(BaseModel):
     """Alert criteria response."""
-
     id: str
     name: str
     enabled: bool
@@ -77,33 +75,32 @@ class AlertResponse(BaseModel):
 
 class AlertListResponse(BaseModel):
     """List of alerts response."""
-
     alerts: list[AlertResponse]
     count: int
 
 
-def criteria_to_response(criteria: AlertCriteria) -> AlertResponse:
-    """Convert AlertCriteria to AlertResponse."""
+def _row_to_response(row) -> AlertResponse:
+    """Convert a database row to AlertResponse."""
     return AlertResponse(
-        id=criteria.id,
-        name=criteria.name,
-        enabled=criteria.enabled,
-        regions=criteria.regions,
-        property_types=[pt.value for pt in criteria.property_types],
-        min_price=criteria.min_price,
-        max_price=criteria.max_price,
-        min_score=criteria.min_score,
-        min_cap_rate=criteria.min_cap_rate,
-        min_cash_flow=criteria.min_cash_flow,
-        max_price_per_unit=criteria.max_price_per_unit,
-        min_yield=criteria.min_yield,
-        notify_email=criteria.notify_email,
-        notify_on_new=criteria.notify_on_new,
-        notify_on_price_drop=criteria.notify_on_price_drop,
-        created_at=criteria.created_at.isoformat(),
-        updated_at=criteria.updated_at.isoformat(),
-        last_checked=criteria.last_checked.isoformat() if criteria.last_checked else None,
-        last_match_count=criteria.last_match_count,
+        id=row["id"],
+        name=row["name"],
+        enabled=row["enabled"],
+        regions=json.loads(row["regions"]) if isinstance(row["regions"], str) else row["regions"],
+        property_types=json.loads(row["property_types"]) if isinstance(row["property_types"], str) else row["property_types"],
+        min_price=row["min_price"],
+        max_price=row["max_price"],
+        min_score=row["min_score"],
+        min_cap_rate=row["min_cap_rate"],
+        min_cash_flow=row["min_cash_flow"],
+        max_price_per_unit=row["max_price_per_unit"],
+        min_yield=row["min_yield"],
+        notify_email=row["notify_email"],
+        notify_on_new=row["notify_on_new"],
+        notify_on_price_drop=row["notify_on_price_drop"],
+        created_at=row["created_at"].isoformat() if row["created_at"] else "",
+        updated_at=row["updated_at"].isoformat() if row["updated_at"] else "",
+        last_checked=row["last_checked"].isoformat() if row["last_checked"] else None,
+        last_match_count=row["last_match_count"] or 0,
     )
 
 
@@ -111,20 +108,19 @@ def criteria_to_response(criteria: AlertCriteria) -> AlertResponse:
 async def list_alerts(
     enabled_only: bool = Query(default=False, description="Only return enabled alerts"),
 ) -> AlertListResponse:
-    """List all saved alerts.
-
-    Returns all alert criteria, optionally filtered to enabled only.
-    """
+    """List all saved alerts."""
     try:
-        if enabled_only:
-            alerts = manager.get_enabled()
-        else:
-            alerts = manager.list_all()
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            if enabled_only:
+                rows = await conn.fetch(
+                    "SELECT * FROM alerts WHERE enabled = TRUE ORDER BY name"
+                )
+            else:
+                rows = await conn.fetch("SELECT * FROM alerts ORDER BY name")
 
-        return AlertListResponse(
-            alerts=[criteria_to_response(a) for a in alerts],
-            count=len(alerts),
-        )
+        alerts = [_row_to_response(row) for row in rows]
+        return AlertListResponse(alerts=alerts, count=len(alerts))
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list alerts: {str(e)}")
@@ -132,43 +128,42 @@ async def list_alerts(
 
 @router.post("", response_model=AlertResponse, status_code=201)
 async def create_alert(request: CreateAlertRequest) -> AlertResponse:
-    """Create a new alert.
-
-    Creates a new alert criteria with the specified filters.
-    """
+    """Create a new alert."""
     try:
-        # Convert property type strings to enums
-        property_types = []
-        for pt in request.property_types:
-            try:
-                property_types.append(PropertyType(pt.upper()))
-            except ValueError:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid property type: {pt}. Valid: HOUSE, DUPLEX, TRIPLEX, QUADPLEX, MULTIPLEX",
+        pool = get_pool()
+        alert_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc)
+
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO alerts (
+                    id, name, enabled, regions, property_types,
+                    min_price, max_price, min_score, min_cap_rate,
+                    min_cash_flow, max_price_per_unit, min_yield,
+                    notify_email, notify_on_new, notify_on_price_drop,
+                    created_at, updated_at
+                ) VALUES (
+                    $1, $2, TRUE, $3::jsonb, $4::jsonb,
+                    $5, $6, $7, $8, $9, $10, $11,
+                    $12, $13, $14, $15, $15
                 )
+                """,
+                alert_id, request.name,
+                json.dumps(request.regions),
+                json.dumps(request.property_types),
+                request.min_price, request.max_price,
+                request.min_score, request.min_cap_rate,
+                request.min_cash_flow, request.max_price_per_unit,
+                request.min_yield, request.notify_email,
+                request.notify_on_new, request.notify_on_price_drop,
+                now,
+            )
 
-        criteria = AlertCriteria(
-            name=request.name,
-            regions=request.regions,
-            property_types=property_types,
-            min_price=request.min_price,
-            max_price=request.max_price,
-            min_score=request.min_score,
-            min_cap_rate=request.min_cap_rate,
-            min_cash_flow=request.min_cash_flow,
-            max_price_per_unit=request.max_price_per_unit,
-            min_yield=request.min_yield,
-            notify_email=request.notify_email,
-            notify_on_new=request.notify_on_new,
-            notify_on_price_drop=request.notify_on_price_drop,
-        )
+            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
 
-        manager.save(criteria)
-        return criteria_to_response(criteria)
+        return _row_to_response(row)
 
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create alert: {str(e)}")
 
@@ -177,12 +172,14 @@ async def create_alert(request: CreateAlertRequest) -> AlertResponse:
 async def get_alert(alert_id: str) -> AlertResponse:
     """Get a specific alert by ID."""
     try:
-        criteria = manager.load(alert_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
 
-        if not criteria:
+        if not row:
             raise HTTPException(status_code=404, detail="Alert not found")
 
-        return criteria_to_response(criteria)
+        return _row_to_response(row)
 
     except HTTPException:
         raise
@@ -192,57 +189,91 @@ async def get_alert(alert_id: str) -> AlertResponse:
 
 @router.put("/{alert_id}", response_model=AlertResponse)
 async def update_alert(alert_id: str, request: UpdateAlertRequest) -> AlertResponse:
-    """Update an existing alert.
-
-    Only fields provided in the request will be updated.
-    """
+    """Update an existing alert."""
     try:
-        criteria = manager.load(alert_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="Alert not found")
 
-        if not criteria:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            # Build SET clause dynamically
+            updates = []
+            params = []
+            idx = 1
 
-        # Update fields if provided
-        if request.name is not None:
-            criteria.name = request.name
-        if request.enabled is not None:
-            criteria.enabled = request.enabled
-        if request.regions is not None:
-            criteria.regions = request.regions
-        if request.property_types is not None:
-            property_types = []
-            for pt in request.property_types:
-                try:
-                    property_types.append(PropertyType(pt.upper()))
-                except ValueError:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid property type: {pt}",
-                    )
-            criteria.property_types = property_types
-        if request.min_price is not None:
-            criteria.min_price = request.min_price
-        if request.max_price is not None:
-            criteria.max_price = request.max_price
-        if request.min_score is not None:
-            criteria.min_score = request.min_score
-        if request.min_cap_rate is not None:
-            criteria.min_cap_rate = request.min_cap_rate
-        if request.min_cash_flow is not None:
-            criteria.min_cash_flow = request.min_cash_flow
-        if request.max_price_per_unit is not None:
-            criteria.max_price_per_unit = request.max_price_per_unit
-        if request.min_yield is not None:
-            criteria.min_yield = request.min_yield
-        if request.notify_email is not None:
-            criteria.notify_email = request.notify_email
-        if request.notify_on_new is not None:
-            criteria.notify_on_new = request.notify_on_new
-        if request.notify_on_price_drop is not None:
-            criteria.notify_on_price_drop = request.notify_on_price_drop
+            if request.name is not None:
+                updates.append(f"name = ${idx}")
+                params.append(request.name)
+                idx += 1
+            if request.enabled is not None:
+                updates.append(f"enabled = ${idx}")
+                params.append(request.enabled)
+                idx += 1
+            if request.regions is not None:
+                updates.append(f"regions = ${idx}::jsonb")
+                params.append(json.dumps(request.regions))
+                idx += 1
+            if request.property_types is not None:
+                updates.append(f"property_types = ${idx}::jsonb")
+                params.append(json.dumps(request.property_types))
+                idx += 1
+            if request.min_price is not None:
+                updates.append(f"min_price = ${idx}")
+                params.append(request.min_price)
+                idx += 1
+            if request.max_price is not None:
+                updates.append(f"max_price = ${idx}")
+                params.append(request.max_price)
+                idx += 1
+            if request.min_score is not None:
+                updates.append(f"min_score = ${idx}")
+                params.append(request.min_score)
+                idx += 1
+            if request.min_cap_rate is not None:
+                updates.append(f"min_cap_rate = ${idx}")
+                params.append(request.min_cap_rate)
+                idx += 1
+            if request.min_cash_flow is not None:
+                updates.append(f"min_cash_flow = ${idx}")
+                params.append(request.min_cash_flow)
+                idx += 1
+            if request.max_price_per_unit is not None:
+                updates.append(f"max_price_per_unit = ${idx}")
+                params.append(request.max_price_per_unit)
+                idx += 1
+            if request.min_yield is not None:
+                updates.append(f"min_yield = ${idx}")
+                params.append(request.min_yield)
+                idx += 1
+            if request.notify_email is not None:
+                updates.append(f"notify_email = ${idx}")
+                params.append(request.notify_email)
+                idx += 1
+            if request.notify_on_new is not None:
+                updates.append(f"notify_on_new = ${idx}")
+                params.append(request.notify_on_new)
+                idx += 1
+            if request.notify_on_price_drop is not None:
+                updates.append(f"notify_on_price_drop = ${idx}")
+                params.append(request.notify_on_price_drop)
+                idx += 1
 
-        manager.save(criteria)
-        return criteria_to_response(criteria)
+            # Always update timestamp
+            updates.append(f"updated_at = ${idx}")
+            params.append(datetime.now(timezone.utc))
+            idx += 1
+
+            params.append(alert_id)
+            set_clause = ", ".join(updates)
+            await conn.execute(
+                f"UPDATE alerts SET {set_clause} WHERE id = ${idx}",
+                *params,
+            )
+
+            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+
+        return _row_to_response(row)
 
     except HTTPException:
         raise
@@ -254,9 +285,11 @@ async def update_alert(alert_id: str, request: UpdateAlertRequest) -> AlertRespo
 async def delete_alert(alert_id: str) -> None:
     """Delete an alert by ID."""
     try:
-        deleted = manager.delete(alert_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM alerts WHERE id = $1", alert_id)
 
-        if not deleted:
+        if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Alert not found")
 
     except HTTPException:
@@ -269,14 +302,21 @@ async def delete_alert(alert_id: str) -> None:
 async def toggle_alert(alert_id: str) -> AlertResponse:
     """Toggle alert enabled/disabled status."""
     try:
-        criteria = manager.load(alert_id)
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="Alert not found")
 
-        if not criteria:
-            raise HTTPException(status_code=404, detail="Alert not found")
+            new_enabled = not row["enabled"]
+            await conn.execute(
+                "UPDATE alerts SET enabled = $1, updated_at = $2 WHERE id = $3",
+                new_enabled, datetime.now(timezone.utc), alert_id,
+            )
 
-        criteria.enabled = not criteria.enabled
-        manager.save(criteria)
-        return criteria_to_response(criteria)
+            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+
+        return _row_to_response(row)
 
     except HTTPException:
         raise

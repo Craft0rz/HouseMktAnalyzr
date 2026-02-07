@@ -1,7 +1,9 @@
 """FastAPI application for HouseMktAnalyzr API."""
 
+import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Add src to path for imports
@@ -11,7 +13,23 @@ sys.path.insert(0, str(src_path))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .db import init_pool, close_pool, get_pool
 from .routers import alerts, analysis, portfolio, properties
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage startup/shutdown: DB pool lifecycle."""
+    if os.environ.get("DATABASE_URL"):
+        await init_pool()
+        logger.info("Database connected")
+    else:
+        logger.warning("DATABASE_URL not set — running without database")
+    yield
+    await close_pool()
+
 
 app = FastAPI(
     title="HouseMktAnalyzr API",
@@ -19,6 +37,7 @@ app = FastAPI(
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # CORS for frontend
@@ -59,4 +78,13 @@ async def root():
 @app.get("/health")
 async def health():
     """Health check endpoint."""
-    return {"status": "healthy"}
+    result = {"status": "healthy"}
+    if os.environ.get("DATABASE_URL"):
+        try:
+            pool = get_pool()
+            async with pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            result["database"] = "connected"
+        except Exception:
+            result["database"] = "disconnected"
+    return result

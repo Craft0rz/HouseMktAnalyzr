@@ -13,7 +13,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { ScoreRadar } from '@/components/charts';
+import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
 import type { PropertyWithMetrics } from '@/lib/types';
 
@@ -397,24 +397,8 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                 Score Breakdown
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="h-56">
-                <ScoreRadar scoreBreakdown={metrics.score_breakdown} />
-              </div>
-              <div className="grid grid-cols-5 gap-1 text-center">
-                {Object.entries(metrics.score_breakdown).map(([key, value]) => {
-                  const percentage = (value / 20) * 100;
-                  const color = percentage >= 75 ? 'text-green-600' : percentage >= 50 ? 'text-yellow-600' : 'text-red-600';
-                  return (
-                    <div key={key} className="p-2 rounded bg-muted/50">
-                      <div className={`text-lg font-bold ${color}`}>{value.toFixed(0)}</div>
-                      <div className="text-[10px] text-muted-foreground capitalize leading-tight">
-                        {key.replace('_score', '').replace('_', ' ')}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            <CardContent>
+              <ScoreBreakdown scoreBreakdown={metrics.score_breakdown} />
             </CardContent>
           </Card>
 
