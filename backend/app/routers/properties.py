@@ -258,7 +258,41 @@ async def get_property_details(listing_id: str) -> PropertyListing:
         except Exception as e:
             logger.warning(f"Walk Score enrichment failed: {e}")
 
-    # Cache (or re-cache with Walk Score data)
+    # Fetch photos if not available (listing might be from search cards only)
+    if not listing.photo_urls:
+        try:
+            async with CentrisScraper() as scraper:
+                detailed = await scraper.get_listing_details(listing.id, url=listing.url)
+                if detailed and detailed.photo_urls:
+                    listing.photo_urls = detailed.photo_urls
+        except Exception as e:
+            logger.warning(f"Photo extraction failed: {e}")
+
+    # Enrich with AI condition score if not already populated
+    if listing.condition_score is None and listing.photo_urls:
+        try:
+            from housemktanalyzr.enrichment.condition_scorer import score_property_condition
+
+            result = await score_property_condition(
+                photo_urls=listing.photo_urls,
+                property_type=listing.property_type.value,
+                city=listing.city,
+                year_built=listing.year_built,
+            )
+            if result:
+                listing.condition_score = result.overall_score
+                listing.condition_details = {
+                    "kitchen": result.kitchen_score,
+                    "bathroom": result.bathroom_score,
+                    "floors": result.floors_score,
+                    "exterior": result.exterior_score,
+                    "renovation_needed": result.renovation_needed,
+                    "notes": result.notes,
+                }
+        except Exception as e:
+            logger.warning(f"Condition scoring failed: {e}")
+
+    # Cache (or re-cache with enriched data)
     if _has_db():
         try:
             from ..db import cache_listings, DETAIL_CACHE_TTL_HOURS

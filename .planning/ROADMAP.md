@@ -105,3 +105,23 @@ Plans:
 ## v2.0 Complete
 
 Modern frontend with React/Next.js and FastAPI backend complete.
+
+---
+
+## v3.0 Roadmap
+
+### Completed
+- [x] **Background scraper** — Auto-scrape all regions every 4h, DB-first architecture
+- [x] **Multi-region support** — 8 regions (Montreal, Laval, Longueuil, South Shore, North Shore, Laurentides, Lanaudiere, Monteregie)
+- [x] **Pagination** — Frontend pagination with no result limit
+- [x] **Alert system** — Criteria-based matching engine with email notifications (Gmail SMTP)
+- [x] **Walk Score integration** — Scrapes walkscore.com for walk/transit/bike scores, no API key needed
+- [x] **Walk Score in scrape cycle** — Enriches listings during background scrape (50/cycle, 3s delay)
+- [x] **Price drop tracking** — Records price history for alert notifications
+
+### Next Steps
+- [ ] **Custom domain + Cloudflare** — Register domain, set up Cloudflare DNS proxy for CDN/DDoS protection
+- [ ] **Walk Score in list view** — Display scores as columns in the property table
+- [ ] **Map view** — Interactive map with property pins using geocoded coordinates
+- [ ] **Filtering by Walk Score** — Filter listings by min walk/transit/bike score
+- [ ] **Email delivery verification** — End-to-end test of alert email flow

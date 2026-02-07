@@ -1,6 +1,6 @@
 'use client';
 
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -40,6 +40,19 @@ const getScoreColor = (score: number) => {
   if (score >= 70) return 'text-green-600';
   if (score >= 50) return 'text-yellow-600';
   return 'text-red-600';
+};
+
+const getConditionColor = (score: number) => {
+  if (score >= 7) return 'text-green-600';
+  if (score >= 5) return 'text-yellow-600';
+  return 'text-red-600';
+};
+
+const getConditionLabel = (score: number) => {
+  if (score >= 8) return 'Excellent';
+  if (score >= 6) return 'Good';
+  if (score >= 4) return 'Fair';
+  return 'Poor';
 };
 
 const getPropertyTypeLabel = (type: string) => {
@@ -422,6 +435,59 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">Bike</div>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* AI Condition Score */}
+          {listing.condition_score != null && listing.condition_details && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Wrench className="h-4 w-4" />
+                  Property Condition
+                  <Badge variant="outline" className="text-xs ml-auto">AI</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Overall score */}
+                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                  <div>
+                    <div className={`text-3xl font-bold ${getConditionColor(listing.condition_score)}`}>
+                      {listing.condition_score.toFixed(1)}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {getConditionLabel(listing.condition_score)} condition
+                    </div>
+                  </div>
+                  {listing.condition_details.renovation_needed && (
+                    <Badge variant="destructive" className="text-xs">
+                      Reno Needed
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Category breakdown */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {(['kitchen', 'bathroom', 'floors', 'exterior'] as const).map((cat) => {
+                    const score = listing.condition_details![cat] as number;
+                    return (
+                      <div key={cat} className="text-center p-2 rounded-lg bg-muted/50">
+                        <div className={`text-lg font-bold ${getConditionColor(score)}`}>
+                          {score.toFixed(1)}
+                        </div>
+                        <div className="text-xs text-muted-foreground capitalize">{cat}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* AI Notes */}
+                {listing.condition_details.notes && (
+                  <p className="text-xs text-muted-foreground italic">
+                    {listing.condition_details.notes}
+                  </p>
                 )}
               </CardContent>
             </Card>

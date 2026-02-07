@@ -603,6 +603,63 @@ class CentrisScraper(DataSource):
 
         return result
 
+    def _extract_photo_urls(self, soup: BeautifulSoup) -> list[str]:
+        """Extract photo gallery URLs from a Centris detail page.
+
+        Tries multiple strategies since Centris HTML varies:
+        1. Gallery/carousel container images
+        2. Centris media URL pattern matching
+        3. JSON data embedded in script tags
+        """
+        photo_urls: list[str] = []
+        seen: set[str] = set()
+
+        def _add(url: str) -> None:
+            # Normalize: strip size params, ensure absolute URL
+            clean = re.sub(r"[&?]w=\d+", "", url)
+            clean = re.sub(r"[&?]h=\d+", "", clean)
+            if not clean.startswith("http"):
+                clean = f"{self.BASE_URL}{clean}"
+            if clean not in seen:
+                seen.add(clean)
+                photo_urls.append(clean)
+
+        # Strategy 1: Gallery/carousel container images
+        for selector in [
+            "div.primary-photo-container img",
+            "div.photo-gallery img",
+            "div.slideshow img",
+            "div[class*='photo'] img",
+            "div[class*='gallery'] img",
+            "div[class*='carousel'] img",
+        ]:
+            for img in soup.select(selector):
+                url = img.get("data-src") or img.get("src") or ""
+                if url and ("centris.ca" in url or "media.ashx" in url):
+                    _add(url)
+
+        # Strategy 2: All images with Centris media URLs
+        if not photo_urls:
+            media_re = re.compile(r"centris\.ca/media|media\.ashx", re.I)
+            for img in soup.find_all("img"):
+                for attr in ("src", "data-src"):
+                    url = img.get(attr, "")
+                    if url and media_re.search(url):
+                        _add(url)
+
+        # Strategy 3: JSON/JS embedded photo arrays
+        if not photo_urls:
+            for script in soup.find_all("script"):
+                text = script.string or ""
+                urls = re.findall(
+                    r'"(https?://[^"]*centris\.ca/media\.ashx[^"]*)"',
+                    text,
+                )
+                for url in urls:
+                    _add(url)
+
+        return photo_urls
+
     def _parse_characteristics(self, soup: BeautifulSoup) -> dict[str, str]:
         """Parse all carac-container sections into a dict.
 
@@ -861,6 +918,9 @@ class CentrisScraper(DataSource):
 
             property_type = self._determine_property_type(type_text, units)
 
+            # === PHOTOS ===
+            photo_urls = self._extract_photo_urls(soup)
+
             # === BUILD RAW DATA with all extra info ===
             raw_data = {
                 "centris_id": centris_id,
@@ -868,6 +928,7 @@ class CentrisScraper(DataSource):
                 "building_style": building_style,
                 "parking_spaces": parking_spaces,
                 "garage_spaces": garage_spaces,
+                "photo_urls": photo_urls,
             }
 
             # Add all characteristics
@@ -894,6 +955,7 @@ class CentrisScraper(DataSource):
                 gross_revenue=gross_revenue,
                 municipal_assessment=municipal_assessment,
                 annual_taxes=annual_taxes,
+                photo_urls=photo_urls,
                 listing_date=date.today(),
                 url=url,
                 raw_data=raw_data,

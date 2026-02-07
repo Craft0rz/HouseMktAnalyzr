@@ -6,7 +6,12 @@ import os
 from datetime import datetime, timezone
 
 from .constants import SCRAPE_MATRIX
-from .db import cache_listings, get_pool, get_listings_without_walk_score, update_walk_scores
+from .db import (
+    cache_listings, get_pool,
+    get_listings_without_walk_score, update_walk_scores,
+    get_listings_without_photos, update_photo_urls,
+    get_listings_without_condition_score, update_condition_score,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +158,12 @@ class ScraperWorker:
         # Enrich listings with Walk Scores
         await self._enrich_walk_scores()
 
+        # Enrich listings with photo URLs (prerequisite for condition scoring)
+        await self._enrich_photo_urls()
+
+        # Enrich listings with AI condition scores
+        await self._enrich_condition_scores()
+
     async def _enrich_walk_scores(self):
         """Fetch walk/transit/bike scores for listings that don't have them."""
         from housemktanalyzr.enrichment.walkscore import enrich_with_walk_score
@@ -203,3 +214,108 @@ class ScraperWorker:
             await asyncio.sleep(delay)
 
         logger.info(f"Walk Score enrichment done: {enriched} enriched, {failed} failed")
+
+    async def _enrich_photo_urls(self):
+        """Fetch detail pages to extract photo URLs for listings missing them."""
+        from housemktanalyzr.collectors.centris import CentrisScraper
+
+        batch_size = int(os.environ.get("PHOTO_BATCH_SIZE", 30))
+        delay = float(os.environ.get("PHOTO_FETCH_DELAY", 1.5))
+
+        try:
+            listings = await get_listings_without_photos(limit=batch_size)
+        except Exception:
+            logger.exception("Failed to query listings for photo enrichment")
+            return
+
+        if not listings:
+            logger.info("Photos: all listings already have photos")
+            return
+
+        logger.info(f"Photos: fetching detail pages for {len(listings)} listings")
+        enriched = 0
+        failed = 0
+
+        async with CentrisScraper(request_interval=delay) as scraper:
+            for item in listings:
+                try:
+                    detailed = await scraper.get_listing_details(
+                        item["id"], url=item.get("url") or None
+                    )
+                    if detailed and detailed.photo_urls:
+                        await update_photo_urls(item["id"], detailed.photo_urls)
+                        enriched += 1
+                    else:
+                        # Mark with empty list so we don't retry
+                        await update_photo_urls(item["id"], [])
+                        failed += 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Photo fetch failed for {item['id']}: {e}")
+                    failed += 1
+
+        logger.info(f"Photo enrichment done: {enriched} enriched, {failed} failed")
+
+    async def _enrich_condition_scores(self):
+        """Score property condition using Gemini for listings with photos."""
+        gemini_key = os.environ.get("GEMINI_API_KEY")
+        if not gemini_key:
+            logger.info("Condition scoring skipped: GEMINI_API_KEY not set")
+            return
+
+        from housemktanalyzr.enrichment.condition_scorer import score_property_condition
+
+        batch_size = int(os.environ.get("CONDITION_BATCH_SIZE", 25))
+        delay = float(os.environ.get("CONDITION_SCORE_DELAY", 6.0))
+
+        try:
+            listings = await get_listings_without_condition_score(limit=batch_size)
+        except Exception:
+            logger.exception("Failed to query listings for condition scoring")
+            return
+
+        if not listings:
+            logger.info("Condition scoring: all eligible listings already scored")
+            return
+
+        logger.info(
+            f"Condition scoring: processing {len(listings)} listings "
+            f"(delay={delay}s, ~{len(listings) * delay / 60:.1f}min)"
+        )
+        scored = 0
+        failed = 0
+
+        for item in listings:
+            try:
+                result = await score_property_condition(
+                    photo_urls=item["photo_urls"],
+                    property_type=item.get("property_type", "property"),
+                    city=item.get("city", "Montreal"),
+                    year_built=item.get("year_built"),
+                )
+                if result:
+                    await update_condition_score(
+                        listing_id=item["id"],
+                        condition_score=result.overall_score,
+                        condition_details={
+                            "kitchen": result.kitchen_score,
+                            "bathroom": result.bathroom_score,
+                            "floors": result.floors_score,
+                            "exterior": result.exterior_score,
+                            "renovation_needed": result.renovation_needed,
+                            "notes": result.notes,
+                        },
+                    )
+                    scored += 1
+                else:
+                    failed += 1
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning(f"Condition scoring failed for {item['id']}: {e}")
+                failed += 1
+
+            await asyncio.sleep(delay)
+
+        logger.info(f"Condition scoring done: {scored} scored, {failed} failed")

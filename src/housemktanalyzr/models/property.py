@@ -76,6 +76,17 @@ class PropertyListing(BaseModel):
     latitude: float | None = Field(default=None, description="Latitude from geocoding")
     longitude: float | None = Field(default=None, description="Longitude from geocoding")
 
+    # Property photos
+    photo_urls: list[str] = Field(default_factory=list, description="Gallery photo URLs")
+
+    # AI condition assessment (from Gemini)
+    condition_score: float | None = Field(
+        default=None, ge=1, le=10, description="AI-assessed property condition (1-10)"
+    )
+    condition_details: dict[str, Any] | None = Field(
+        default=None, description="Condition breakdown: kitchen, bathroom, floors, exterior, notes"
+    )
+
     # Listing info
     listing_date: date | None = Field(default=None, description="Date property listed")
     url: str = Field(..., description="URL to listing")

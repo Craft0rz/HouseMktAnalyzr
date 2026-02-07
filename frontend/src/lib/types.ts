@@ -27,6 +27,16 @@ export interface PropertyListing {
   bike_score: number | null;
   latitude: number | null;
   longitude: number | null;
+  photo_urls: string[];
+  condition_score: number | null;
+  condition_details: {
+    kitchen: number;
+    bathroom: number;
+    floors: number;
+    exterior: number;
+    renovation_needed: boolean;
+    notes: string;
+  } | null;
   listing_date: string | null;
   url: string;
   raw_data: Record<string, unknown> | null;

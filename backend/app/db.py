@@ -373,6 +373,120 @@ async def update_walk_scores(
     return True
 
 
+async def get_listings_without_photos(limit: int = 30) -> list[dict]:
+    """Get cached listings that don't have photo_urls yet.
+
+    These need their detail page fetched to extract photos.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, data FROM properties
+            WHERE expires_at > $1
+              AND (
+                  (data->'photo_urls') IS NULL
+                  OR jsonb_array_length(COALESCE(data->'photo_urls', '[]'::jsonb)) = 0
+              )
+            ORDER BY fetched_at DESC
+            LIMIT $2
+            """,
+            now, limit,
+        )
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        results.append({
+            "id": row["id"],
+            "url": data.get("url", ""),
+        })
+    return results
+
+
+async def update_photo_urls(listing_id: str, photo_urls: list[str]) -> bool:
+    """Update photo_urls in a listing's JSONB data."""
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT data FROM properties WHERE id = $1", listing_id
+        )
+        if not row:
+            return False
+
+        data = json.loads(row["data"])
+        data["photo_urls"] = photo_urls
+
+        await conn.execute(
+            "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+            json.dumps(data), listing_id,
+        )
+    return True
+
+
+async def get_listings_without_condition_score(limit: int = 25) -> list[dict]:
+    """Get cached listings that have photos but no condition score.
+
+    Only returns listings where photo_urls exist and condition_score is null.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, data FROM properties
+            WHERE expires_at > $1
+              AND (data->>'condition_score') IS NULL
+              AND jsonb_array_length(COALESCE(data->'photo_urls', '[]'::jsonb)) > 0
+            ORDER BY fetched_at DESC
+            LIMIT $2
+            """,
+            now, limit,
+        )
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        results.append({
+            "id": row["id"],
+            "photo_urls": data.get("photo_urls", []),
+            "property_type": data.get("property_type", "HOUSE"),
+            "city": data.get("city", "Montreal"),
+            "year_built": data.get("year_built"),
+        })
+    return results
+
+
+async def update_condition_score(
+    listing_id: str,
+    condition_score: float,
+    condition_details: dict,
+) -> bool:
+    """Update condition score in a listing's JSONB data."""
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT data FROM properties WHERE id = $1", listing_id
+        )
+        if not row:
+            return False
+
+        data = json.loads(row["data"])
+        data["condition_score"] = condition_score
+        data["condition_details"] = condition_details
+
+        await conn.execute(
+            "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+            json.dumps(data), listing_id,
+        )
+    return True
+
+
 async def get_scraper_stats() -> dict:
     """Get listing counts grouped by region and property_type."""
     pool = get_pool()
