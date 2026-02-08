@@ -10,27 +10,24 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { PropertyWithMetrics } from '@/lib/types';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 interface PriceDistributionProps {
   properties: PropertyWithMetrics[];
   className?: string;
 }
 
-const formatPrice = (price: number) => {
-  if (price >= 1000000) return `$${(price / 1000000).toFixed(1)}M`;
-  return `$${(price / 1000).toFixed(0)}K`;
-};
-
 export function PriceDistribution({ properties, className }: PriceDistributionProps) {
-  // Create price buckets
+  const { t } = useTranslation();
+
   const buckets = [
-    { min: 0, max: 300000, label: '<$300K' },
-    { min: 300000, max: 400000, label: '$300-400K' },
-    { min: 400000, max: 500000, label: '$400-500K' },
-    { min: 500000, max: 600000, label: '$500-600K' },
-    { min: 600000, max: 750000, label: '$600-750K' },
-    { min: 750000, max: 1000000, label: '$750K-1M' },
-    { min: 1000000, max: Infinity, label: '>$1M' },
+    { min: 0, max: 300000, label: '<300K$' },
+    { min: 300000, max: 400000, label: '300-400K$' },
+    { min: 400000, max: 500000, label: '400-500K$' },
+    { min: 500000, max: 600000, label: '500-600K$' },
+    { min: 600000, max: 750000, label: '600-750K$' },
+    { min: 750000, max: 1000000, label: '750K-1M$' },
+    { min: 1000000, max: Infinity, label: '>1M$' },
   ];
 
   const data = buckets.map((bucket) => {
@@ -61,7 +58,7 @@ export function PriceDistribution({ properties, className }: PriceDistributionPr
           <YAxis
             tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
             label={{
-              value: 'Count',
+              value: t('chart.count'),
               angle: -90,
               position: 'insideLeft',
               fill: 'var(--muted-foreground)',
@@ -76,8 +73,8 @@ export function PriceDistribution({ properties, className }: PriceDistributionPr
             }}
             labelStyle={{ color: 'var(--popover-foreground)' }}
             formatter={(value, name) => {
-              if (name === 'count') return [value, 'Properties'];
-              if (name === 'avgScore') return [value, 'Avg Score'];
+              if (name === 'count') return [value, t('chart.properties')];
+              if (name === 'avgScore') return [value, t('chart.avgScore')];
               return [value, name];
             }}
           />

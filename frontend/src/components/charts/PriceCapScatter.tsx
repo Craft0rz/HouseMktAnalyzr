@@ -11,18 +11,21 @@ import {
   ZAxis,
 } from 'recharts';
 import type { PropertyWithMetrics } from '@/lib/types';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 interface PriceCapScatterProps {
   properties: PropertyWithMetrics[];
   className?: string;
 }
 
-const formatPrice = (price: number) => {
-  if (price >= 1000000) return `$${(price / 1000000).toFixed(1)}M`;
-  return `$${(price / 1000).toFixed(0)}K`;
-};
-
 export function PriceCapScatter({ properties, className }: PriceCapScatterProps) {
+  const { t, locale } = useTranslation();
+
+  const formatPrice = (price: number) => {
+    if (price >= 1000000) return `${(price / 1000000).toFixed(1)}M$`;
+    return `${(price / 1000).toFixed(0)}K$`;
+  };
+
   const data = properties
     .filter((p) => p.metrics.cap_rate != null)
     .map((p) => ({
@@ -37,11 +40,45 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
     return (
       <div className={className}>
         <div className="flex items-center justify-center h-[300px] text-muted-foreground">
-          No data available
+          {t('chart.noData')}
         </div>
       </div>
     );
   }
+
+  const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ payload: typeof data[number] }> }) => {
+    if (!active || !payload?.length) return null;
+    const item = payload[0].payload;
+    const priceFormatted = new Intl.NumberFormat(locale === 'fr' ? 'fr-CA' : 'en-CA', {
+      style: 'currency', currency: 'CAD', maximumFractionDigits: 0,
+    }).format(item.price);
+
+    return (
+      <div style={{
+        backgroundColor: 'var(--popover)',
+        border: '1px solid var(--border)',
+        borderRadius: '6px',
+        color: 'var(--popover-foreground)',
+        padding: '8px 12px',
+        fontSize: '12px',
+      }}>
+        <p style={{ fontWeight: 600, marginBottom: 4 }}>{item.address}</p>
+        <p style={{ opacity: 0.7, marginBottom: 4 }}>{item.type}</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span>{t('chart.price')}</span>
+          <span style={{ fontWeight: 500 }}>{priceFormatted}</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span>{t('chart.capRate')}</span>
+          <span style={{ fontWeight: 500 }}>{item.capRate?.toFixed(2)}%</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+          <span>{t('chart.score')}</span>
+          <span style={{ fontWeight: 500 }}>{item.score}</span>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={className}>
@@ -51,11 +88,11 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
           <XAxis
             type="number"
             dataKey="price"
-            name="Price"
+            name={t('chart.price')}
             tickFormatter={formatPrice}
             tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
             label={{
-              value: 'Price',
+              value: t('chart.price'),
               position: 'bottom',
               fill: 'var(--muted-foreground)',
             }}
@@ -63,38 +100,20 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
           <YAxis
             type="number"
             dataKey="capRate"
-            name="Cap Rate"
+            name={t('chart.capRate')}
             unit="%"
             tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
             label={{
-              value: 'Cap Rate %',
+              value: t('chart.capRateAxis'),
               angle: -90,
               position: 'insideLeft',
               fill: 'var(--muted-foreground)',
             }}
           />
-          <ZAxis type="number" dataKey="score" range={[50, 400]} name="Score" />
-          <Tooltip
-            contentStyle={{
-              backgroundColor: 'var(--popover)',
-              border: '1px solid var(--border)',
-              borderRadius: '6px',
-              color: 'var(--popover-foreground)',
-            }}
-            labelStyle={{ color: 'var(--popover-foreground)' }}
-            formatter={(value, name) => {
-              const v = value as number;
-              if (name === 'Price') return [formatPrice(v), name];
-              if (name === 'Cap Rate') return [`${v.toFixed(2)}%`, name];
-              return [v, name];
-            }}
-            labelFormatter={(_, payload) => {
-              const item = payload?.[0]?.payload;
-              return item ? `${item.address} (${item.type})` : '';
-            }}
-          />
+          <ZAxis type="number" dataKey="score" range={[50, 400]} name={t('chart.score')} />
+          <Tooltip content={<CustomTooltip />} />
           <Scatter
-            name="Properties"
+            name={t('chart.properties')}
             data={data}
             fill="var(--chart-1)"
             fillOpacity={0.6}
