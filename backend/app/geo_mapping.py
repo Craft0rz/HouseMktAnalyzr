@@ -51,6 +51,40 @@ CITY_TO_RENT_ZONE_HINT: dict[str, str] = {
 }
 
 
+# City/neighbourhood → neighbourhood_stats borough for non-Montreal CMAs.
+# Allows resolve_borough() to match Sherbrooke/Quebec City listings to
+# their arrondissement for neighbourhood stats lookup.
+CITY_TO_NEIGHBOURHOOD: dict[str, str] = {
+    # --- Sherbrooke arrondissements ---
+    "fleurimont": "Fleurimont",
+    "lennoxville": "Lennoxville",
+    "rock forest": "Brompton-Rock Forest-St-Elie-Deauville",
+    "rock-forest": "Brompton-Rock Forest-St-Elie-Deauville",
+    "brompton": "Brompton-Rock Forest-St-Elie-Deauville",
+    "deauville": "Brompton-Rock Forest-St-Elie-Deauville",
+    "saint-elie-d'orford": "Brompton-Rock Forest-St-Elie-Deauville",
+    "saint-elie": "Brompton-Rock Forest-St-Elie-Deauville",
+    "sherbrooke": "Des Nations",  # downtown Sherbrooke = Des Nations
+    # --- Quebec City arrondissements ---
+    "beauport": "Beauport",
+    "charlesbourg": "Charlesbourg",
+    "sainte-foy": "Sainte-Foy-Sillery-Cap-Rouge",
+    "sillery": "Sainte-Foy-Sillery-Cap-Rouge",
+    "cap-rouge": "Sainte-Foy-Sillery-Cap-Rouge",
+    "limoilou": "La Cité-Limoilou",
+    "la cite-limoilou": "La Cité-Limoilou",
+    "les rivieres": "Les Rivières",
+    "les-rivieres": "Les Rivières",
+    "la haute-saint-charles": "La Haute-Saint-Charles",
+    "la-haute-saint-charles": "La Haute-Saint-Charles",
+    "val-belair": "La Haute-Saint-Charles",
+    "loretteville": "Les Rivières",
+    "neufchatel": "Les Rivières",
+    "saint-emile": "La Haute-Saint-Charles",
+    "lac-saint-charles": "La Haute-Saint-Charles",
+}
+
+
 # Montreal FSA (first 3 chars of postal code) → borough mapping.
 # Source: Canada Post FSA boundaries overlaid with Montreal borough boundaries.
 FSA_TO_BOROUGH: dict[str, str] = {
@@ -194,20 +228,34 @@ def resolve_cma(city: str) -> str:
 
 
 def resolve_borough(city: str, postal_code: str | None = None) -> str | None:
-    """Resolve a listing's city + postal_code to a Montreal borough name.
+    """Resolve a listing's city + postal_code to a neighbourhood_stats borough.
 
-    Returns the borough name (matching neighbourhood_stats.borough) or None
-    if the listing is outside Montreal island.
+    Checks Montreal FSA mapping first, then falls back to city/neighbourhood
+    name matching for Sherbrooke and Quebec City arrondissements.
+
+    Returns the borough/arrondissement name or None if unresolvable.
     """
-    # Try postal code FSA first (most accurate)
+    # Try postal code FSA first (most accurate for Montreal)
     if postal_code:
         fsa = postal_code.strip().upper()[:3]
         borough = FSA_TO_BOROUGH.get(fsa)
         if borough:
             return borough
 
-    # If city is Montreal-ish, we can't determine borough without postal code
-    # Return None so the caller can try a city-wide average
+    # Try city name → neighbourhood mapping (Sherbrooke, Quebec City)
+    if city:
+        normalized = _strip_accents(city.strip().lower())
+        neighbourhood = CITY_TO_NEIGHBOURHOOD.get(normalized)
+        if neighbourhood:
+            return neighbourhood
+
+        # Handle "City (District)" format common in Centris listings
+        if "(" in normalized and ")" in normalized:
+            district = normalized.split("(")[1].split(")")[0].strip()
+            neighbourhood = CITY_TO_NEIGHBOURHOOD.get(district)
+            if neighbourhood:
+                return neighbourhood
+
     return None
 
 

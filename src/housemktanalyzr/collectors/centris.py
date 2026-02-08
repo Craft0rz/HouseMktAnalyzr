@@ -796,17 +796,22 @@ class CentrisScraper(DataSource):
                     if m:
                         rooms = int(m.group(1))
 
-            # For multi-family, try "Main unit" characteristic
-            if bedrooms == 0 and "Main unit" in chars:
-                main_unit = chars["Main unit"]
-                # Format: "4 rooms, 2 bedrooms, 1 bathroom"
-                bed_match = re.search(r"(\d+)\s*bedroom", main_unit, re.I)
+            # For multi-family, try "Main unit" characteristic (EN/FR)
+            main_unit_text = None
+            for key in ("Main unit", "Unité principale", "Logement principal"):
+                if key in chars:
+                    main_unit_text = chars[key]
+                    break
+            if bedrooms == 0 and main_unit_text:
+                # Format EN: "4 rooms, 2 bedrooms, 1 bathroom"
+                # Format FR: "4 pièces, 2 chambres, 1 salle de bain"
+                bed_match = re.search(r"(\d+)\s*(?:bedroom|chambre)", main_unit_text, re.I)
                 if bed_match:
                     bedrooms = int(bed_match.group(1))
-                bath_match = re.search(r"(\d+(?:\.\d+)?)\s*bathroom", main_unit, re.I)
+                bath_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:bathroom|salle de bain|sdb)", main_unit_text, re.I)
                 if bath_match:
                     bathrooms = float(bath_match.group(1))
-                room_match = re.search(r"(\d+)\s*room", main_unit, re.I)
+                room_match = re.search(r"(\d+)\s*(?:room|pièce)", main_unit_text, re.I)
                 if room_match:
                     rooms = int(room_match.group(1))
 
@@ -814,32 +819,36 @@ class CentrisScraper(DataSource):
             # Living area / Building area
             sqft = None
             sqft_match = re.search(
-                r"(?:Living area|Building area)[:\s]*([\d,]+)\s*sqft",
+                r"(?:Living area|Building area|Superficie habitable|Superficie du bâtiment)[:\s]*([\d,]+)\s*(?:sqft|pi)",
                 page_text, re.I
             )
             if sqft_match:
                 sqft = int(sqft_match.group(1).replace(",", ""))
 
-            # Lot area (from characteristics or text)
+            # Lot area (from characteristics or text, EN/FR)
             lot_sqft = None
-            if "Lot area" in chars:
-                lot_match = re.search(r"([\d,]+)\s*sqft", chars["Lot area"])
-                if lot_match:
-                    lot_sqft = int(lot_match.group(1).replace(",", ""))
+            for key in ("Lot area", "Superficie du terrain", "Terrain"):
+                if key in chars:
+                    lot_match = re.search(r"([\d,]+)\s*(?:sqft|pi)", chars[key])
+                    if lot_match:
+                        lot_sqft = int(lot_match.group(1).replace(",", ""))
+                    break
             if not lot_sqft:
-                lot_match = re.search(r"Lot area[:\s]*([\d,]+)\s*sqft", page_text, re.I)
+                lot_match = re.search(r"(?:Lot area|Superficie du terrain)[:\s]*([\d,]+)\s*(?:sqft|pi)", page_text, re.I)
                 if lot_match:
                     lot_sqft = int(lot_match.group(1).replace(",", ""))
 
-            # Year built
+            # Year built (EN/FR)
             year_built = None
-            if "Year built" in chars:
-                m = re.search(r"(\d{4})", chars["Year built"])
-                if m:
-                    year_built = int(m.group(1))
+            for key in ("Year built", "Année de construction"):
+                if key in chars:
+                    m = re.search(r"(\d{4})", chars[key])
+                    if m:
+                        year_built = int(m.group(1))
+                    break
 
-            # Building style
-            building_style = chars.get("Building style", "")
+            # Building style (EN/FR)
+            building_style = chars.get("Building style", chars.get("Style du bâtiment", ""))
 
             # === UNITS (for multi-family) ===
             units = 1
@@ -853,37 +862,43 @@ class CentrisScraper(DataSource):
             elif "quintuplex" in url_lower or "5-plex" in url_lower:
                 units = 5
 
-            # Override from characteristics if available
-            if "Number of units" in chars:
-                m = re.search(r"(\d+)", chars["Number of units"])
-                if m:
-                    units = int(m.group(1))
+            # Override from characteristics if available (EN/FR)
+            for key in ("Number of units", "Nombre d'unités", "Nombre de logements"):
+                if key in chars:
+                    m = re.search(r"(\d+)", chars[key])
+                    if m:
+                        units = int(m.group(1))
+                    break
 
             # === INCOME & EXPENSES (for investment properties) ===
             gross_revenue = None
             total_expenses = None
             net_income = None
 
-            if "Potential gross revenue" in chars:
-                m = re.search(r"([\d,]+)", chars["Potential gross revenue"].replace("$", ""))
-                if m:
-                    gross_revenue = int(m.group(1).replace(",", ""))
+            for key in ("Potential gross revenue", "Gross revenue",
+                        "Revenus bruts potentiels", "Revenu brut potentiel",
+                        "Revenus bruts", "Revenu brut"):
+                if key in chars:
+                    m = re.search(r"([\d,\s]+)", chars[key].replace("$", "").replace("\xa0", ""))
+                    if m:
+                        gross_revenue = int(m.group(1).replace(",", "").replace(" ", ""))
+                    break
 
             # Centris may show total expenses and/or net income for revenue properties
             for key in ("Total expenses", "Expenses", "Operating expenses",
                         "Dépenses totales", "Dépenses", "Dépenses d'exploitation"):
                 if key in chars:
-                    m = re.search(r"([\d,]+)", chars[key].replace("$", ""))
+                    m = re.search(r"([\d,\s]+)", chars[key].replace("$", "").replace("\xa0", ""))
                     if m:
-                        total_expenses = int(m.group(1).replace(",", ""))
+                        total_expenses = int(m.group(1).replace(",", "").replace(" ", ""))
                     break
 
             for key in ("Net income", "Estimated net income",
                         "Revenu net", "Revenu net estimé"):
                 if key in chars:
-                    m = re.search(r"([\d,]+)", chars[key].replace("$", ""))
+                    m = re.search(r"([\d,\s]+)", chars[key].replace("$", "").replace("\xa0", ""))
                     if m:
-                        net_income = int(m.group(1).replace(",", ""))
+                        net_income = int(m.group(1).replace(",", "").replace(" ", ""))
                     break
 
             # Infer missing values when two of the three are known
@@ -891,26 +906,28 @@ class CentrisScraper(DataSource):
                 net_income = gross_revenue - total_expenses
             elif gross_revenue and net_income and not total_expenses:
                 total_expenses = gross_revenue - net_income
+            elif not gross_revenue and total_expenses and net_income:
+                gross_revenue = total_expenses + net_income
 
             # === TAXES & ASSESSMENT ===
             municipal_assessment = None
             annual_taxes = None
 
-            # Assessment - look for "Total $xxx,xxx" pattern
+            # Assessment - look for "Total $xxx,xxx" pattern (EN/FR)
             assess_match = re.search(
-                r"Municipal assessment.*?Total\s*\$?([\d,]+)",
+                r"(?:Municipal assessment|Évaluation municipale).*?Total\s*\$?([\d,\s]+)",
                 page_text, re.I | re.S
             )
             if assess_match:
-                municipal_assessment = int(assess_match.group(1).replace(",", ""))
+                municipal_assessment = int(assess_match.group(1).replace(",", "").replace(" ", ""))
 
-            # Taxes - find the second occurrence (first is filter UI)
+            # Taxes - find the second occurrence (first is filter UI) (EN/FR)
             tax_matches = re.findall(
-                r"Taxes\s*Municipal.*?\$?([\d,]+)\s*School.*?\$?([\d,]+)\s*Total\s*\$?([\d,]+)",
+                r"(?:Taxes|Taxes)\s*(?:Municipal|Municipale).*?\$?([\d,\s]+)\s*(?:School|Scolaire).*?\$?([\d,\s]+)\s*Total\s*\$?([\d,\s]+)",
                 page_text, re.I
             )
             if len(tax_matches) >= 2:
-                annual_taxes = int(tax_matches[1][2].replace(",", ""))
+                annual_taxes = int(tax_matches[1][2].replace(",", "").replace(" ", ""))
 
             # === PARKING ===
             parking_spaces = 0

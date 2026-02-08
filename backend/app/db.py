@@ -667,6 +667,8 @@ async def get_listings_without_details(limit: int = 50) -> list[dict]:
 
     Listings from search cards are missing gross_revenue, postal_code,
     and other fields only available on the individual listing page.
+    Uses OR so listings missing gross_revenue get re-enriched even if
+    postal_code was already extracted.
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -676,8 +678,8 @@ async def get_listings_without_details(limit: int = 50) -> list[dict]:
             """
             SELECT id, data FROM properties
             WHERE expires_at > $1
-              AND (data->>'gross_revenue') IS NULL
-              AND (data->>'postal_code') IS NULL
+              AND ((data->>'postal_code') IS NULL
+                   OR (data->>'gross_revenue') IS NULL)
             ORDER BY fetched_at DESC
             LIMIT $2
             """,

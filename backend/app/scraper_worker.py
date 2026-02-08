@@ -331,6 +331,8 @@ class ScraperWorker:
                     if detailed:
                         fields = {
                             "gross_revenue": detailed.gross_revenue,
+                            "total_expenses": detailed.total_expenses,
+                            "net_income": detailed.net_income,
                             "postal_code": detailed.postal_code,
                             "lot_sqft": detailed.lot_sqft,
                             "year_built": detailed.year_built,
@@ -739,9 +741,7 @@ class ScraperWorker:
             await client.close()
 
     async def _refresh_neighbourhood_data(self):
-        """Fetch Montreal Open Data (crime, permits, taxes) if stale (refreshes weekly)."""
-        from housemktanalyzr.enrichment.montreal_data import MontrealOpenDataClient
-
+        """Fetch neighbourhood data from all CMA sources if stale (refreshes weekly)."""
         refresh_hours = float(os.environ.get("NEIGHBOURHOOD_REFRESH_HOURS", 168))  # weekly
 
         try:
@@ -753,9 +753,38 @@ class ScraperWorker:
         except Exception:
             logger.exception("Failed to check neighbourhood data age")
 
-        logger.info("Neighbourhood data: refreshing from Montreal Open Data")
-        client = MontrealOpenDataClient()
+        logger.info("Neighbourhood data: refreshing from all sources")
 
+        # Each source is independent — one failure doesn't block the others.
+        try:
+            await self._refresh_montreal_neighbourhood()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Montreal neighbourhood data refresh failed")
+
+        try:
+            await self._refresh_sherbrooke_neighbourhood()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Sherbrooke neighbourhood data refresh failed")
+
+        try:
+            await self._refresh_quebec_city_neighbourhood()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Quebec City neighbourhood data refresh failed")
+
+        self._status["refresh_progress"]["neighbourhood"]["status"] = "done"
+
+    async def _refresh_montreal_neighbourhood(self):
+        """Fetch Montreal Open Data (crime, permits, taxes)."""
+        from housemktanalyzr.enrichment.montreal_data import MontrealOpenDataClient
+
+        logger.info("Montreal neighbourhood: fetching crime, permits, taxes")
+        client = MontrealOpenDataClient()
         try:
             from datetime import date as date_cls
             current_year = date_cls.today().year - 1
@@ -795,9 +824,9 @@ class ScraperWorker:
 
             if rows:
                 count = await upsert_neighbourhood_stats_batch(rows)
-                logger.info(f"Neighbourhood data: upserted {count} borough stats")
+                logger.info(f"Montreal neighbourhood: upserted {count} borough stats")
             else:
-                logger.warning("Neighbourhood data: no results from Montreal Open Data")
+                logger.warning("Montreal neighbourhood: no results from Open Data")
 
             # Fetch multi-year tax history for trend analysis
             try:
@@ -819,13 +848,37 @@ class ScraperWorker:
                     logger.info(f"Tax rate history: upserted {tax_count} borough/year records")
             except Exception:
                 logger.exception("Tax rate history fetch failed (non-blocking)")
+        finally:
+            await client.close()
 
-            self._status["refresh_progress"]["neighbourhood"]["status"] = "done"
+    async def _refresh_sherbrooke_neighbourhood(self):
+        """Fetch Sherbrooke crime data from ArcGIS."""
+        from housemktanalyzr.enrichment.sherbrooke_data import SherbrookeCrimeClient
 
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Neighbourhood data refresh failed")
-            self._status["refresh_progress"]["neighbourhood"]["status"] = "failed"
+        logger.info("Sherbrooke neighbourhood: fetching crime data")
+        client = SherbrookeCrimeClient()
+        try:
+            rows = await client.get_neighbourhood_rows()
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Sherbrooke neighbourhood: upserted {count} arrondissement stats")
+            else:
+                logger.warning("Sherbrooke neighbourhood: no results")
+        finally:
+            await client.close()
+
+    async def _refresh_quebec_city_neighbourhood(self):
+        """Fetch Quebec City permit data from Données Québec."""
+        from housemktanalyzr.enrichment.quebec_city_data import QuebecCityPermitsClient
+
+        logger.info("Quebec City neighbourhood: fetching permit data")
+        client = QuebecCityPermitsClient()
+        try:
+            rows = await client.get_neighbourhood_rows()
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Quebec City neighbourhood: upserted {count} arrondissement stats")
+            else:
+                logger.warning("Quebec City neighbourhood: no results")
         finally:
             await client.close()
