@@ -432,6 +432,23 @@ class CentrisScraper(DataSource):
                 units = 3
             elif "quadruplex" in type_text.lower():
                 units = 4
+            elif "quintuplex" in type_text.lower() or "5-plex" in type_text.lower():
+                units = 5
+            else:
+                # Try extracting from "(N)" in category text, e.g. "Residential (6)"
+                paren_match = re.search(r"\((\d+)\)", type_text)
+                if paren_match:
+                    units = int(paren_match.group(1))
+                # Also try URL for plex type hints
+                elif url:
+                    url_lower = url.lower()
+                    if "5plex" in url_lower or "quintuplex" in url_lower:
+                        units = 5
+                    elif "plex" in url_lower and units == 1:
+                        # Generic plex URL — extract digit before "plex" if present
+                        plex_match = re.search(r"(\d+)plex", url_lower)
+                        if plex_match:
+                            units = int(plex_match.group(1))
 
             property_type = self._determine_property_type(type_text, units)
 
