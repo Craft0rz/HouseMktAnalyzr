@@ -365,11 +365,13 @@ async def _create_tables():
             CREATE INDEX IF NOT EXISTS idx_portfolio_user ON portfolio(user_id)
         """)
 
-        # Promote admin user(s)
-        await conn.execute("""
-            UPDATE users SET role = 'admin'
-            WHERE email = 'mfontainegosselin@gmail.com' AND role != 'admin'
-        """)
+        # Promote admin user(s) from env var (no hardcoded emails in source)
+        admin_email = os.environ.get("ADMIN_EMAIL")
+        if admin_email:
+            await conn.execute("""
+                UPDATE users SET role = 'admin'
+                WHERE email = $1 AND role != 'admin'
+            """, admin_email)
 
 
 # --- Property cache helpers ---

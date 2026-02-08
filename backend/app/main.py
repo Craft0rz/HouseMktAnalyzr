@@ -17,15 +17,12 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .auth import SECRET_KEY as _JWT_SECRET, ALGORITHM as _JWT_ALGO
 from .db import init_pool, close_pool, get_pool
 from .routers import admin, alerts, analysis, auth, market, portfolio, properties, scraper
 from .scraper_worker import ScraperWorker
 
 logger = logging.getLogger(__name__)
-
-# JWT config (read once; same env vars as auth.py)
-_JWT_SECRET = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
-_JWT_ALGO = os.environ.get("JWT_ALGORITHM", "HS256")
 
 
 class UsageTrackingMiddleware(BaseHTTPMiddleware):
@@ -111,9 +108,29 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+    max_age=3600,
 )
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        if os.environ.get("FRONTEND_URL", "").startswith("https"):
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(UsageTrackingMiddleware)
 
 # Include routers

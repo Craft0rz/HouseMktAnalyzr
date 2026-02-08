@@ -21,7 +21,15 @@ logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT config
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
+if not SECRET_KEY or SECRET_KEY == "change-me-in-production":
+    if os.environ.get("DATABASE_URL"):
+        raise RuntimeError(
+            "JWT_SECRET_KEY environment variable must be set to a strong random value. "
+            "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+        )
+    else:
+        SECRET_KEY = "dev-only-no-db"  # Allow running without DB for local frontend dev
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))

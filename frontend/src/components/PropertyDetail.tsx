@@ -440,7 +440,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           {/* Quick Actions */}
           <div className="flex gap-2">
             <Button asChild variant="outline" className="flex-1">
-              <a href={listing.url} target="_blank" rel="noopener noreferrer">
+              <a href={listing.url && /^https?:\/\//.test(listing.url) ? listing.url : '#'} target="_blank" rel="noopener noreferrer">
                 <ExternalLink className="mr-2 h-4 w-4" />
                 {t('detail.viewOnCentris')}
               </a>
