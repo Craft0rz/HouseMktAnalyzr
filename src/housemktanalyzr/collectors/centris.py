@@ -33,7 +33,6 @@ REGION_MAPPING = {
     "montreal": "Montreal (Island)",
     "laval": "Laval",
     "south-shore": "South Shore",
-    "north-shore": "North Shore",
     "laurentides": "Laurentides",
     "lanaudiere": "Lanaudière",
 }
@@ -47,24 +46,25 @@ PROPERTY_TYPE_MAPPING = {
     "MULTIPLEX": ["Quintuplex or more", "Multi-family (5+)"],
 }
 
-# URL patterns for property-type specific searches
-# These give different result sets than the generic search
-# Note: QUADPLEX and MULTIPLEX don't have separate URLs, use ALL_PLEX
+# Full type-to-URL mapping for on-demand searches.
+# DUPLEX/TRIPLEX have dedicated Centris URLs; QUADPLEX/MULTIPLEX fall back to ALL_PLEX.
 PROPERTY_TYPE_URLS = {
+    "HOUSE": "/en/houses~for-sale~{region}",
     "DUPLEX": "/en/duplexes~for-sale~{region}",
     "TRIPLEX": "/en/triplexes~for-sale~{region}",
-    "HOUSE": "/en/houses~for-sale~{region}",
-    "ALL_PLEX": "/en/plexes~for-sale~{region}",  # All multi-family (duplex-quintuplex)
+    "QUADPLEX": "/en/plexes~for-sale~{region}",
+    "MULTIPLEX": "/en/plexes~for-sale~{region}",
+    "ALL_PLEX": "/en/plexes~for-sale~{region}",
 }
 
-# Region name mappings for URL construction — uses Centris Geographic Areas (Level 1).
+# Region name mappings for URL construction — uses Centris Geographic Areas (Level 1 only).
+# Avoids Level 2 sub-areas (e.g. montreal-north-shore) to prevent overlap.
 # See sitemap: propertysubtype-sellingtype-geographicarea-1.xml
 REGION_URL_MAPPING = {
     "montreal": "montreal-island",
     "laval": "laval",
     "south-shore": "monteregie",      # full Montérégie geographic area
     "rive-sud": "monteregie",
-    "north-shore": "montreal-north-shore",
     "laurentides": "laurentides",
     "lanaudiere": "lanaudiere",
 }

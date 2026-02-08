@@ -276,14 +276,6 @@ RENTAL_DATA_2024 = {
         3: 1925,
         4: 2175,
     },
-    # North Shore (Rive-Nord)
-    "north-shore": {
-        "bachelor": 875,
-        1: 1125,
-        2: 1425,
-        3: 1725,
-        4: 1975,
-    },
     "rive-nord": {
         "bachelor": 875,
         1: 1125,

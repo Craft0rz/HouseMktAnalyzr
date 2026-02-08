@@ -53,7 +53,6 @@ export default function Home() {
     { value: 'montreal', label: t('regions.montreal') },
     { value: 'laval', label: t('regions.laval') },
     { value: 'south-shore', label: t('regions.southShore') },
-    { value: 'north-shore', label: t('regions.northShore') },
     { value: 'laurentides', label: t('regions.laurentides') },
     { value: 'lanaudiere', label: t('regions.lanaudiere') },
   ];

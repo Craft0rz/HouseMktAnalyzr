@@ -32,9 +32,11 @@ CHARACTERISTICS = {
     "median_individual_income": "113",
 }
 
-# Greater Montreal CSD codes → DGUID mapping
+# CSD codes → DGUID mapping for all supported CMAs.
 # DGUID format: 2021A0005 + 7-digit CSD code
-MONTREAL_CMA_CSDS = {
+# Add entries for new CMAs when activating them.
+CMA_CSDS = {
+    # --- Montreal CMA ---
     "montreal": "2466023",
     "laval": "2465005",
     "longueuil": "2458227",
@@ -81,9 +83,16 @@ MONTREAL_CMA_CSDS = {
     "ndg": "2466023",
     # Region aliases
     "south-shore": "2458227",  # default to Longueuil
-    "north-shore": "2464008",  # default to Terrebonne
     "laurentides": "2475017",  # default to Saint-Jerome
     "lanaudiere": "2460013",  # default to Repentigny
+    # --- Quebec CMA --- (uncomment when activated)
+    # "quebec-city": "2423027",
+    # "levis": "2425213",
+    # "saint-augustin-de-desmaures": "2423057",
+    # "beauport": "2423027",  # borough of Quebec City
+    # --- Sherbrooke CMA --- (uncomment when activated)
+    # "sherbrooke": "2443027",
+    # "magog": "2445072",
 }
 
 
@@ -142,7 +151,7 @@ class StatCanCensusClient:
         """
         if csd_codes is None:
             # Get unique CSD codes for Greater Montreal
-            csd_codes = sorted(set(MONTREAL_CMA_CSDS.values()))
+            csd_codes = sorted(set(CMA_CSDS.values()))
 
         dguids = [_csd_to_dguid(c) for c in csd_codes]
         dguid_str = "+".join(dguids)
@@ -171,13 +180,13 @@ class StatCanCensusClient:
     async def get_demographics_for_city(self, city: str) -> DemographicProfile | None:
         """Get demographics for a single city/neighbourhood.
 
-        Maps city names to CSD codes using the MONTREAL_CMA_CSDS lookup.
+        Maps city names to CSD codes using the CMA_CSDS lookup.
         """
         normalized = city.lower().strip().replace(" ", "-")
-        csd_code = MONTREAL_CMA_CSDS.get(normalized)
+        csd_code = CMA_CSDS.get(normalized)
         if not csd_code:
             # Try partial match
-            for key, code in MONTREAL_CMA_CSDS.items():
+            for key, code in CMA_CSDS.items():
                 if normalized in key or key in normalized:
                     csd_code = code
                     break
@@ -251,11 +260,11 @@ class StatCanCensusClient:
 def get_csd_for_city(city: str) -> str | None:
     """Look up the CSD code for a city/neighbourhood name."""
     normalized = city.lower().strip().replace(" ", "-")
-    code = MONTREAL_CMA_CSDS.get(normalized)
+    code = CMA_CSDS.get(normalized)
     if code:
         return code
     # Partial match
-    for key, code in MONTREAL_CMA_CSDS.items():
+    for key, code in CMA_CSDS.items():
         if normalized in key or key in normalized:
             return code
     return None

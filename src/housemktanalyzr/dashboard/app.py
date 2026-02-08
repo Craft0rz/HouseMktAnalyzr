@@ -35,10 +35,11 @@ st.set_page_config(
 
 # Region options
 REGIONS = {
-    "Montreal South Shore": "montreal-south-shore",
     "Montreal Island": "montreal-island",
     "Laval": "laval",
-    "North Shore": "montreal-north-shore",
+    "Montérégie": "monteregie",
+    "Laurentides": "laurentides",
+    "Lanaudière": "lanaudiere",
 }
 
 # Property type options

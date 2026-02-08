@@ -70,7 +70,6 @@ function AlertCard({
     montreal: 'regions.montreal',
     laval: 'regions.laval',
     'south-shore': 'regions.southShore',
-    'north-shore': 'regions.northShore',
     laurentides: 'regions.laurentides',
     lanaudiere: 'regions.lanaudiere',
   };
@@ -275,7 +274,6 @@ function CreateAlertDialog({ onCreated }: { onCreated: () => void }) {
     { value: 'montreal', label: t('regions.montreal') },
     { value: 'laval', label: t('regions.laval') },
     { value: 'south-shore', label: t('regions.southShore') },
-    { value: 'north-shore', label: t('regions.northShore') },
     { value: 'laurentides', label: t('regions.laurentides') },
     { value: 'lanaudiere', label: t('regions.lanaudiere') },
   ];
