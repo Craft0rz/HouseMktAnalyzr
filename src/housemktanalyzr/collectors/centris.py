@@ -35,6 +35,8 @@ REGION_MAPPING = {
     "south-shore": "South Shore",
     "laurentides": "Laurentides",
     "lanaudiere": "Lanaudière",
+    "capitale-nationale": "Capitale-Nationale",
+    "estrie": "Estrie",
 }
 
 # Mapping of property types to Centris property type codes
@@ -67,6 +69,8 @@ REGION_URL_MAPPING = {
     "rive-sud": "monteregie",
     "laurentides": "laurentides",
     "lanaudiere": "lanaudiere",
+    "capitale-nationale": "capitale-nationale",
+    "estrie": "estrie",
 }
 
 

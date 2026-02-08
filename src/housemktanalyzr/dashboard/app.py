@@ -40,6 +40,8 @@ REGIONS = {
     "Montérégie": "monteregie",
     "Laurentides": "laurentides",
     "Lanaudière": "lanaudiere",
+    "Capitale-Nationale": "capitale-nationale",
+    "Estrie": "estrie",
 }
 
 # Property type options

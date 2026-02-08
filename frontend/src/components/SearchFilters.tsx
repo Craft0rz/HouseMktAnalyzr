@@ -35,6 +35,8 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
     { value: 'south-shore', label: t('regions.southShore') },
     { value: 'laurentides', label: t('regions.laurentides') },
     { value: 'lanaudiere', label: t('regions.lanaudiere') },
+    { value: 'capitale-nationale', label: t('regions.capitaleNationale') },
+    { value: 'estrie', label: t('regions.estrie') },
   ];
 
   const PROPERTY_TYPES = [

@@ -72,6 +72,8 @@ function AlertCard({
     'south-shore': 'regions.southShore',
     laurentides: 'regions.laurentides',
     lanaudiere: 'regions.lanaudiere',
+    'capitale-nationale': 'regions.capitaleNationale',
+    estrie: 'regions.estrie',
   };
 
   return (
@@ -276,6 +278,8 @@ function CreateAlertDialog({ onCreated }: { onCreated: () => void }) {
     { value: 'south-shore', label: t('regions.southShore') },
     { value: 'laurentides', label: t('regions.laurentides') },
     { value: 'lanaudiere', label: t('regions.lanaudiere') },
+    { value: 'capitale-nationale', label: t('regions.capitaleNationale') },
+    { value: 'estrie', label: t('regions.estrie') },
   ];
 
   const PROPERTY_TYPES = [
