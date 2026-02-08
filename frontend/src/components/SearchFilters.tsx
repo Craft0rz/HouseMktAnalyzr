@@ -12,23 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent } from '@/components/ui/card';
-
-const REGIONS = [
-  { value: 'montreal', label: 'Montreal Island' },
-  { value: 'laval', label: 'Laval' },
-  { value: 'south-shore', label: 'South Shore / Montérégie' },
-  { value: 'north-shore', label: 'North Shore' },
-  { value: 'laurentides', label: 'Laurentides' },
-  { value: 'lanaudiere', label: 'Lanaudière' },
-];
-
-const PROPERTY_TYPES = [
-  { value: 'DUPLEX', label: 'Duplex' },
-  { value: 'TRIPLEX', label: 'Triplex' },
-  { value: 'QUADPLEX', label: 'Quadplex' },
-  { value: 'MULTIPLEX', label: 'Multiplex (5+)' },
-  { value: 'HOUSE', label: 'House' },
-];
+import { useTranslation } from '@/i18n/LanguageContext';
 
 export interface SearchFiltersProps {
   onSearch: (filters: SearchFilters) => void;
@@ -43,6 +27,25 @@ export interface SearchFilters {
 }
 
 export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
+  const { t } = useTranslation();
+
+  const REGIONS = [
+    { value: 'montreal', label: t('regions.montreal') },
+    { value: 'laval', label: t('regions.laval') },
+    { value: 'south-shore', label: t('regions.southShore') },
+    { value: 'north-shore', label: t('regions.northShore') },
+    { value: 'laurentides', label: t('regions.laurentides') },
+    { value: 'lanaudiere', label: t('regions.lanaudiere') },
+  ];
+
+  const PROPERTY_TYPES = [
+    { value: 'DUPLEX', label: t('propertyTypes.DUPLEX') },
+    { value: 'TRIPLEX', label: t('propertyTypes.TRIPLEX') },
+    { value: 'QUADPLEX', label: t('propertyTypes.QUADPLEX') },
+    { value: 'MULTIPLEX', label: t('propertyTypes.MULTIPLEX') },
+    { value: 'HOUSE', label: t('propertyTypes.HOUSE') },
+  ];
+
   const [region, setRegion] = useState('montreal');
   const [propertyTypes, setPropertyTypes] = useState<string[]>(['DUPLEX', 'TRIPLEX', 'QUADPLEX']);
   const [minPrice, setMinPrice] = useState<string>('');
@@ -72,10 +75,10 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Region */}
             <div className="space-y-2">
-              <label htmlFor="search-region" className="text-sm font-medium">Region</label>
+              <label htmlFor="search-region" className="text-sm font-medium">{t('filters.region')}</label>
               <Select value={region} onValueChange={setRegion}>
                 <SelectTrigger id="search-region">
-                  <SelectValue placeholder="Select region" />
+                  <SelectValue placeholder={t('regions.selectRegion')} />
                 </SelectTrigger>
                 <SelectContent>
                   {REGIONS.map((r) => (
@@ -89,12 +92,12 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
 
             {/* Min Price */}
             <div className="space-y-2">
-              <label htmlFor="search-min-price" className="text-sm font-medium">Min Price</label>
+              <label htmlFor="search-min-price" className="text-sm font-medium">{t('filters.minPrice')}</label>
               <Input
                 id="search-min-price"
                 type="number"
                 step="10000"
-                placeholder="e.g. 400000"
+                placeholder={t('filters.minPricePlaceholder')}
                 value={minPrice}
                 onChange={(e) => setMinPrice(e.target.value)}
                 min="0"
@@ -103,12 +106,12 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
 
             {/* Max Price */}
             <div className="space-y-2">
-              <label htmlFor="search-max-price" className="text-sm font-medium">Max Price</label>
+              <label htmlFor="search-max-price" className="text-sm font-medium">{t('filters.maxPrice')}</label>
               <Input
                 id="search-max-price"
                 type="number"
                 step="10000"
-                placeholder="e.g. 800000"
+                placeholder={t('filters.maxPricePlaceholder')}
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(e.target.value)}
                 min="0"
@@ -117,18 +120,18 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
 
             {/* Search Button */}
             <div className="space-y-2">
-              <span className="text-sm font-medium invisible block">Search</span>
+              <span className="text-sm font-medium invisible block">{t('filters.search')}</span>
               <Button onClick={handleSearch} disabled={isLoading} className="w-full">
                 <Search className="mr-2 h-4 w-4" />
-                {isLoading ? 'Searching...' : 'Search'}
+                {isLoading ? t('filters.searching') : t('filters.search')}
               </Button>
             </div>
           </div>
 
           {/* Property Types */}
           <fieldset className="space-y-2">
-            <legend className="text-sm font-medium">Property Types</legend>
-            <div className="flex flex-wrap gap-2" role="group" aria-label="Property type filters">
+            <legend className="text-sm font-medium">{t('filters.propertyTypes')}</legend>
+            <div className="flex flex-wrap gap-2" role="group" aria-label={t('filters.propertyTypeFilters')}>
               {PROPERTY_TYPES.map((type) => (
                 <Button
                   key={type.value}

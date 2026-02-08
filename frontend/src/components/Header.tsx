@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Building2, BarChart3, Bell, Calculator, Briefcase, Menu, Sun, Moon } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useTranslation } from '@/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,18 +16,19 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-const navigation = [
-  { name: 'Search', href: '/search', icon: Building2 },
-  { name: 'Compare', href: '/compare', icon: BarChart3 },
-  { name: 'Calculator', href: '/calculator', icon: Calculator },
-  { name: 'Alerts', href: '/alerts', icon: Bell },
-  { name: 'Portfolio', href: '/portfolio', icon: Briefcase },
-];
-
 export function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { t, locale, setLocale } = useTranslation();
+
+  const navigation = [
+    { name: t('header.search'), href: '/search', icon: Building2 },
+    { name: t('header.compare'), href: '/compare', icon: BarChart3 },
+    { name: t('header.calculator'), href: '/calculator', icon: Calculator },
+    { name: t('header.alerts'), href: '/alerts', icon: Bell },
+    { name: t('header.portfolio'), href: '/portfolio', icon: Briefcase },
+  ];
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -61,12 +63,23 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Language toggle */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLocale(locale === 'en' ? 'fr' : 'en')}
+            aria-label={t('header.switchLang')}
+            className="text-xs font-semibold w-8"
+          >
+            {locale === 'en' ? 'FR' : 'EN'}
+          </Button>
+
           {/* Theme toggle */}
           <Button
             variant="ghost"
             size="sm"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            aria-label="Toggle theme"
+            aria-label={t('header.toggleTheme')}
           >
             <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
@@ -75,7 +88,7 @@ export function Header() {
         {/* Mobile menu button */}
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild className="md:hidden">
-            <Button variant="ghost" size="sm" aria-label="Open menu">
+            <Button variant="ghost" size="sm" aria-label={t('header.openMenu')}>
               <Menu className="h-5 w-5" />
             </Button>
           </SheetTrigger>

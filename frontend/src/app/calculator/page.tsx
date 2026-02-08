@@ -9,8 +9,10 @@ import { Separator } from '@/components/ui/separator';
 import { LoadingCard } from '@/components/LoadingCard';
 import { useQuickCalc, useMortgage } from '@/hooks/useProperties';
 import { formatPrice } from '@/lib/formatters';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 export default function CalculatorPage() {
+  const { t, locale } = useTranslation();
   const [price, setPrice] = useState<string>('500000');
   const [monthlyRent, setMonthlyRent] = useState<string>('3500');
   const [units, setUnits] = useState<string>('3');
@@ -51,9 +53,9 @@ export default function CalculatorPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Investment Calculator</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('calculator.title')}</h1>
         <p className="text-muted-foreground">
-          Run quick what-if scenarios for investment properties
+          {t('calculator.subtitle')}
         </p>
       </div>
 
@@ -63,14 +65,14 @@ export default function CalculatorPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calculator className="h-5 w-5" />
-              Property Details
+              {t('calculator.propertyDetails')}
             </CardTitle>
-            <CardDescription>Enter property information to calculate metrics</CardDescription>
+            <CardDescription>{t('calculator.propertyDetailsDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label htmlFor="calc-price" className="text-sm font-medium">Purchase Price ($)</label>
+                <label htmlFor="calc-price" className="text-sm font-medium">{t('calculator.purchasePrice')}</label>
                 <Input
                   id="calc-price"
                   type="number"
@@ -82,7 +84,7 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="calc-rent" className="text-sm font-medium">Monthly Rent ($)</label>
+                <label htmlFor="calc-rent" className="text-sm font-medium">{t('calculator.monthlyRent')}</label>
                 <Input
                   id="calc-rent"
                   type="number"
@@ -94,7 +96,7 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="calc-units" className="text-sm font-medium">Units</label>
+                <label htmlFor="calc-units" className="text-sm font-medium">{t('calculator.units')}</label>
                 <Input
                   id="calc-units"
                   type="number"
@@ -105,7 +107,7 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="calc-down-payment" className="text-sm font-medium">Down Payment (%)</label>
+                <label htmlFor="calc-down-payment" className="text-sm font-medium">{t('calculator.downPayment')}</label>
                 <Input
                   id="calc-down-payment"
                   type="number"
@@ -117,7 +119,7 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="calc-interest" className="text-sm font-medium">Interest Rate (%)</label>
+                <label htmlFor="calc-interest" className="text-sm font-medium">{t('calculator.interestRate')}</label>
                 <Input
                   id="calc-interest"
                   type="number"
@@ -129,7 +131,7 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="calc-expense" className="text-sm font-medium">Expense Ratio (%)</label>
+                <label htmlFor="calc-expense" className="text-sm font-medium">{t('calculator.expenseRatio')}</label>
                 <Input
                   id="calc-expense"
                   type="number"
@@ -149,33 +151,33 @@ export default function CalculatorPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Home className="h-5 w-5" />
-              Mortgage Details
+              {t('calculator.mortgageDetails')}
             </CardTitle>
-            <CardDescription>30-year amortization with semi-annual compounding</CardDescription>
+            <CardDescription>{t('calculator.mortgageDesc')}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {mortgageData ? (
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <div className="text-muted-foreground">Down Payment</div>
-                  <div className="text-lg font-medium">{formatPrice(mortgageData.down_payment)}</div>
+                  <div className="text-muted-foreground">{t('calculator.downPaymentLabel')}</div>
+                  <div className="text-lg font-medium">{formatPrice(mortgageData.down_payment, locale)}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Loan Amount</div>
-                  <div className="text-lg font-medium">{formatPrice(mortgageData.principal)}</div>
+                  <div className="text-muted-foreground">{t('calculator.loanAmount')}</div>
+                  <div className="text-lg font-medium">{formatPrice(mortgageData.principal, locale)}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Monthly Payment</div>
-                  <div className="text-lg font-medium">{formatPrice(mortgageData.monthly_payment)}</div>
+                  <div className="text-muted-foreground">{t('calculator.monthlyPayment')}</div>
+                  <div className="text-lg font-medium">{formatPrice(mortgageData.monthly_payment, locale)}</div>
                 </div>
                 <div>
-                  <div className="text-muted-foreground">Total Cash Needed</div>
-                  <div className="text-lg font-medium">{formatPrice(mortgageData.total_cash_needed)}</div>
+                  <div className="text-muted-foreground">{t('calculator.totalCashNeeded')}</div>
+                  <div className="text-lg font-medium">{formatPrice(mortgageData.total_cash_needed, locale)}</div>
                 </div>
               </div>
             ) : (
               <div className="text-muted-foreground text-center py-4">
-                Enter property price to calculate mortgage
+                {t('calculator.enterPrice')}
               </div>
             )}
           </CardContent>
@@ -190,30 +192,30 @@ export default function CalculatorPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5" />
-                Investment Metrics
+                {t('calculator.investmentMetrics')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Cap Rate</span>
+                <span className="text-muted-foreground">{t('calculator.capRate')}</span>
                 <Badge variant="outline" className="text-lg">
                   {calcData.cap_rate.toFixed(2)}%
                 </Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Gross Yield</span>
+                <span className="text-muted-foreground">{t('calculator.grossYield')}</span>
                 <Badge variant="outline" className="text-lg">
                   {calcData.gross_yield.toFixed(2)}%
                 </Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">GRM</span>
+                <span className="text-muted-foreground">{t('calculator.grm')}</span>
                 <Badge variant="outline" className="text-lg">
                   {calcData.grm.toFixed(1)}
                 </Badge>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Cash-on-Cash</span>
+                <span className="text-muted-foreground">{t('calculator.cashOnCash')}</span>
                 <Badge variant="outline" className="text-lg">
                   {calcData.cash_on_cash_return.toFixed(2)}%
                 </Badge>
@@ -226,32 +228,32 @@ export default function CalculatorPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <DollarSign className="h-5 w-5" />
-                Cash Flow
+                {t('calculator.cashFlow')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="text-center py-4">
-                <div className="text-sm text-muted-foreground">Monthly Cash Flow</div>
+                <div className="text-sm text-muted-foreground">{t('calculator.monthlyCashFlow')}</div>
                 <div className={`text-4xl font-bold ${calcData.monthly_cash_flow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {calcData.monthly_cash_flow >= 0 ? '' : '-'}{formatPrice(Math.abs(calcData.monthly_cash_flow))}
+                  {calcData.monthly_cash_flow >= 0 ? '' : '-'}{formatPrice(Math.abs(calcData.monthly_cash_flow), locale)}
                 </div>
                 <Badge
                   variant={calcData.monthly_cash_flow >= 0 ? 'default' : 'destructive'}
                   className="mt-2"
                 >
-                  {calcData.monthly_cash_flow >= 0 ? 'Positive Cash Flow' : 'Negative Cash Flow'}
+                  {calcData.monthly_cash_flow >= 0 ? t('calculator.positiveCashFlow') : t('calculator.negativeCashFlow')}
                 </Badge>
               </div>
               <Separator />
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Annual Cash Flow</span>
+                <span className="text-muted-foreground">{t('calculator.annualCashFlow')}</span>
                 <span className={calcData.annual_cash_flow >= 0 ? 'text-green-600' : 'text-red-600'}>
-                  {formatPrice(calcData.annual_cash_flow)}
+                  {formatPrice(calcData.annual_cash_flow, locale)}
                 </span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">NOI (Net Operating Income)</span>
-                <span>{formatPrice(calcData.noi)}</span>
+                <span className="text-muted-foreground">{t('calculator.noi')}</span>
+                <span>{formatPrice(calcData.noi, locale)}</span>
               </div>
             </CardContent>
           </Card>
@@ -261,28 +263,28 @@ export default function CalculatorPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Percent className="h-5 w-5" />
-                Per Unit Analysis
+                {t('calculator.perUnitAnalysis')}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Price per Unit</span>
-                <span className="font-medium">{formatPrice(calcData.price_per_unit)}</span>
+                <span className="text-muted-foreground">{t('calculator.pricePerUnit')}</span>
+                <span className="font-medium">{formatPrice(calcData.price_per_unit, locale)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Rent per Unit</span>
-                <span className="font-medium">{formatPrice(rentNum / unitsNum)}/mo</span>
+                <span className="text-muted-foreground">{t('calculator.rentPerUnit')}</span>
+                <span className="font-medium">{formatPrice(rentNum / unitsNum, locale)}{t('common.perMonth')}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Cash Flow per Unit</span>
+                <span className="text-muted-foreground">{t('calculator.cashFlowPerUnit')}</span>
                 <span className={`font-medium ${calcData.monthly_cash_flow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatPrice(calcData.monthly_cash_flow / unitsNum)}/mo
+                  {formatPrice(calcData.monthly_cash_flow / unitsNum, locale)}{t('common.perMonth')}
                 </span>
               </div>
               <Separator />
               <div className="flex justify-between items-center">
-                <span className="text-muted-foreground">Total Cash Required</span>
-                <span className="font-medium">{formatPrice(calcData.total_cash_needed)}</span>
+                <span className="text-muted-foreground">{t('calculator.totalCashRequired')}</span>
+                <span className="font-medium">{formatPrice(calcData.total_cash_needed, locale)}</span>
               </div>
             </CardContent>
           </Card>
@@ -290,13 +292,13 @@ export default function CalculatorPage() {
       )}
 
       {!calcData && priceNum > 0 && rentNum > 0 && calcLoading && (
-        <LoadingCard message="Calculating..." description="Running investment analysis" />
+        <LoadingCard message={t('calculator.calculating')} description={t('calculator.calculatingDesc')} />
       )}
 
       {(!priceNum || !rentNum) && (
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
-            Enter a purchase price and monthly rent to see investment metrics
+            {t('calculator.enterPriceRent')}
           </CardContent>
         </Card>
       )}

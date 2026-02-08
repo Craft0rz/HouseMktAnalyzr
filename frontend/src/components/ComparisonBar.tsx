@@ -5,9 +5,11 @@ import { X, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useComparison } from '@/lib/comparison-context';
+import { useTranslation } from '@/i18n/LanguageContext';
 
 export function ComparisonBar() {
   const { selectedProperties, removeProperty, clearAll } = useComparison();
+  const { t } = useTranslation();
 
   if (selectedProperties.length === 0) return null;
 
@@ -16,7 +18,7 @@ export function ComparisonBar() {
       <div className="container flex items-center justify-between gap-4">
         <div className="flex items-center gap-4 flex-1 overflow-x-auto">
           <span className="text-sm font-medium whitespace-nowrap">
-            Compare ({selectedProperties.length}/4):
+            {t('comparison.compareCount', { count: selectedProperties.length })}
           </span>
           <div className="flex gap-2">
             {selectedProperties.map((property) => (
@@ -31,8 +33,8 @@ export function ComparisonBar() {
                 <button
                   onClick={() => removeProperty(property.listing.id)}
                   className="ml-1 hover:text-destructive"
-                  title={`Remove ${property.listing.address} from comparison`}
-                  aria-label={`Remove ${property.listing.address} from comparison`}
+                  title={t('comparison.removeFromComparison', { address: property.listing.address })}
+                  aria-label={t('comparison.removeFromComparison', { address: property.listing.address })}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -45,14 +47,14 @@ export function ComparisonBar() {
             variant="ghost"
             size="sm"
             onClick={clearAll}
-            title="Clear all properties from comparison"
+            title={t('comparison.clearAll')}
           >
-            Clear
+            {t('comparison.clear')}
           </Button>
           <Button asChild size="sm" disabled={selectedProperties.length < 2}>
             <Link href="/compare">
               <BarChart3 className="mr-2 h-4 w-4" />
-              Compare
+              {t('comparison.compare')}
             </Link>
           </Button>
         </div>

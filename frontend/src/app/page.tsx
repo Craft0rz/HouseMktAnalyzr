@@ -20,54 +20,32 @@ import { MetricsBar, PriceCapScatter, PriceDistribution } from '@/components/cha
 import { formatPrice, getScoreColor } from '@/lib/formatters';
 import { marketApi } from '@/lib/api';
 import type { MarketSummaryResponse } from '@/lib/types';
-
-const REGIONS = [
-  { value: 'montreal', label: 'Montreal Island' },
-  { value: 'laval', label: 'Laval' },
-  { value: 'south-shore', label: 'South Shore / Montérégie' },
-  { value: 'north-shore', label: 'North Shore' },
-  { value: 'laurentides', label: 'Laurentides' },
-  { value: 'lanaudiere', label: 'Lanaudière' },
-];
-
-const features = [
-  {
-    title: 'Property Search',
-    description: 'Search multi-family properties with filters',
-    icon: Search,
-    href: '/search',
-    color: 'text-blue-500',
-  },
-  {
-    title: 'Compare Properties',
-    description: 'Side-by-side investment comparison',
-    icon: BarChart3,
-    href: '/compare',
-    color: 'text-green-500',
-  },
-  {
-    title: 'Calculator',
-    description: 'Quick investment scenarios',
-    icon: Calculator,
-    href: '/calculator',
-    color: 'text-purple-500',
-  },
-  {
-    title: 'Alerts',
-    description: 'Get notified on matches',
-    icon: Bell,
-    href: '/alerts',
-    color: 'text-orange-500',
-  },
-];
+import { useTranslation } from '@/i18n/LanguageContext';
 
 export default function Home() {
+  const { t, locale } = useTranslation();
   const [region, setRegion] = useState('montreal');
   const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
   const { data: topOpportunities, isLoading } = useTopOpportunities(
     { region, limit: 10, min_score: 50 },
     true
   );
+
+  const REGIONS = [
+    { value: 'montreal', label: t('regions.montreal') },
+    { value: 'laval', label: t('regions.laval') },
+    { value: 'south-shore', label: t('regions.southShore') },
+    { value: 'north-shore', label: t('regions.northShore') },
+    { value: 'laurentides', label: t('regions.laurentides') },
+    { value: 'lanaudiere', label: t('regions.lanaudiere') },
+  ];
+
+  const features = [
+    { title: t('home.featureSearch'), description: t('home.featureSearchDesc'), icon: Search, href: '/search', color: 'text-blue-500' },
+    { title: t('home.featureCompare'), description: t('home.featureCompareDesc'), icon: BarChart3, href: '/compare', color: 'text-green-500' },
+    { title: t('home.featureCalc'), description: t('home.featureCalcDesc'), icon: Calculator, href: '/calculator', color: 'text-purple-500' },
+    { title: t('home.featureAlerts'), description: t('home.featureAlertsDesc'), icon: Bell, href: '/alerts', color: 'text-orange-500' },
+  ];
 
   useEffect(() => {
     marketApi.summary().then(setMarketData).catch(() => {});
@@ -81,22 +59,22 @@ export default function Home() {
       {/* Hero Section */}
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold tracking-tight">
-          Montreal Investment Analyzer
+          {t('home.title')}
         </h1>
         <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-          Find the best multi-family investment opportunities in Greater Montreal
+          {t('home.subtitle')}
         </p>
         <div className="flex gap-4 justify-center pt-4">
           <Button size="lg" asChild>
             <Link href="/search">
               <Building2 className="mr-2 h-5 w-5" />
-              Search Properties
+              {t('home.searchProperties')}
             </Link>
           </Button>
           <Button size="lg" variant="outline" asChild>
             <Link href="/calculator">
               <Calculator className="mr-2 h-5 w-5" />
-              Quick Calculator
+              {t('home.quickCalculator')}
             </Link>
           </Button>
         </div>
@@ -123,10 +101,10 @@ export default function Home() {
 
       {/* Region Selector */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-semibold tracking-tight">Market Overview</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">{t('home.marketOverview')}</h2>
         <Select value={region} onValueChange={setRegion}>
           <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select region" />
+            <SelectValue placeholder={t('regions.selectRegion')} />
           </SelectTrigger>
           <SelectContent>
             {REGIONS.map((r) => (
@@ -144,8 +122,8 @@ export default function Home() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm flex items-center gap-2">
               <Landmark className="h-4 w-4" />
-              Current Interest Rates
-              <span className="text-xs text-muted-foreground font-normal ml-auto">Bank of Canada</span>
+              {t('home.currentRates')}
+              <span className="text-xs text-muted-foreground font-normal ml-auto">{t('home.bankOfCanada')}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -153,7 +131,7 @@ export default function Home() {
               {marketData.mortgage_rate != null && (
                 <div className="flex items-center gap-3">
                   <div>
-                    <div className="text-xs text-muted-foreground">5yr Mortgage</div>
+                    <div className="text-xs text-muted-foreground">{t('home.mortgageRate')}</div>
                     <div className="text-2xl font-bold">{marketData.mortgage_rate.toFixed(2)}%</div>
                   </div>
                   {marketData.mortgage_direction === 'down' ? (
@@ -168,7 +146,7 @@ export default function Home() {
               {marketData.policy_rate != null && (
                 <div className="flex items-center gap-3">
                   <div>
-                    <div className="text-xs text-muted-foreground">Policy Rate</div>
+                    <div className="text-xs text-muted-foreground">{t('home.policyRate')}</div>
                     <div className="text-2xl font-bold">{marketData.policy_rate.toFixed(2)}%</div>
                   </div>
                   {marketData.policy_direction === 'down' ? (
@@ -182,13 +160,13 @@ export default function Home() {
               )}
               {marketData.prime_rate != null && (
                 <div>
-                  <div className="text-xs text-muted-foreground">Prime Rate</div>
+                  <div className="text-xs text-muted-foreground">{t('home.primeRate')}</div>
                   <div className="text-2xl font-bold">{marketData.prime_rate.toFixed(2)}%</div>
                 </div>
               )}
               {marketData.cpi != null && (
                 <div>
-                  <div className="text-xs text-muted-foreground">CPI Index</div>
+                  <div className="text-xs text-muted-foreground">{t('home.cpiIndex')}</div>
                   <div className="text-2xl font-bold">{marketData.cpi.toFixed(1)}</div>
                 </div>
               )}
@@ -199,20 +177,20 @@ export default function Home() {
 
       {/* Analytics Section */}
       {isLoading ? (
-        <LoadingCard message="Loading market data..." description="Fetching top investment opportunities" />
+        <LoadingCard message={t('home.loadingMarket')} description={t('home.loadingMarketDesc')} />
       ) : hasData ? (
         <>
           {/* Market Overview */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Properties Analyzed</CardDescription>
+                <CardDescription>{t('home.propertiesAnalyzed')}</CardDescription>
                 <CardTitle className="text-3xl">{properties.length}</CardTitle>
               </CardHeader>
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Avg Score</CardDescription>
+                <CardDescription>{t('home.avgScore')}</CardDescription>
                 <CardTitle className="text-3xl">
                   {Math.round(
                     properties.reduce((sum, p) => sum + p.metrics.score, 0) / properties.length
@@ -222,7 +200,7 @@ export default function Home() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Avg Cap Rate</CardDescription>
+                <CardDescription>{t('home.avgCapRate')}</CardDescription>
                 <CardTitle className="text-3xl">
                   {(
                     properties
@@ -236,7 +214,7 @@ export default function Home() {
             </Card>
             <Card>
               <CardHeader className="pb-2">
-                <CardDescription>Positive Cash Flow</CardDescription>
+                <CardDescription>{t('home.positiveCashFlow')}</CardDescription>
                 <CardTitle className="text-3xl">
                   {properties.filter((p) => p.metrics.is_positive_cash_flow).length}/
                   {properties.length}
@@ -251,7 +229,7 @@ export default function Home() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <TrendingUp className="h-5 w-5" />
-                  Top Properties by Score
+                  {t('home.topByScore')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -261,9 +239,9 @@ export default function Home() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Price vs Cap Rate</CardTitle>
+                <CardTitle>{t('home.priceVsCap')}</CardTitle>
                 <CardDescription>
-                  Bubble size indicates investment score
+                  {t('home.bubbleSize')}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -275,8 +253,8 @@ export default function Home() {
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>Price Distribution</CardTitle>
-                <CardDescription>Number of properties by price range</CardDescription>
+                <CardTitle>{t('home.priceDistribution')}</CardTitle>
+                <CardDescription>{t('home.priceDistributionDesc')}</CardDescription>
               </CardHeader>
               <CardContent>
                 <PriceDistribution properties={properties} />
@@ -285,7 +263,7 @@ export default function Home() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Cap Rate Comparison</CardTitle>
+                <CardTitle>{t('home.capRateComparison')}</CardTitle>
               </CardHeader>
               <CardContent>
                 <MetricsBar properties={properties} metric="cap_rate" />
@@ -299,10 +277,10 @@ export default function Home() {
               <CardTitle className="flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <Building2 className="h-5 w-5" />
-                  Top Investment Opportunities
+                  {t('home.topOpportunities')}
                 </span>
                 <Button variant="outline" size="sm" asChild>
-                  <Link href="/search">View All</Link>
+                  <Link href="/search">{t('common.viewAll')}</Link>
                 </Button>
               </CardTitle>
             </CardHeader>
@@ -323,15 +301,15 @@ export default function Home() {
                           <p className="font-medium">{property.listing.address}</p>
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Badge variant="outline">{property.listing.property_type}</Badge>
-                            <span>{property.listing.units} units</span>
+                            <span>{t('home.units', { count: property.listing.units })}</span>
                             <span>•</span>
-                            <span>{formatPrice(property.listing.price)}</span>
+                            <span>{formatPrice(property.listing.price, locale)}</span>
                           </div>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="font-medium">
-                          {property.metrics.cap_rate?.toFixed(1)}% cap
+                          {t('home.cap', { rate: property.metrics.cap_rate?.toFixed(1) ?? '-' })}
                         </p>
                         <p
                           className={`text-sm ${
@@ -341,7 +319,7 @@ export default function Home() {
                           }`}
                         >
                           {property.metrics.cash_flow_monthly != null
-                            ? `${formatPrice(property.metrics.cash_flow_monthly)}/mo`
+                            ? `${formatPrice(property.metrics.cash_flow_monthly, locale)}${t('common.perMonth')}`
                             : '-'}
                         </p>
                       </div>
@@ -356,13 +334,13 @@ export default function Home() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Getting Started</CardTitle>
+            <CardTitle>{t('home.gettingStarted')}</CardTitle>
             <CardDescription>
-              Make sure the FastAPI backend is running to see market analytics.
+              {t('home.gettingStartedDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">Start the backend server:</p>
+            <p className="text-sm text-muted-foreground">{t('home.startBackend')}</p>
             <pre className="bg-muted p-4 rounded-lg text-sm overflow-x-auto">
               <code>
                 cd HouseMktAnalyzr{'\n'}
@@ -371,7 +349,7 @@ export default function Home() {
               </code>
             </pre>
             <p className="text-sm text-muted-foreground mt-4">
-              API docs:{' '}
+              {t('home.apiDocs')}{' '}
               <a
                 href="http://localhost:8000/docs"
                 target="_blank"

@@ -30,6 +30,8 @@ import {
 } from '@/components/ui/table';
 import { useComparison } from '@/lib/comparison-context';
 import { propertiesApi } from '@/lib/api';
+import { useTranslation } from '@/i18n/LanguageContext';
+import { formatPrice } from '@/lib/formatters';
 import type { PropertyWithMetrics, PriceChangeMap, LifecycleMap } from '@/lib/types';
 
 export type StatusFilter = 'all' | 'active' | 'new' | 'stale' | 'delisted' | 'price_drop';
@@ -41,14 +43,6 @@ interface PropertyTableProps {
   showCompareColumn?: boolean;
   statusFilter?: StatusFilter;
 }
-
-const formatPrice = (price: number) => {
-  return new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: 'CAD',
-    maximumFractionDigits: 0,
-  }).format(price);
-};
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null) return '-';
@@ -71,18 +65,8 @@ const getScoreColor = (score: number) => {
   return 'bg-red-500';
 };
 
-const getPropertyTypeLabel = (type: string) => {
-  const labels: Record<string, string> = {
-    DUPLEX: 'Duplex',
-    TRIPLEX: 'Triplex',
-    QUADPLEX: 'Quadplex',
-    MULTIPLEX: '5+ Units',
-    HOUSE: 'House',
-  };
-  return labels[type] || type;
-};
-
 export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn = true, statusFilter = 'all' }: PropertyTableProps) {
+  const { t, locale } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'metrics_score', desc: true },
   ]);
@@ -146,7 +130,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
             className="h-8 w-8 p-0"
             onClick={(e) => handleCompareToggle(e, row.original)}
             disabled={!selected && !canAdd}
-            title={selected ? 'Remove from comparison' : 'Add to comparison'}
+            title={selected ? t('table.removeFromComparison') : t('table.addToComparison')}
           >
             {selected ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           </Button>
@@ -160,7 +144,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          Score
+          {t('table.score')}
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
@@ -203,7 +187,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
     },
     {
       accessorKey: 'listing.address',
-      header: 'Address',
+      header: t('table.address'),
       cell: ({ row }) => {
         const lc = lifecycle[row.original.listing.id];
         const isNew = lc && lc.days_on_market !== null && lc.days_on_market <= 7;
@@ -214,13 +198,13 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
             <div className="flex items-center gap-1.5">
               <span className="font-medium truncate">{row.original.listing.address}</span>
               {isNew && (
-                <Badge className="text-[9px] px-1 py-0 h-4 bg-blue-500 hover:bg-blue-500">New</Badge>
+                <Badge className="text-[9px] px-1 py-0 h-4 bg-blue-500 hover:bg-blue-500">{t('table.new')}</Badge>
               )}
               {isStale && (
-                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-yellow-500/50 text-yellow-600">Stale</Badge>
+                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-yellow-500/50 text-yellow-600">{t('table.stale')}</Badge>
               )}
               {isDelisted && (
-                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">Removed</Badge>
+                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">{t('table.removed')}</Badge>
               )}
             </div>
             <div className="text-sm text-muted-foreground">{row.original.listing.city}</div>
@@ -230,10 +214,10 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
     },
     {
       accessorKey: 'listing.property_type',
-      header: 'Type',
+      header: t('table.type'),
       cell: ({ row }) => (
         <Badge variant="outline">
-          {getPropertyTypeLabel(row.original.listing.property_type)}
+          {t('propertyTypes.' + row.original.listing.property_type)}
         </Badge>
       ),
     },
@@ -244,7 +228,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          Price
+          {t('table.price')}
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
@@ -254,7 +238,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
         const isUp = pc && pc.change > 0;
         return (
           <div className="flex items-center gap-1.5">
-            <span>{formatPrice(row.original.listing.price)}</span>
+            <span>{formatPrice(row.original.listing.price, locale)}</span>
             {isDown && (
               <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-green-500/50 text-green-600 gap-0.5">
                 <TrendingDown className="h-3 w-3" />
@@ -273,7 +257,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
     },
     {
       accessorKey: 'listing.units',
-      header: 'Units',
+      header: t('table.units'),
       cell: ({ row }) => row.original.listing.units,
     },
     {
@@ -285,7 +269,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
           <Clock className="mr-1 h-3.5 w-3.5" />
-          DOM
+          {t('table.dom')}
           <ArrowUpDown className="ml-1 h-4 w-4" />
         </Button>
       ),
@@ -304,7 +288,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          Cap Rate
+          {t('table.capRate')}
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
@@ -317,7 +301,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          Cash Flow
+          {t('table.cashFlow')}
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
@@ -332,7 +316,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
     },
     {
       accessorKey: 'metrics.gross_rental_yield',
-      header: 'Yield',
+      header: t('table.yield'),
       cell: ({ row }) => (
         <span>
           {formatPercent(row.original.metrics.gross_rental_yield)}
@@ -349,11 +333,11 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           variant="ghost"
           onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
         >
-          $/Unit
+          {t('table.pricePerUnit')}
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      cell: ({ row }) => formatPrice(row.original.metrics.price_per_unit),
+      cell: ({ row }) => formatPrice(row.original.metrics.price_per_unit, locale),
     },
     {
       id: 'actions',
@@ -391,7 +375,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading properties...</div>
+        <div className="text-muted-foreground">{t('table.loadingProperties')}</div>
       </div>
     );
   }
@@ -399,7 +383,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
   if (data.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">No properties found. Try adjusting your search filters.</div>
+        <div className="text-muted-foreground">{t('table.noResults')}</div>
       </div>
     );
   }

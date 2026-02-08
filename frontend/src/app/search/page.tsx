@@ -12,17 +12,21 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { analysisApi, propertiesApi } from '@/lib/api';
+import { useTranslation } from '@/i18n/LanguageContext';
+import { formatPrice } from '@/lib/formatters';
 import type { PropertyWithMetrics, BatchAnalysisResponse, RemovedListing } from '@/lib/types';
 
-const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'new', label: 'New (≤7d)' },
-  { value: 'price_drop', label: 'Price Drops' },
-  { value: 'stale', label: 'Stale' },
-  { value: 'delisted', label: 'Removed' },
-];
-
 export default function SearchPage() {
+  const { t, locale } = useTranslation();
+
+  const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+    { value: 'all', label: t('search.filterAll') },
+    { value: 'new', label: t('search.filterNew') },
+    { value: 'price_drop', label: t('search.filterPriceDrops') },
+    { value: 'stale', label: t('search.filterStale') },
+    { value: 'delisted', label: t('search.filterRemoved') },
+  ];
+
   const [results, setResults] = useState<BatchAnalysisResponse | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -90,9 +94,9 @@ export default function SearchPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Property Search</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('search.title')}</h1>
         <p className="text-muted-foreground">
-          Search for investment properties across Greater Montreal
+          {t('search.subtitle')}
         </p>
       </div>
 
@@ -101,7 +105,7 @@ export default function SearchPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Look up by MLS # (e.g. 28574831)"
+            placeholder={t('search.mlsPlaceholder')}
             value={mlsNumber}
             onChange={(e) => setMlsNumber(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleIdLookup()}
@@ -116,13 +120,13 @@ export default function SearchPage() {
           {idLookupMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin mr-2" />
           ) : null}
-          Look Up
+          {t('search.lookUp')}
         </Button>
         {idLookupMutation.isError && (
           <span className="text-sm text-destructive">
             {idLookupMutation.error instanceof Error
               ? idLookupMutation.error.message
-              : 'Property not found'}
+              : t('search.propertyNotFound')}
           </span>
         )}
       </div>
@@ -135,7 +139,7 @@ export default function SearchPage() {
           <CardContent className="py-6">
             <div className="flex items-center gap-3">
               <Loader2 className="h-5 w-5 animate-spin text-primary" />
-              <span className="font-medium">Searching and analyzing properties...</span>
+              <span className="font-medium">{t('search.searching')}</span>
             </div>
           </CardContent>
         </Card>
@@ -144,13 +148,13 @@ export default function SearchPage() {
       {searchMutation.isError && (
         <Card className="border-destructive">
           <CardHeader>
-            <CardTitle className="text-destructive">Search Failed</CardTitle>
+            <CardTitle className="text-destructive">{t('search.searchFailed')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground">
               {searchMutation.error instanceof Error
                 ? searchMutation.error.message
-                : 'An error occurred while searching. Make sure the backend is running.'}
+                : t('search.searchError')}
             </p>
           </CardContent>
         </Card>
@@ -161,21 +165,21 @@ export default function SearchPage() {
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
               <h2 className="text-xl font-semibold">
-                {results.count} Properties Found
+                {t('search.propertiesFound', { count: results.count })}
               </h2>
               {results.summary.avg_score && (
                 <Badge variant="secondary">
-                  Avg Score: {results.summary.avg_score.toFixed(0)}
+                  {t('search.avgScore', { score: results.summary.avg_score.toFixed(0) })}
                 </Badge>
               )}
               {results.summary.avg_cap_rate && (
                 <Badge variant="secondary">
-                  Avg Cap Rate: {results.summary.avg_cap_rate.toFixed(1)}%
+                  {t('search.avgCapRate', { rate: results.summary.avg_cap_rate.toFixed(1) })}
                 </Badge>
               )}
               {results.summary.positive_cash_flow_count !== undefined && (
                 <Badge variant="secondary">
-                  {results.summary.positive_cash_flow_count} Positive Cash Flow
+                  {t('search.positiveCashFlow', { count: results.summary.positive_cash_flow_count })}
                 </Badge>
               )}
             </div>
@@ -206,16 +210,16 @@ export default function SearchPage() {
       {!results && !searchMutation.isPending && (
         <Card>
           <CardHeader>
-            <CardTitle>Ready to Search</CardTitle>
+            <CardTitle>{t('search.readyTitle')}</CardTitle>
             <CardDescription>
-              Configure your search filters above and click Search to find investment properties.
+              {t('search.readyDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-              <li>Properties are pre-loaded from Centris.ca and updated every 4 hours</li>
-              <li>Results are analyzed with investment metrics and ranked by score</li>
-              <li>Click any row to see full property details</li>
+              <li>{t('search.readyTip1')}</li>
+              <li>{t('search.readyTip2')}</li>
+              <li>{t('search.readyTip3')}</li>
             </ul>
           </CardContent>
         </Card>
@@ -228,15 +232,15 @@ export default function SearchPage() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Archive className="h-5 w-5 text-muted-foreground" />
-                <CardTitle className="text-lg">Recently Removed</CardTitle>
+                <CardTitle className="text-lg">{t('search.recentlyRemoved')}</CardTitle>
                 <Badge variant="secondary">{removedListings.length}</Badge>
               </div>
               <Button variant="ghost" size="sm">
-                {showRemoved ? 'Hide' : 'Show'}
+                {showRemoved ? t('common.hide') : t('common.show')}
               </Button>
             </div>
             <CardDescription>
-              Listings that went stale or were delisted in the last 7 days
+              {t('search.recentlyRemovedDesc')}
             </CardDescription>
           </CardHeader>
           {showRemoved && (
@@ -260,16 +264,16 @@ export default function SearchPage() {
                           <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">
                             {item.status}
                           </Badge>
-                          {dom !== null && <span>{dom}d on market</span>}
+                          {dom !== null && <span>{t('search.daysOnMarket', { days: dom })}</span>}
                         </div>
                       </div>
                       <div className="text-right">
                         <div className="font-medium">
-                          {new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(item.listing.price)}
+                          {formatPrice(item.listing.price, locale)}
                         </div>
                         {item.last_seen_at && (
                           <div className="text-xs text-muted-foreground">
-                            Last seen {new Date(item.last_seen_at).toLocaleDateString()}
+                            {t('search.lastSeen', { date: new Date(item.last_seen_at).toLocaleDateString() })}
                           </div>
                         )}
                       </div>
