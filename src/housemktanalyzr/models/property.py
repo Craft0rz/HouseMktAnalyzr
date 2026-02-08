@@ -58,6 +58,12 @@ class PropertyListing(BaseModel):
     gross_revenue: int | None = Field(
         default=None, ge=0, description="Annual gross revenue (for multi-family)"
     )
+    total_expenses: int | None = Field(
+        default=None, ge=0, description="Annual total expenses from Centris (for multi-family)"
+    )
+    net_income: int | None = Field(
+        default=None, ge=0, description="Annual net income from Centris (for multi-family)"
+    )
 
     # Tax and assessment
     municipal_assessment: int | None = Field(

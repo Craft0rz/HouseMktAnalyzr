@@ -859,12 +859,38 @@ class CentrisScraper(DataSource):
                 if m:
                     units = int(m.group(1))
 
-            # === INCOME (for investment properties) ===
+            # === INCOME & EXPENSES (for investment properties) ===
             gross_revenue = None
+            total_expenses = None
+            net_income = None
+
             if "Potential gross revenue" in chars:
                 m = re.search(r"([\d,]+)", chars["Potential gross revenue"].replace("$", ""))
                 if m:
                     gross_revenue = int(m.group(1).replace(",", ""))
+
+            # Centris may show total expenses and/or net income for revenue properties
+            for key in ("Total expenses", "Expenses", "Operating expenses",
+                        "Dépenses totales", "Dépenses", "Dépenses d'exploitation"):
+                if key in chars:
+                    m = re.search(r"([\d,]+)", chars[key].replace("$", ""))
+                    if m:
+                        total_expenses = int(m.group(1).replace(",", ""))
+                    break
+
+            for key in ("Net income", "Estimated net income",
+                        "Revenu net", "Revenu net estimé"):
+                if key in chars:
+                    m = re.search(r"([\d,]+)", chars[key].replace("$", ""))
+                    if m:
+                        net_income = int(m.group(1).replace(",", ""))
+                    break
+
+            # Infer missing values when two of the three are known
+            if gross_revenue and total_expenses and not net_income:
+                net_income = gross_revenue - total_expenses
+            elif gross_revenue and net_income and not total_expenses:
+                total_expenses = gross_revenue - net_income
 
             # === TAXES & ASSESSMENT ===
             municipal_assessment = None
@@ -955,6 +981,8 @@ class CentrisScraper(DataSource):
                 units=units,
                 estimated_rent=None,
                 gross_revenue=gross_revenue,
+                total_expenses=total_expenses,
+                net_income=net_income,
                 municipal_assessment=municipal_assessment,
                 annual_taxes=annual_taxes,
                 photo_urls=photo_urls,
@@ -1007,6 +1035,8 @@ class CentrisScraper(DataSource):
                     units=listing.units,
                     estimated_rent=listing.estimated_rent,
                     gross_revenue=detailed.gross_revenue or listing.gross_revenue,
+                    total_expenses=detailed.total_expenses or listing.total_expenses,
+                    net_income=detailed.net_income or listing.net_income,
                     municipal_assessment=detailed.municipal_assessment or listing.municipal_assessment,
                     annual_taxes=detailed.annual_taxes or listing.annual_taxes,
                     listing_date=listing.listing_date,

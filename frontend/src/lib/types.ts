@@ -20,6 +20,8 @@ export interface PropertyListing {
   units: number;
   estimated_rent: number | null;
   gross_revenue: number | null;
+  total_expenses: number | null;
+  net_income: number | null;
   municipal_assessment: number | null;
   annual_taxes: number | null;
   walk_score: number | null;

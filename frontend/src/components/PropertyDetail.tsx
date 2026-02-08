@@ -276,15 +276,21 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const numPayments = amortizationYears * 12;
   const monthlyMortgage = principal * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1);
 
-  // Cash flow breakdown
+  // Cash flow breakdown — use actual Centris expenses when available
   const monthlyIncome = metrics.estimated_monthly_rent;
-  const monthlyExpenses = {
-    mortgage: monthlyMortgage,
-    taxes: (listing.annual_taxes || listing.price * 0.012) / 12, // ~1.2% of price if unknown
-    insurance: listing.price * 0.004 / 12, // ~0.4% of price
-    maintenance: monthlyIncome * 0.05, // 5% of rent
-    vacancy: monthlyIncome * 0.05, // 5% vacancy allowance
-  };
+  const hasActualExpenses = listing.total_expenses && listing.total_expenses > 0;
+  const monthlyExpenses = hasActualExpenses
+    ? {
+        mortgage: monthlyMortgage,
+        operating: listing.total_expenses! / 12, // actual Centris total expenses
+      }
+    : {
+        mortgage: monthlyMortgage,
+        taxes: (listing.annual_taxes || listing.price * 0.012) / 12,
+        insurance: listing.price * 0.005 / 12,
+        maintenance: monthlyIncome * 0.10,
+        vacancy: monthlyIncome * 0.03,
+      };
   const totalExpenses = Object.values(monthlyExpenses).reduce((a, b) => a + b, 0);
   const netCashFlow = monthlyIncome - totalExpenses;
 
@@ -515,22 +521,33 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                     <span className="text-muted-foreground">{t('detail.mortgage')}</span>
                     <span className="text-red-600">-{formatPrice(monthlyExpenses.mortgage, locale)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('detail.propertyTaxes')}</span>
-                    <span className="text-red-600">-{formatPrice(monthlyExpenses.taxes, locale)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('detail.insurance')}</span>
-                    <span className="text-red-600">-{formatPrice(monthlyExpenses.insurance, locale)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('detail.maintenance')}</span>
-                    <span className="text-red-600">-{formatPrice(monthlyExpenses.maintenance, locale)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('detail.vacancy')}</span>
-                    <span className="text-red-600">-{formatPrice(monthlyExpenses.vacancy, locale)}</span>
-                  </div>
+                  {hasActualExpenses ? (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('detail.operatingExpenses')}</span>
+                      <span className="text-red-600">-{formatPrice((monthlyExpenses as any).operating, locale)}</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          {listing.annual_taxes ? t('detail.propertyTaxes') : t('detail.propertyTaxesEst')}
+                        </span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).taxes, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('detail.insurance')}</span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).insurance, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('detail.maintenance')}</span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).maintenance, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('detail.vacancy')}</span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).vacancy, locale)}</span>
+                      </div>
+                    </>
+                  )}
                 </div>
                 <div className="flex justify-between pt-2 border-t">
                   <span className="text-sm font-medium">{t('detail.totalExpenses')}</span>

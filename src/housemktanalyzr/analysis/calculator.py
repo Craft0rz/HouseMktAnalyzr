@@ -14,15 +14,16 @@ from ..models.property import InvestmentMetrics, PropertyListing
 logger = logging.getLogger(__name__)
 
 
-# Default expense ratios for Quebec multi-family properties
-# These are industry-standard estimates; actual expenses vary by property
+# Default expense ratios for Quebec multi-family properties.
+# Sources: CMHC 2025 Rental Market Report, Quebec bank underwriting models,
+# CORPIQ/TAL guidelines, SoumissionsAssurances.ca broker data.
 DEFAULT_EXPENSE_RATIOS = {
-    "property_tax_pct": 0.012,  # ~1.2% of value (Montreal average)
-    "insurance_pct": 0.004,  # ~0.4% of value
-    "maintenance_pct": 0.08,  # ~8% of rent
-    "vacancy_pct": 0.02,  # ~2% vacancy rate (Montreal is tight)
+    "property_tax_pct": 0.012,  # ~1.2% of value (Montreal average, fallback only)
+    "insurance_pct": 0.005,  # ~0.5% of value (QC broker avg 0.45-0.59%)
+    "maintenance_pct": 0.10,  # ~10% of rent (bank model: 8-15%; older stock: 10-12%)
+    "vacancy_pct": 0.03,  # ~3% (CMHC Montreal CMA avg 2.9%, bank standard 5%)
     "management_pct": 0.00,  # 0% if self-managed, 5-8% if hired
-    "total_expense_ratio": 0.35,  # ~35% of gross rent goes to expenses
+    "total_expense_ratio": 0.40,  # ~40% of gross rent (bank model midpoint; 35% only for small owner-managed plex)
 }
 
 # Two-pillar scoring: Financial (70) + Location & Quality (30) = 100
@@ -151,7 +152,7 @@ class InvestmentCalculator:
     def estimate_noi(
         self,
         annual_rent: int,
-        expense_ratio: float = 0.35,
+        expense_ratio: float = 0.40,
     ) -> int:
         """Estimate Net Operating Income using expense ratio.
 
@@ -159,7 +160,7 @@ class InvestmentCalculator:
 
         Args:
             annual_rent: Total annual rent in CAD
-            expense_ratio: Percentage of rent going to expenses (default 35%)
+            expense_ratio: Percentage of rent going to expenses (default 40%)
 
         Returns:
             Estimated NOI in CAD
@@ -171,22 +172,40 @@ class InvestmentCalculator:
         monthly_rent: int,
         property_value: int,
         expense_ratio: Optional[float] = None,
+        annual_taxes: Optional[int] = None,
+        total_expenses: Optional[int] = None,
     ) -> int:
         """Estimate monthly operating expenses.
+
+        Priority:
+        1. Actual total_expenses from Centris (most accurate)
+        2. Detailed breakdown using actual annual_taxes + estimated rest
+        3. Flat expense_ratio percentage
 
         Args:
             monthly_rent: Monthly rental income
             property_value: Property value for tax/insurance estimates
             expense_ratio: Optional override for expense ratio
+            annual_taxes: Actual annual taxes from Centris (if available)
+            total_expenses: Actual annual total expenses from Centris (if available)
 
         Returns:
             Estimated monthly expenses in CAD
         """
+        # Priority 1: Use actual Centris total expenses (includes taxes, insurance, etc.)
+        if total_expenses and total_expenses > 0:
+            return total_expenses // 12
+
+        # Priority 2: Flat ratio override
         if expense_ratio is not None:
             return int(monthly_rent * expense_ratio)
 
-        # Detailed breakdown
-        monthly_tax = int(property_value * DEFAULT_EXPENSE_RATIOS["property_tax_pct"] / 12)
+        # Priority 3: Detailed breakdown using actual taxes where available
+        if annual_taxes and annual_taxes > 0:
+            monthly_tax = annual_taxes // 12
+        else:
+            monthly_tax = int(property_value * DEFAULT_EXPENSE_RATIOS["property_tax_pct"] / 12)
+
         monthly_insurance = int(property_value * DEFAULT_EXPENSE_RATIOS["insurance_pct"] / 12)
         monthly_maintenance = int(monthly_rent * DEFAULT_EXPENSE_RATIOS["maintenance_pct"])
         monthly_vacancy = int(monthly_rent * DEFAULT_EXPENSE_RATIOS["vacancy_pct"])
@@ -352,18 +371,19 @@ class InvestmentCalculator:
         listing: PropertyListing,
         down_payment_pct: float = 0.20,
         interest_rate: float = 0.05,
-        expense_ratio: float = 0.35,
+        expense_ratio: float = 0.40,
     ) -> InvestmentMetrics:
         """Perform full investment analysis on a property.
 
         Calculates all investment metrics and returns a complete
-        InvestmentMetrics object.
+        InvestmentMetrics object. Uses actual Centris data (annual_taxes)
+        when available, falls back to percentage-based estimates.
 
         Args:
             listing: PropertyListing to analyze
             down_payment_pct: Down payment percentage (default 20%)
             interest_rate: Mortgage interest rate (default 5%)
-            expense_ratio: Operating expense ratio (default 35%)
+            expense_ratio: Operating expense ratio (default 40%)
 
         Returns:
             InvestmentMetrics with all calculated values
@@ -374,8 +394,16 @@ class InvestmentCalculator:
         monthly_rent, rent_source = self.estimate_rent_from_listing(listing)
         annual_rent = monthly_rent * 12
 
-        # Calculate NOI
-        noi = self.estimate_noi(annual_rent, expense_ratio)
+        # Calculate expenses using actual Centris data when available
+        monthly_expenses = self.estimate_monthly_expenses(
+            monthly_rent=monthly_rent,
+            property_value=price,
+            annual_taxes=listing.annual_taxes,
+            total_expenses=listing.total_expenses,
+        )
+
+        # Calculate NOI from detailed expenses
+        noi = annual_rent - (monthly_expenses * 12)
 
         # Calculate mortgage
         down_payment = self.calculate_down_payment(price, down_payment_pct)
@@ -383,7 +411,6 @@ class InvestmentCalculator:
         monthly_mortgage = self.calculate_mortgage_payment(principal, interest_rate)
 
         # Calculate cash flow
-        monthly_expenses = int(monthly_rent * expense_ratio)
         monthly_cash_flow = self.estimate_monthly_cash_flow(
             monthly_rent, monthly_mortgage, monthly_expenses
         )

@@ -183,7 +183,7 @@ class AnalyzeRequest(BaseModel):
     listing: PropertyListing
     down_payment_pct: float = Field(default=0.20, ge=0.05, le=1.0)
     interest_rate: float = Field(default=0.05, ge=0.01, le=0.15)
-    expense_ratio: float = Field(default=0.35, ge=0.10, le=0.60)
+    expense_ratio: float = Field(default=0.40, ge=0.10, le=0.60)
 
 
 class AnalyzeBatchRequest(BaseModel):
@@ -192,7 +192,7 @@ class AnalyzeBatchRequest(BaseModel):
     listings: list[PropertyListing]
     down_payment_pct: float = Field(default=0.20, ge=0.05, le=1.0)
     interest_rate: float = Field(default=0.05, ge=0.01, le=0.15)
-    expense_ratio: float = Field(default=0.35, ge=0.10, le=0.60)
+    expense_ratio: float = Field(default=0.40, ge=0.10, le=0.60)
 
 
 class PropertyWithMetrics(BaseModel):
@@ -218,7 +218,7 @@ class QuickMetricsRequest(BaseModel):
     units: int = Field(default=1, ge=1, description="Number of units")
     down_payment_pct: float = Field(default=0.20, ge=0.05, le=1.0)
     interest_rate: float = Field(default=0.05, ge=0.01, le=0.15)
-    expense_ratio: float = Field(default=0.35, ge=0.10, le=0.60)
+    expense_ratio: float = Field(default=0.40, ge=0.10, le=0.60)
 
 
 class QuickMetricsResponse(BaseModel):

@@ -12,6 +12,7 @@ Data sources:
 import csv
 import io
 import logging
+import math
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
@@ -109,6 +110,31 @@ PROPERTY_CRIMES = {
     "Introduction",
     "Vol de vehicule a moteur",
     "Mefait",
+}
+
+# 2021 Canadian Census borough populations (Statistics Canada).
+# Used for per-capita crime rate normalization. Updates every 5 years.
+# Source: https://www12.statcan.gc.ca/census-recensement/2021/
+BOROUGH_POPULATION_2021: dict[str, int] = {
+    "Ahuntsic-Cartierville": 135_336,
+    "Anjou": 43_243,
+    "Côte-des-Neiges-Notre-Dame-de-Grâce": 166_713,
+    "L'Île-Bizard-Sainte-Geneviève": 19_302,
+    "Lachine": 44_489,
+    "LaSalle": 76_853,
+    "Le Plateau-Mont-Royal": 104_944,
+    "Le Sud-Ouest": 82_235,
+    "Mercier-Hochelaga-Maisonneuve": 136_024,
+    "Montréal-Nord": 88_471,
+    "Outremont": 24_629,
+    "Pierrefonds-Roxboro": 70_377,
+    "Rivière-des-Prairies-Pointe-aux-Trembles": 106_743,
+    "Rosemont-La Petite-Patrie": 140_627,
+    "Saint-Laurent": 102_104,
+    "Saint-Léonard": 79_495,
+    "Verdun": 70_353,
+    "Ville-Marie": 95_150,
+    "Villeray-Saint-Michel-Parc-Extension": 145_090,
 }
 
 
@@ -273,6 +299,14 @@ class MontrealOpenDataClient:
                 stats.violent_crimes += count
             elif category in PROPERTY_CRIMES:
                 stats.property_crimes += count
+
+        # Calculate per-capita crime rates using census population
+        for stats in borough_data.values():
+            pop = BOROUGH_POPULATION_2021.get(stats.borough)
+            if pop and pop > 0:
+                stats.crime_rate_per_1000 = round(
+                    (stats.total_crimes / pop) * 1000, 1
+                )
 
         return sorted(borough_data.values(), key=lambda s: s.borough)
 
@@ -487,10 +521,18 @@ class MontrealOpenDataClient:
                             break
 
         results = []
-        # City-wide crime total for relative scoring
-        total_city_crimes = sum(s.total_crimes for s in crime_current)
-        num_boroughs = len(crime_current) or 1
-        avg_crimes = total_city_crimes / num_boroughs
+        # Per-capita crime rates for relative scoring
+        # Use average of borough per-capita rates (fairer than raw counts)
+        per_capita_rates = [
+            s.crime_rate_per_1000
+            for s in crime_current
+            if s.crime_rate_per_1000 is not None
+        ]
+        avg_rate_per_1000 = (
+            sum(per_capita_rates) / len(per_capita_rates)
+            if per_capita_rates
+            else 0
+        )
 
         for b in sorted(all_boroughs):
             crime = crime_cur_map.get(b)
@@ -514,13 +556,15 @@ class MontrealOpenDataClient:
                         tax = tv
                         break
 
-            # Safety score: 10 = safest, 0 = most dangerous
+            # Safety score: 10 = safest, 1 = most dangerous (never 0)
+            # Uses per-capita crime rate to avoid penalizing large-population boroughs.
+            # Log scale compresses extremes: doubling the crime rate drops ~3 points.
+            # Anchor: average borough ≈ 8/10.
             safety = None
-            if crime and avg_crimes > 0:
-                ratio = crime.total_crimes / avg_crimes
-                # Score: if ratio < 0.5 → ~9, if ratio ~1 → ~5, if ratio > 2 → ~1
-                safety = round(max(0, min(10, 10 - (ratio * 5))), 1)
-                # Boost if crime is declining
+            if crime and avg_rate_per_1000 > 0 and crime.crime_rate_per_1000 is not None:
+                ratio = crime.crime_rate_per_1000 / avg_rate_per_1000
+                safety = round(max(1, min(10, 8 - math.log2(max(ratio, 0.01)) * 3)), 1)
+                # Boost if crime is declining year-over-year
                 if crime.year_over_year_change_pct is not None and crime.year_over_year_change_pct < -5:
                     safety = min(10, safety + 0.5)
 
