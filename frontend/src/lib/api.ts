@@ -33,10 +33,56 @@ import type {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+const TOKEN_KEY = 'housemkt_access_token';
+const REFRESH_KEY = 'housemkt_refresh_token';
+
 class ApiError extends Error {
   constructor(public status: number, message: string) {
     super(message);
     this.name = 'ApiError';
+  }
+}
+
+function getStoredToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+let refreshPromise: Promise<boolean> | null = null;
+
+async function attemptTokenRefresh(): Promise<boolean> {
+  // Deduplicate concurrent refresh attempts
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = typeof window !== 'undefined'
+      ? localStorage.getItem(REFRESH_KEY)
+      : null;
+    if (!refreshToken) return false;
+    try {
+      const response = await fetch(`${API_BASE}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!response.ok) {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(REFRESH_KEY);
+        return false;
+      }
+      const tokens = await response.json();
+      localStorage.setItem(TOKEN_KEY, tokens.access_token);
+      localStorage.setItem(REFRESH_KEY, tokens.refresh_token);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
   }
 }
 
@@ -50,15 +96,35 @@ async function fetchApi<T>(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const token = getStoredToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers as Record<string, string>),
+  };
+
   try {
-    const response = await fetch(url, {
+    let response = await fetch(url, {
       ...options,
       signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
     });
+
+    // On 401 for non-auth endpoints, try refreshing the token
+    if (response.status === 401 && !endpoint.startsWith('/api/auth/')) {
+      const refreshed = await attemptTokenRefresh();
+      if (refreshed) {
+        const newToken = getStoredToken();
+        response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            ...headers,
+            ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
+          },
+        });
+      }
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -374,4 +440,36 @@ export const scraperApi = {
   },
 };
 
-export { ApiError };
+// Auth endpoints
+export const authApi = {
+  register: (data: import('./types').RegisterRequest): Promise<import('./types').AuthResponse> => {
+    return fetchApi('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  login: (data: import('./types').LoginRequest): Promise<import('./types').AuthResponse> => {
+    return fetchApi('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  googleAuth: (idToken: string): Promise<import('./types').AuthResponse> => {
+    return fetchApi('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ id_token: idToken }),
+    });
+  },
+
+  logout: (): Promise<void> => {
+    return fetchApi('/api/auth/logout', { method: 'POST' });
+  },
+
+  me: (): Promise<import('./types').User> => {
+    return fetchApi('/api/auth/me');
+  },
+};
+
+export { ApiError, TOKEN_KEY, REFRESH_KEY };

@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_pool, close_pool, get_pool
-from .routers import alerts, analysis, market, portfolio, properties, scraper
+from .routers import alerts, analysis, auth, market, portfolio, properties, scraper
 from .scraper_worker import ScraperWorker
 
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(properties.router, prefix="/api/properties", tags=["Properties"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])

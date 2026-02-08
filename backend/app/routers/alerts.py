@@ -6,9 +6,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from ..auth import get_current_user
 from ..db import get_pool
 
 router = APIRouter()
@@ -107,17 +108,22 @@ def _row_to_response(row) -> AlertResponse:
 @router.get("", response_model=AlertListResponse)
 async def list_alerts(
     enabled_only: bool = Query(default=False, description="Only return enabled alerts"),
+    user: dict = Depends(get_current_user),
 ) -> AlertListResponse:
-    """List all saved alerts."""
+    """List all saved alerts for the current user."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
             if enabled_only:
                 rows = await conn.fetch(
-                    "SELECT * FROM alerts WHERE enabled = TRUE ORDER BY name"
+                    "SELECT * FROM alerts WHERE user_id = $1 AND enabled = TRUE ORDER BY name",
+                    user["id"],
                 )
             else:
-                rows = await conn.fetch("SELECT * FROM alerts ORDER BY name")
+                rows = await conn.fetch(
+                    "SELECT * FROM alerts WHERE user_id = $1 ORDER BY name",
+                    user["id"],
+                )
 
         alerts = [_row_to_response(row) for row in rows]
         return AlertListResponse(alerts=alerts, count=len(alerts))
@@ -127,8 +133,11 @@ async def list_alerts(
 
 
 @router.post("", response_model=AlertResponse, status_code=201)
-async def create_alert(request: CreateAlertRequest) -> AlertResponse:
-    """Create a new alert."""
+async def create_alert(
+    request: CreateAlertRequest,
+    user: dict = Depends(get_current_user),
+) -> AlertResponse:
+    """Create a new alert for the current user."""
     try:
         pool = get_pool()
         alert_id = str(uuid.uuid4())
@@ -142,11 +151,11 @@ async def create_alert(request: CreateAlertRequest) -> AlertResponse:
                     min_price, max_price, min_score, min_cap_rate,
                     min_cash_flow, max_price_per_unit, min_yield,
                     notify_email, notify_on_new, notify_on_price_drop,
-                    created_at, updated_at
+                    created_at, updated_at, user_id
                 ) VALUES (
                     $1, $2, TRUE, $3::jsonb, $4::jsonb,
                     $5, $6, $7, $8, $9, $10, $11,
-                    $12, $13, $14, $15, $15
+                    $12, $13, $14, $15, $15, $16
                 )
                 """,
                 alert_id, request.name,
@@ -157,7 +166,7 @@ async def create_alert(request: CreateAlertRequest) -> AlertResponse:
                 request.min_cash_flow, request.max_price_per_unit,
                 request.min_yield, request.notify_email,
                 request.notify_on_new, request.notify_on_price_drop,
-                now,
+                now, user["id"],
             )
 
             row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
@@ -169,12 +178,15 @@ async def create_alert(request: CreateAlertRequest) -> AlertResponse:
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)
-async def get_alert(alert_id: str) -> AlertResponse:
-    """Get a specific alert by ID."""
+async def get_alert(alert_id: str, user: dict = Depends(get_current_user)) -> AlertResponse:
+    """Get a specific alert by ID (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM alerts WHERE id = $1 AND user_id = $2",
+                alert_id, user["id"],
+            )
 
         if not row:
             raise HTTPException(status_code=404, detail="Alert not found")
@@ -188,12 +200,19 @@ async def get_alert(alert_id: str) -> AlertResponse:
 
 
 @router.put("/{alert_id}", response_model=AlertResponse)
-async def update_alert(alert_id: str, request: UpdateAlertRequest) -> AlertResponse:
-    """Update an existing alert."""
+async def update_alert(
+    alert_id: str,
+    request: UpdateAlertRequest,
+    user: dict = Depends(get_current_user),
+) -> AlertResponse:
+    """Update an existing alert (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM alerts WHERE id = $1 AND user_id = $2",
+                alert_id, user["id"],
+            )
             if not row:
                 raise HTTPException(status_code=404, detail="Alert not found")
 
@@ -282,12 +301,15 @@ async def update_alert(alert_id: str, request: UpdateAlertRequest) -> AlertRespo
 
 
 @router.delete("/{alert_id}", status_code=204)
-async def delete_alert(alert_id: str) -> None:
-    """Delete an alert by ID."""
+async def delete_alert(alert_id: str, user: dict = Depends(get_current_user)) -> None:
+    """Delete an alert by ID (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM alerts WHERE id = $1", alert_id)
+            result = await conn.execute(
+                "DELETE FROM alerts WHERE id = $1 AND user_id = $2",
+                alert_id, user["id"],
+            )
 
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Alert not found")
@@ -299,12 +321,15 @@ async def delete_alert(alert_id: str) -> None:
 
 
 @router.post("/{alert_id}/toggle", response_model=AlertResponse)
-async def toggle_alert(alert_id: str) -> AlertResponse:
-    """Toggle alert enabled/disabled status."""
+async def toggle_alert(alert_id: str, user: dict = Depends(get_current_user)) -> AlertResponse:
+    """Toggle alert enabled/disabled status (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM alerts WHERE id = $1", alert_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM alerts WHERE id = $1 AND user_id = $2",
+                alert_id, user["id"],
+            )
             if not row:
                 raise HTTPException(status_code=404, detail="Alert not found")
 

@@ -6,9 +6,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from ..auth import get_current_user
 from ..db import get_pool
 
 router = APIRouter()
@@ -144,18 +145,22 @@ def _calculate_summary(items: list[PortfolioItemResponse]) -> dict:
 @router.get("", response_model=PortfolioListResponse)
 async def list_portfolio(
     status: Optional[PortfolioStatus] = Query(default=None, description="Filter by status"),
+    user: dict = Depends(get_current_user),
 ) -> PortfolioListResponse:
-    """List all portfolio items."""
+    """List all portfolio items for the current user."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
             if status:
                 rows = await conn.fetch(
-                    "SELECT * FROM portfolio WHERE status = $1 ORDER BY updated_at DESC",
-                    status.value,
+                    "SELECT * FROM portfolio WHERE user_id = $1 AND status = $2 ORDER BY updated_at DESC",
+                    user["id"], status.value,
                 )
             else:
-                rows = await conn.fetch("SELECT * FROM portfolio ORDER BY updated_at DESC")
+                rows = await conn.fetch(
+                    "SELECT * FROM portfolio WHERE user_id = $1 ORDER BY updated_at DESC",
+                    user["id"],
+                )
 
         items = [_row_to_response(row) for row in rows]
         return PortfolioListResponse(
@@ -166,8 +171,11 @@ async def list_portfolio(
 
 
 @router.post("", response_model=PortfolioItemResponse, status_code=201)
-async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItemResponse:
-    """Add a property to portfolio."""
+async def add_to_portfolio(
+    request: CreatePortfolioItemRequest,
+    user: dict = Depends(get_current_user),
+) -> PortfolioItemResponse:
+    """Add a property to the current user's portfolio."""
     try:
         pool = get_pool()
         item_id = str(uuid.uuid4())
@@ -175,7 +183,8 @@ async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItem
 
         async with pool.acquire() as conn:
             existing = await conn.fetchrow(
-                "SELECT id FROM portfolio WHERE property_id = $1", request.property_id,
+                "SELECT id FROM portfolio WHERE property_id = $1 AND user_id = $2",
+                request.property_id, user["id"],
             )
             if existing:
                 raise HTTPException(status_code=400, detail="Property already in portfolio")
@@ -186,12 +195,12 @@ async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItem
                     id, property_id, status, address, property_type,
                     purchase_price, purchase_date, down_payment, mortgage_rate,
                     current_rent, current_expenses, notes,
-                    created_at, updated_at
+                    created_at, updated_at, user_id
                 ) VALUES (
                     $1, $2, $3, $4, $5,
                     $6, $7, $8, $9,
                     $10, $11, $12,
-                    $13, $13
+                    $13, $13, $14
                 )
                 """,
                 item_id, request.property_id, request.status.value,
@@ -199,7 +208,7 @@ async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItem
                 request.purchase_price, request.purchase_date,
                 request.down_payment, request.mortgage_rate,
                 request.current_rent, request.current_expenses,
-                request.notes, now,
+                request.notes, now, user["id"],
             )
 
             row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
@@ -213,12 +222,15 @@ async def add_to_portfolio(request: CreatePortfolioItemRequest) -> PortfolioItem
 
 
 @router.get("/{item_id}", response_model=PortfolioItemResponse)
-async def get_portfolio_item(item_id: str) -> PortfolioItemResponse:
-    """Get a specific portfolio item."""
+async def get_portfolio_item(item_id: str, user: dict = Depends(get_current_user)) -> PortfolioItemResponse:
+    """Get a specific portfolio item (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM portfolio WHERE id = $1 AND user_id = $2",
+                item_id, user["id"],
+            )
 
         if not row:
             raise HTTPException(status_code=404, detail="Portfolio item not found")
@@ -232,12 +244,19 @@ async def get_portfolio_item(item_id: str) -> PortfolioItemResponse:
 
 
 @router.put("/{item_id}", response_model=PortfolioItemResponse)
-async def update_portfolio_item(item_id: str, request: UpdatePortfolioItemRequest) -> PortfolioItemResponse:
-    """Update a portfolio item."""
+async def update_portfolio_item(
+    item_id: str,
+    request: UpdatePortfolioItemRequest,
+    user: dict = Depends(get_current_user),
+) -> PortfolioItemResponse:
+    """Update a portfolio item (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM portfolio WHERE id = $1 AND user_id = $2",
+                item_id, user["id"],
+            )
             if not row:
                 raise HTTPException(status_code=404, detail="Portfolio item not found")
 
@@ -300,12 +319,15 @@ async def update_portfolio_item(item_id: str, request: UpdatePortfolioItemReques
 
 
 @router.delete("/{item_id}", status_code=204)
-async def remove_from_portfolio(item_id: str) -> None:
-    """Remove a property from portfolio."""
+async def remove_from_portfolio(item_id: str, user: dict = Depends(get_current_user)) -> None:
+    """Remove a property from the current user's portfolio."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            result = await conn.execute("DELETE FROM portfolio WHERE id = $1", item_id)
+            result = await conn.execute(
+                "DELETE FROM portfolio WHERE id = $1 AND user_id = $2",
+                item_id, user["id"],
+            )
 
         if result == "DELETE 0":
             raise HTTPException(status_code=404, detail="Portfolio item not found")
@@ -317,12 +339,15 @@ async def remove_from_portfolio(item_id: str) -> None:
 
 
 @router.post("/{item_id}/toggle-status", response_model=PortfolioItemResponse)
-async def toggle_status(item_id: str) -> PortfolioItemResponse:
-    """Toggle between owned and watching status."""
+async def toggle_status(item_id: str, user: dict = Depends(get_current_user)) -> PortfolioItemResponse:
+    """Toggle between owned and watching status (must belong to current user)."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM portfolio WHERE id = $1", item_id)
+            row = await conn.fetchrow(
+                "SELECT * FROM portfolio WHERE id = $1 AND user_id = $2",
+                item_id, user["id"],
+            )
             if not row:
                 raise HTTPException(status_code=404, detail="Portfolio item not found")
 
@@ -343,18 +368,15 @@ async def toggle_status(item_id: str) -> PortfolioItemResponse:
 
 
 @router.get("/notifications/updates")
-async def get_portfolio_updates():
-    """Get price changes and status updates for watched/owned properties.
-
-    Cross-references portfolio items with price_history and properties tables
-    to surface notifications about portfolio properties.
-    """
+async def get_portfolio_updates(user: dict = Depends(get_current_user)):
+    """Get price changes and status updates for the current user's portfolio properties."""
     try:
         pool = get_pool()
         async with pool.acquire() as conn:
-            # Get all portfolio property_ids
+            # Get all portfolio property_ids for this user
             portfolio_rows = await conn.fetch(
-                "SELECT property_id, address, status as portfolio_status FROM portfolio"
+                "SELECT property_id, address, status as portfolio_status FROM portfolio WHERE user_id = $1",
+                user["id"],
             )
             if not portfolio_rows:
                 return {"notifications": [], "count": 0}

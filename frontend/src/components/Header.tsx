@@ -3,11 +3,21 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Building2, BarChart3, Bell, Calculator, Briefcase, Activity, Menu, Sun, Moon } from 'lucide-react';
+import { Building2, BarChart3, Bell, Calculator, Briefcase, Activity, Menu, Sun, Moon, LogOut } from 'lucide-react';
 import { useTheme } from 'next-themes';
+import { useAuth } from '@/lib/auth-context';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
 import {
   Sheet,
   SheetContent,
@@ -20,6 +30,7 @@ export function Header() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { user, isAuthenticated, logout } = useAuth();
   const { t, locale, setLocale } = useTranslation();
 
   const navigation = [
@@ -86,6 +97,38 @@ export function Header() {
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
 
+          {/* User menu */}
+          {isAuthenticated && user ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="hidden sm:flex items-center gap-2">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="text-xs">
+                      {(user.first_name?.[0] || user.email[0]).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="hidden lg:inline text-sm">
+                    {user.first_name || user.email.split('@')[0]}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem disabled className="text-xs text-muted-foreground">
+                  {user.email}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => logout()}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  {t('auth.signOut')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Button variant="outline" size="sm" asChild className="hidden sm:inline-flex">
+              <Link href="/login">{t('auth.signIn')}</Link>
+            </Button>
+          )}
+
         {/* Mobile menu button */}
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
           <SheetTrigger asChild className="md:hidden">
@@ -121,6 +164,25 @@ export function Header() {
                 );
               })}
             </nav>
+            <Separator className="my-4" />
+            {isAuthenticated && user ? (
+              <div className="px-3">
+                <p className="text-sm text-muted-foreground mb-2">{user.email}</p>
+                <Button variant="outline" size="sm" onClick={() => { logout(); setMobileMenuOpen(false); }}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  {t('auth.signOut')}
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 px-3">
+                <Button asChild onClick={() => setMobileMenuOpen(false)}>
+                  <Link href="/login">{t('auth.signIn')}</Link>
+                </Button>
+                <Button variant="outline" asChild onClick={() => setMobileMenuOpen(false)}>
+                  <Link href="/signup">{t('auth.signUp')}</Link>
+                </Button>
+              </div>
+            )}
           </SheetContent>
         </Sheet>
         </div>

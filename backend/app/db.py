@@ -270,6 +270,84 @@ async def _create_tables():
             WHERE status = 'running' AND started_at < NOW() - INTERVAL '24 hours'
         """)
 
+        # --- Auth tables ---
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                email TEXT NOT NULL UNIQUE,
+                hashed_password TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                auth_provider TEXT NOT NULL DEFAULT 'local',
+                provider_id TEXT,
+                role TEXT NOT NULL DEFAULT 'free',
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                stripe_customer_id TEXT,
+                stripe_subscription_id TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_users_provider ON users(auth_provider, provider_id)
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at TIMESTAMPTZ NOT NULL,
+                revoked BOOLEAN NOT NULL DEFAULT FALSE,
+                replaced_by UUID,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                user_agent TEXT,
+                ip_address TEXT
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash)
+        """)
+
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                endpoint TEXT NOT NULL,
+                method TEXT NOT NULL,
+                status_code INTEGER,
+                response_time_ms INTEGER,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_user_date ON usage_logs(user_id, created_at DESC)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_usage_logs_date ON usage_logs(created_at DESC)
+        """)
+
+        # Add user_id to alerts and portfolio for per-user data
+        await conn.execute("""
+            ALTER TABLE alerts ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_alerts_user ON alerts(user_id)
+        """)
+        await conn.execute("""
+            ALTER TABLE portfolio ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_portfolio_user ON portfolio(user_id)
+        """)
+
 
 # --- Property cache helpers ---
 
