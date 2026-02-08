@@ -382,7 +382,8 @@ class MontrealOpenDataClient:
                 continue
 
             prop_category = str(rec.get("Catégorie d'immeubles", "")).strip().lower()
-            rate = float(rec.get("Taux", 0) or 0)
+            # Taux is in ten-thousandths (e.g. 6372 = $0.6372 per $100)
+            rate = float(rec.get("Taux", 0) or 0) / 10000
 
             # Only include residential rates (not commercial/industrial)
             if "non residentiel" in prop_category or "non-residentiel" in prop_category:

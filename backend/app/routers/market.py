@@ -610,8 +610,8 @@ async def get_neighbourhood(
                 tax_estimate = None
                 res_rate = _decimal_to_num(stats.get("tax_rate_residential"))
                 total_rate = _decimal_to_num(stats.get("tax_rate_total"))
-                if total_rate and assessment:
-                    tax_estimate = round(total_rate * assessment / 100, 0)
+                if res_rate and assessment:
+                    tax_estimate = round(res_rate * assessment / 100, 0)
 
                 crime_resp = None
                 if stats.get("crime_count") is not None:
@@ -664,7 +664,7 @@ async def get_neighbourhood(
 
         tax_estimate = None
         if stats.tax and assessment:
-            tax_estimate = round(stats.tax.total_tax_rate * assessment / 100, 0)
+            tax_estimate = round(stats.tax.residential_rate * assessment / 100, 0)
 
         return NeighbourhoodResponse(
             borough=stats.borough,
