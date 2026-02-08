@@ -152,14 +152,10 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
       );
     }
 
-    // Cap Rate detailed
+    // Cap Rate = NOI / Price → derive NOI and expenses from available metrics
     if (metric === 'cap_rate') {
-      const noi =
-        entry.netIncome != null
-          ? entry.netIncome
-          : entry.annualRent && entry.totalExpenses != null
-            ? entry.annualRent - entry.totalExpenses
-            : null;
+      const noi = entry.capRate != null ? (entry.capRate / 100) * entry.price : null;
+      const expenses = noi != null ? entry.annualRent - noi : null;
 
       return (
         <div style={tooltipStyle}>
@@ -177,10 +173,10 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
             <span>{t('chart.annualRent')}</span>
             <span style={tabNum}>{formatCurrency(entry.annualRent)}</span>
           </div>
-          {entry.totalExpenses != null && (
+          {expenses != null && (
             <div style={rowStyle}>
               <span>{t('chart.expenses')}</span>
-              <span style={tabNum}>{formatCurrency(entry.totalExpenses)}</span>
+              <span style={tabNum}>{formatCurrency(expenses)}</span>
             </div>
           )}
           {noi != null && (
@@ -193,8 +189,16 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
       );
     }
 
-    // Cash Flow detailed
+    // Cash Flow = Rent - Expenses - Mortgage
     if (metric === 'cash_flow') {
+      // Derive monthly expenses: total from listing (annual→monthly), or estimate from cap rate data
+      const monthlyExpenses =
+        entry.totalExpenses != null
+          ? entry.totalExpenses / 12
+          : entry.capRate != null
+            ? (entry.annualRent - (entry.capRate / 100) * entry.price) / 12
+            : null;
+
       return (
         <div style={tooltipStyle}>
           {propertyHeader}
@@ -209,16 +213,16 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
             <span>{t('chart.monthlyRent')}</span>
             <span style={tabNum}>{formatCurrency(entry.monthlyRent)}</span>
           </div>
+          {monthlyExpenses != null && (
+            <div style={rowStyle}>
+              <span>{t('chart.expenses')}</span>
+              <span style={tabNum}>{formatCurrency(monthlyExpenses)}{t('common.perMonth')}</span>
+            </div>
+          )}
           <div style={rowStyle}>
             <span>{t('chart.price')}</span>
             <span style={tabNum}>{formatCurrency(entry.price)}</span>
           </div>
-          {entry.totalExpenses != null && (
-            <div style={rowStyle}>
-              <span>{t('chart.expenses')}</span>
-              <span style={tabNum}>{formatCurrency(entry.totalExpenses)}{t('common.perMonth')}</span>
-            </div>
-          )}
         </div>
       );
     }
