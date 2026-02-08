@@ -53,35 +53,35 @@ export function PriceDistribution({ properties, className }: PriceDistributionPr
     <div className={className}>
       <ResponsiveContainer width="100%" height={250}>
         <BarChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
             dataKey="range"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
           />
           <YAxis
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
             label={{
               value: 'Count',
               angle: -90,
               position: 'insideLeft',
-              fill: 'hsl(var(--muted-foreground))',
+              fill: 'var(--muted-foreground)',
             }}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--popover))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: 'var(--popover)',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              color: 'hsl(var(--popover-foreground))',
+              color: 'var(--popover-foreground)',
             }}
-            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
+            labelStyle={{ color: 'var(--popover-foreground)' }}
             formatter={(value, name) => {
               if (name === 'count') return [value, 'Properties'];
               if (name === 'avgScore') return [value, 'Avg Score'];
               return [value, name];
             }}
           />
-          <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+          <Bar dataKey="count" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

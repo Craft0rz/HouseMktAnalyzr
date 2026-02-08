@@ -61,25 +61,25 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
     <div className={className}>
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={data} layout="vertical" margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
             type="number"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
           />
           <YAxis
             type="category"
             dataKey="name"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }}
             width={95}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--popover))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: 'var(--popover)',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              color: 'hsl(var(--popover-foreground))',
+              color: 'var(--popover-foreground)',
             }}
-            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
+            labelStyle={{ color: 'var(--popover-foreground)' }}
             formatter={(value) => [config.format(value as number), config.label]}
             labelFormatter={(_, payload) => payload?.[0]?.payload?.fullAddress || ''}
           />

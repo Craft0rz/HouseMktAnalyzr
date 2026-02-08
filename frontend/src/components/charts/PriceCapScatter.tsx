@@ -47,17 +47,17 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
     <div className={className}>
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
           <XAxis
             type="number"
             dataKey="price"
             name="Price"
             tickFormatter={formatPrice}
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
             label={{
               value: 'Price',
               position: 'bottom',
-              fill: 'hsl(var(--muted-foreground))',
+              fill: 'var(--muted-foreground)',
             }}
           />
           <YAxis
@@ -65,23 +65,23 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
             dataKey="capRate"
             name="Cap Rate"
             unit="%"
-            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+            tick={{ fill: 'var(--muted-foreground)', fontSize: 12 }}
             label={{
               value: 'Cap Rate %',
               angle: -90,
               position: 'insideLeft',
-              fill: 'hsl(var(--muted-foreground))',
+              fill: 'var(--muted-foreground)',
             }}
           />
           <ZAxis type="number" dataKey="score" range={[50, 400]} name="Score" />
           <Tooltip
             contentStyle={{
-              backgroundColor: 'hsl(var(--popover))',
-              border: '1px solid hsl(var(--border))',
+              backgroundColor: 'var(--popover)',
+              border: '1px solid var(--border)',
               borderRadius: '6px',
-              color: 'hsl(var(--popover-foreground))',
+              color: 'var(--popover-foreground)',
             }}
-            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
+            labelStyle={{ color: 'var(--popover-foreground)' }}
             formatter={(value, name) => {
               const v = value as number;
               if (name === 'Price') return [formatPrice(v), name];
@@ -96,7 +96,7 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
           <Scatter
             name="Properties"
             data={data}
-            fill="hsl(var(--primary))"
+            fill="var(--chart-1)"
             fillOpacity={0.6}
           />
         </ScatterChart>
