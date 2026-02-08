@@ -126,34 +126,57 @@ export default function Home() {
         <LoadingCard message={t('home.loadingMarket')} description={t('home.loadingMarketDesc')} />
       ) : hasData ? (
         <>
-          {/* Summary KPIs — compact inline bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.propertiesAnalyzed')}</p>
-              <p className="text-2xl font-bold tabular-nums mt-0.5">{summary?.total_analyzed ?? properties.length}</p>
-            </div>
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.avgScore')}</p>
-              <p className="text-2xl font-bold tabular-nums mt-0.5">
-                {Math.round(summary?.avg_score ?? properties.reduce((s, p) => s + p.metrics.score, 0) / properties.length)}
-                <span className="text-sm text-muted-foreground font-normal">/100</span>
-              </p>
-            </div>
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.avgCapRate')}</p>
-              <p className="text-2xl font-bold tabular-nums mt-0.5">
-                {(summary?.avg_cap_rate ?? properties.filter(p => p.metrics.cap_rate != null).reduce((s, p) => s + (p.metrics.cap_rate || 0), 0) / (properties.filter(p => p.metrics.cap_rate != null).length || 1)).toFixed(1)}
-                <span className="text-sm text-muted-foreground font-normal">%</span>
-              </p>
-            </div>
-            <div className="rounded-lg border bg-card px-4 py-3">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.positiveCashFlow')}</p>
-              <p className="text-2xl font-bold tabular-nums mt-0.5">
-                {summary?.positive_cash_flow_count ?? properties.filter(p => p.metrics.is_positive_cash_flow).length}
-                <span className="text-sm text-muted-foreground font-normal">/{summary?.total_analyzed ?? properties.length}</span>
-              </p>
-            </div>
-          </div>
+          {/* Top KPIs — best-in-class from top 10 */}
+          {(() => {
+            const bestScore = properties.reduce((best, p) => p.metrics.score > best.metrics.score ? p : best, properties[0]);
+            const bestCap = properties.reduce((best, p) => (p.metrics.cap_rate ?? 0) > (best.metrics.cap_rate ?? 0) ? p : best, properties[0]);
+            const bestCF = properties.reduce((best, p) => (p.metrics.cash_flow_monthly ?? -Infinity) > (best.metrics.cash_flow_monthly ?? -Infinity) ? p : best, properties[0]);
+            const minPrice = Math.min(...properties.map(p => p.listing.price));
+            const maxPrice = Math.max(...properties.map(p => p.listing.price));
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div
+                  className="rounded-lg border bg-card px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handlePropertyClick(bestScore)}
+                >
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.bestScore')}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-0.5">
+                    {bestScore.metrics.score}
+                    <span className="text-sm text-muted-foreground font-normal">/100</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{bestScore.listing.address.split(',')[0]}</p>
+                </div>
+                <div
+                  className="rounded-lg border bg-card px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handlePropertyClick(bestCap)}
+                >
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.bestCapRate')}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-0.5">
+                    {bestCap.metrics.cap_rate?.toFixed(1)}
+                    <span className="text-sm text-muted-foreground font-normal">%</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{bestCap.listing.address.split(',')[0]}</p>
+                </div>
+                <div
+                  className="rounded-lg border bg-card px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => handlePropertyClick(bestCF)}
+                >
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.bestCashFlow')}</p>
+                  <p className={`text-2xl font-bold tabular-nums mt-0.5 ${(bestCF.metrics.cash_flow_monthly ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {formatCashFlow(bestCF.metrics.cash_flow_monthly ?? 0, locale)}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{bestCF.listing.address.split(',')[0]}</p>
+                </div>
+                <div className="rounded-lg border bg-card px-4 py-3">
+                  <p className="text-[11px] text-muted-foreground uppercase tracking-wider">{t('home.priceRange')}</p>
+                  <p className="text-2xl font-bold tabular-nums mt-0.5">
+                    {formatPrice(minPrice, locale)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{t('home.to')} {formatPrice(maxPrice, locale)}</p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Top 10 Comparison Table */}
           <Card>
