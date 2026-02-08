@@ -1,6 +1,7 @@
 """Background scraper worker that populates the DB with all Centris listings."""
 
 import asyncio
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -52,10 +53,11 @@ class ScraperWorker:
             "current_type": None,
             "step_results": [],
             "enrichment_progress": {
-                "details": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+                "details": {"total": 0, "done": 0, "failed": 0, "corrections": 0, "phase": "pending"},
                 "walk_scores": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
                 "photos": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
                 "conditions": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+                "validation": {"total": 0, "corrected": 0, "flagged": 0, "phase": "pending"},
             },
             "refresh_progress": {
                 "market": {"status": "pending"},
@@ -122,10 +124,11 @@ class ScraperWorker:
         self._status["current_step"] = 0
         self._status["step_results"] = []
         self._status["enrichment_progress"] = {
-            "details": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            "details": {"total": 0, "done": 0, "failed": 0, "corrections": 0, "phase": "pending"},
             "walk_scores": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
             "photos": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
             "conditions": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            "validation": {"total": 0, "corrected": 0, "flagged": 0, "phase": "pending"},
         }
         self._status["refresh_progress"] = {
             "market": {"status": "pending"},
@@ -256,6 +259,11 @@ class ScraperWorker:
         self._status["enrichment_progress"]["details"]["phase"] = "running"
         await self._enrich_listing_details()
 
+        # Validate and score data quality
+        self._status["current_phase"] = "validating_data"
+        self._status["enrichment_progress"]["validation"]["phase"] = "running"
+        await self._validate_data_quality()
+
         # Enrich listings with Walk Scores
         self._status["current_phase"] = "enriching_walk_scores"
         self._status["enrichment_progress"]["walk_scores"]["phase"] = "running"
@@ -296,11 +304,13 @@ class ScraperWorker:
         self._status["current_type"] = None
 
     async def _enrich_listing_details(self):
-        """Fetch detail pages to fill in gross_revenue, postal_code, and other fields.
+        """Fetch detail pages to validate and correct ALL listing fields.
 
-        Search cards don't include revenue, postal code, lot size, year built,
-        assessment, or taxes. This step fetches the full listing page and merges
-        all available fields into the cached JSONB data.
+        The detail page is the authoritative source of truth. This step:
+        1. Fetches the full listing page for each un-validated listing
+        2. Extracts comprehensive data (revenue, address, units, etc.)
+        3. Auto-corrects any search card fields that differ from detail page
+        4. Logs all corrections for data quality monitoring
 
         Processes batches in a loop until all listings are enriched (capped at
         max_batches to prevent runaway cycles after schema changes).
@@ -313,6 +323,7 @@ class ScraperWorker:
 
         total_enriched = 0
         total_failed = 0
+        total_corrections = 0
         batch_num = 0
 
         async with CentrisScraper(request_interval=delay) as scraper:
@@ -326,7 +337,7 @@ class ScraperWorker:
 
                 if not listings:
                     if batch_num == 1:
-                        logger.info("Detail enrichment: all listings already have details")
+                        logger.info("Detail enrichment: all listings already validated")
                     break
 
                 logger.info(
@@ -343,7 +354,9 @@ class ScraperWorker:
                             item["id"], url=item.get("url") or None
                         )
                         if detailed:
+                            # Build fields dict: detail page is authoritative
                             fields = {
+                                # Detail-only fields (not on search cards)
                                 "gross_revenue": detailed.gross_revenue,
                                 "total_expenses": detailed.total_expenses,
                                 "net_income": detailed.net_income,
@@ -353,12 +366,46 @@ class ScraperWorker:
                                 "municipal_assessment": detailed.municipal_assessment,
                                 "annual_taxes": detailed.annual_taxes,
                                 "sqft": detailed.sqft,
+                                # Validation timestamp
+                                "detail_enriched_at": datetime.now(timezone.utc).isoformat(),
                             }
-                            # Also grab photos if available
+                            # Photos
                             if detailed.photo_urls:
                                 fields["photo_urls"] = detailed.photo_urls
 
-                            await update_listing_details(item["id"], fields)
+                            # Auto-correct search card fields from detail page
+                            # Only override when detail page has a real value (not default)
+                            if detailed.address and detailed.address != "Unknown":
+                                fields["address"] = detailed.address
+                            if detailed.city and detailed.city != "Montreal":
+                                fields["city"] = detailed.city
+                            if detailed.units and detailed.units > 1:
+                                fields["units"] = detailed.units
+                            if detailed.bedrooms and detailed.bedrooms > 0:
+                                fields["bedrooms"] = detailed.bedrooms
+                            if detailed.bathrooms and detailed.bathrooms > 0:
+                                fields["bathrooms"] = detailed.bathrooms
+                            if detailed.property_type:
+                                fields["property_type"] = detailed.property_type.value
+                            if detailed.price and detailed.price > 0:
+                                fields["price"] = detailed.price
+
+                            # Also update indexed columns when corrected
+                            column_updates = {}
+                            if "city" in fields and fields["city"]:
+                                column_updates["city"] = fields["city"]
+                            if "property_type" in fields:
+                                column_updates["property_type"] = fields["property_type"]
+
+                            result = await update_listing_details(
+                                item["id"], fields, column_updates=column_updates
+                            )
+                            if result.get("corrections"):
+                                total_corrections += len(result["corrections"])
+                                logger.info(
+                                    f"Auto-corrected {item['id']}: "
+                                    + "; ".join(result["corrections"][:5])
+                                )
                             total_enriched += 1
                         else:
                             total_failed += 1
@@ -375,9 +422,58 @@ class ScraperWorker:
                     break
 
         self._status["enrichment_progress"]["details"]["phase"] = "done"
+        self._status["enrichment_progress"]["details"]["corrections"] = total_corrections
         logger.info(
             f"Detail enrichment done: {total_enriched} enriched, "
-            f"{total_failed} failed across {batch_num} batch(es)"
+            f"{total_failed} failed, {total_corrections} corrections "
+            f"across {batch_num} batch(es)"
+        )
+
+    async def _validate_data_quality(self):
+        """Run validation pipeline on all active listings.
+
+        Applies corrections, sanity checks, and quality scoring via
+        data_validator.validate_listing().
+        """
+        from .data_validator import validate_listing
+        from .db import get_pool
+
+        pool = get_pool()
+        now = datetime.now(timezone.utc)
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, data FROM properties WHERE expires_at > $1",
+                now,
+            )
+
+        total = len(rows)
+        corrected = 0
+        flagged = 0
+        self._status["enrichment_progress"]["validation"]["total"] = total
+
+        for row in rows:
+            data = json.loads(row["data"])
+            data = validate_listing(data)
+            quality = data.get("_quality", {})
+            if quality.get("corrections"):
+                corrected += 1
+            if quality.get("flags"):
+                flagged += 1
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+                    json.dumps(data), row["id"],
+                )
+
+        self._status["enrichment_progress"]["validation"].update({
+            "corrected": corrected,
+            "flagged": flagged,
+            "phase": "done",
+        })
+        logger.info(
+            f"Data validation: {total} listings, "
+            f"{corrected} corrected, {flagged} flagged"
         )
 
     async def _enrich_walk_scores(self):

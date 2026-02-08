@@ -600,6 +600,15 @@
   "status.noHistoryDesc": "L'historique apparaîtra ici après le premier cycle de scraping.",
   "status.loading": "Chargement du statut du scraping...",
   "status.disabled": "Le scraper n'est pas disponible (pas de connexion à la base de données)",
+  "status.dataQuality": "Qualité des données",
+  "status.dataQualityDesc": "Validation automatisée et score de complétude",
+  "status.avgScore": "Score moyen",
+  "status.highQuality": "Haute qualité (80+)",
+  "status.lowQuality": "Basse qualité (<50)",
+  "status.flagged": "Signalées",
+  "status.corrected": "Auto-corrigées",
+  "status.totalValidated": "Total validées",
+
   "status.dataWarnings": "Maintenance des données requise",
   "status.dataWarningsDesc": "Sources de données codées en dur nécessitant une mise à jour manuelle",
 

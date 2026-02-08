@@ -739,7 +739,9 @@ class CentrisScraper(DataSource):
 
         try:
             response = await self._make_request(url)
-            soup = BeautifulSoup(response.content, "html.parser", from_encoding="utf-8")
+            # Use response.text (httpx auto-decodes from Content-Type header)
+            # to correctly handle ½ and other special characters
+            soup = BeautifulSoup(response.text, "html.parser")
             page_text = soup.get_text(" ", strip=True)
 
             # Parse structured characteristics
@@ -758,40 +760,50 @@ class CentrisScraper(DataSource):
             # === ADDRESS & LOCATION ===
             address = "Unknown"
             city = "Montreal"
-            title = soup.find("title")
-            if title:
-                title_text = title.get_text(strip=True)
-                # Title format varies:
-                # "House for sale in City, Address, MLS# - Centris.ca"
-                # "Triplex for sale in City1, City2, Address, MLS# - Centris.ca"
-                # Split by comma and find the street address (contains numbers)
-                parts = title_text.split(",")
-                for i, part in enumerate(parts):
-                    part = part.strip()
-                    # Street address usually has a number at the start
-                    if re.match(r"^\d+", part):
-                        address = part
-                        # City is usually the part after "in" before the address
-                        if i >= 1:
-                            # Look backwards for the city (after "in")
-                            for j in range(i - 1, -1, -1):
-                                prev_part = parts[j].strip()
-                                if "in " in prev_part:
-                                    city = prev_part.split("in ")[-1].strip()
-                                    break
-                                elif j == i - 1:
-                                    city = prev_part
-                        break
+            postal_code = None
 
-            # Try schema.org if not found
+            # Try schema.org FIRST (most reliable source)
             addr_elem = soup.find("span", itemprop="streetAddress")
-            if addr_elem and address == "Unknown":
+            if addr_elem:
                 address = addr_elem.get_text(strip=True)
             city_elem = soup.find("span", itemprop="addressLocality")
             if city_elem:
                 city = city_elem.get_text(strip=True)
             postal_elem = soup.find("span", itemprop="postalCode")
-            postal_code = postal_elem.get_text(strip=True) if postal_elem else None
+            if postal_elem:
+                postal_code = postal_elem.get_text(strip=True)
+
+            # Fallback to title parsing if schema.org didn't have address
+            if address == "Unknown":
+                title = soup.find("title")
+                if title:
+                    title_text = title.get_text(strip=True)
+                    # Title format varies:
+                    # "5plex for sale in La Malbaie, 925 - 975, boul. De Comporté, MLS# - Centris.ca"
+                    # "House for sale in City, 123, Rue Example, MLS# - Centris.ca"
+                    parts = title_text.split(",")
+                    for i, part in enumerate(parts):
+                        part = part.strip()
+                        # Street address usually has a number at the start
+                        if re.match(r"^\d+", part):
+                            # Collect number + subsequent street name parts until MLS#
+                            addr_parts = [part]
+                            for k in range(i + 1, len(parts)):
+                                next_part = parts[k].strip()
+                                if re.search(r"MLS|Centris|centris", next_part, re.I):
+                                    break
+                                addr_parts.append(next_part)
+                            address = ", ".join(addr_parts)
+                            # City is usually the part after "in" before the address
+                            if i >= 1 and city == "Montreal":
+                                for j in range(i - 1, -1, -1):
+                                    prev_part = parts[j].strip()
+                                    if "in " in prev_part:
+                                        city = prev_part.split("in ")[-1].strip()
+                                        break
+                                    elif j == i - 1:
+                                        city = prev_part
+                            break
 
             # === BEDROOMS & BATHROOMS ===
             bedrooms = 0

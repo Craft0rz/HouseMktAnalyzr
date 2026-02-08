@@ -665,12 +665,15 @@ async def update_photo_urls(listing_id: str, photo_urls: list[str]) -> bool:
 
 
 async def get_listings_without_details(limit: int = 50) -> list[dict]:
-    """Get cached listings that haven't been enriched with detail-page data.
+    """Get cached listings that haven't been validated with detail-page data.
 
-    Listings from search cards are missing gross_revenue, postal_code,
-    and other fields only available on the individual listing page.
-    Uses OR so listings missing gross_revenue get re-enriched even if
-    postal_code was already extracted.
+    Returns listings that either:
+    - Have never been detail-enriched (no detail_enriched_at marker), OR
+    - Are missing critical fields (postal_code, gross_revenue)
+
+    The detail enrichment step validates and auto-corrects ALL fields
+    (address, city, units, bedrooms, bathrooms, etc.) using the
+    authoritative detail page as the source of truth.
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -680,8 +683,7 @@ async def get_listings_without_details(limit: int = 50) -> list[dict]:
             """
             SELECT id, data FROM properties
             WHERE expires_at > $1
-              AND ((data->>'postal_code') IS NULL
-                   OR (data->>'gross_revenue') IS NULL)
+              AND (data->>'detail_enriched_at') IS NULL
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
@@ -699,12 +701,21 @@ async def get_listings_without_details(limit: int = 50) -> list[dict]:
 
 
 async def update_listing_details(
-    listing_id: str, detail_fields: dict
-) -> bool:
+    listing_id: str, detail_fields: dict, column_updates: dict | None = None,
+) -> dict:
     """Merge detail-page fields into a cached listing's JSONB data.
 
     Only updates fields that have a non-None value in detail_fields,
     preserving existing data for fields not present in the update.
+
+    Args:
+        listing_id: The property ID.
+        detail_fields: Dict of fields to merge into the JSONB data column.
+        column_updates: Optional dict of indexed column updates
+            (e.g. {"city": "...", "property_type": "..."}).
+
+    Returns:
+        Dict with "updated" bool and "corrections" list of changed fields.
     """
     pool = get_pool()
 
@@ -713,18 +724,38 @@ async def update_listing_details(
             "SELECT data FROM properties WHERE id = $1", listing_id
         )
         if not row:
-            return False
+            return {"updated": False, "corrections": []}
 
         data = json.loads(row["data"])
+        corrections: list[str] = []
+
         for key, value in detail_fields.items():
             if value is not None:
+                old = data.get(key)
+                if old is not None and old != value and key != "detail_enriched_at":
+                    corrections.append(f"{key}: {old!r} -> {value!r}")
                 data[key] = value
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",
             json.dumps(data), listing_id,
         )
-    return True
+
+        # Also update indexed columns if provided
+        if column_updates:
+            sets = []
+            params = []
+            idx = 1
+            for col, val in column_updates.items():
+                if val is not None:
+                    idx += 1
+                    sets.append(f"{col} = ${idx}")
+                    params.append(val)
+            if sets:
+                query = f"UPDATE properties SET {', '.join(sets)} WHERE id = $1"
+                await conn.execute(query, listing_id, *params)
+
+    return {"updated": True, "corrections": corrections}
 
 
 async def get_listings_without_condition_score(limit: int = 25) -> list[dict]:
@@ -1712,3 +1743,45 @@ async def get_data_freshness() -> dict:
             result["listings"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 4, "total_active": 0}
 
     return result
+
+
+async def get_data_quality_summary() -> dict:
+    """Get aggregate data quality stats across all active listings."""
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) as total,
+                COALESCE(AVG((data->'_quality'->>'score')::int), 0) as avg_score,
+                COUNT(*) FILTER (
+                    WHERE (data->'_quality'->>'score')::int >= 80
+                ) as high_quality,
+                COUNT(*) FILTER (
+                    WHERE (data->'_quality'->>'score')::int < 50
+                ) as low_quality,
+                COUNT(*) FILTER (
+                    WHERE jsonb_array_length(COALESCE(data->'_quality'->'flags', '[]'::jsonb)) > 0
+                ) as flagged,
+                COUNT(*) FILTER (
+                    WHERE jsonb_array_length(COALESCE(data->'_quality'->'corrections', '[]'::jsonb)) > 0
+                ) as corrected
+            FROM properties
+            WHERE expires_at > $1
+              AND data->'_quality' IS NOT NULL
+            """,
+            now,
+        )
+
+    if row and row["total"] > 0:
+        return {
+            "total": row["total"],
+            "avg_score": round(float(row["avg_score"]), 1),
+            "high_quality": row["high_quality"],
+            "low_quality": row["low_quality"],
+            "flagged": row["flagged"],
+            "corrected": row["corrected"],
+        }
+    return {}

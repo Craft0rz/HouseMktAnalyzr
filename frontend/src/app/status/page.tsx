@@ -12,7 +12,7 @@ import { AdminGuard } from '@/components/AdminGuard';
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
-import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning } from '@/lib/types';
+import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality } from '@/lib/types';
 
 const PHASE_LABELS: Record<string, string> = {
   scraping: 'status.phaseScraping',
@@ -332,6 +332,47 @@ function StatusContent() {
               <FreshnessCard label={t('status.rentData')} data={freshness.rent_data} t={t} />
               <FreshnessCard label={t('status.demographics')} data={freshness.demographics} t={t} />
               <FreshnessCard label={t('status.neighbourhood')} data={freshness.neighbourhood} t={t} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Data Quality Summary */}
+      {status?.data_quality && status.data_quality.total > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-blue-500" />
+              {t('status.dataQuality')}
+            </CardTitle>
+            <CardDescription>{t('status.dataQualityDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-2xl font-bold">{status.data_quality.avg_score}</p>
+                <p className="text-xs text-muted-foreground">{t('status.avgScore')}</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-green-600">{status.data_quality.high_quality}</p>
+                <p className="text-xs text-muted-foreground">{t('status.highQuality')}</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-red-500">{status.data_quality.low_quality}</p>
+                <p className="text-xs text-muted-foreground">{t('status.lowQuality')}</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-amber-500">{status.data_quality.flagged}</p>
+                <p className="text-xs text-muted-foreground">{t('status.flagged')}</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-blue-500">{status.data_quality.corrected}</p>
+                <p className="text-xs text-muted-foreground">{t('status.corrected')}</p>
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{status.data_quality.total}</p>
+                <p className="text-xs text-muted-foreground">{t('status.totalValidated')}</p>
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -600,6 +600,15 @@
   "status.noHistoryDesc": "Job history will appear here after the first scrape cycle completes.",
   "status.loading": "Loading scraper status...",
   "status.disabled": "Scraper is not available (no database connection)",
+  "status.dataQuality": "Data Quality",
+  "status.dataQualityDesc": "Automated validation and completeness scoring",
+  "status.avgScore": "Avg Score",
+  "status.highQuality": "High Quality (80+)",
+  "status.lowQuality": "Low Quality (<50)",
+  "status.flagged": "Flagged",
+  "status.corrected": "Auto-Corrected",
+  "status.totalValidated": "Total Validated",
+
   "status.dataWarnings": "Data Maintenance Required",
   "status.dataWarningsDesc": "Hardcoded data sources that need manual updating",
 

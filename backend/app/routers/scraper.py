@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_admin_user
-from ..db import get_scraper_stats, get_scrape_job_history, get_data_freshness
+from ..db import get_scraper_stats, get_scrape_job_history, get_data_freshness, get_pool
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -18,7 +18,13 @@ async def scraper_status(request: Request, _admin: dict = Depends(get_admin_user
     worker = request.app.state.scraper_worker
     if worker is None:
         return {"enabled": False, "message": "Scraper not available (no database)"}
-    return worker.get_status()
+    status = worker.get_status()
+    try:
+        from ..db import get_data_quality_summary
+        status["data_quality"] = await get_data_quality_summary()
+    except Exception:
+        status["data_quality"] = {}
+    return status
 
 
 @router.post("/trigger", status_code=202)
@@ -60,3 +66,33 @@ async def data_freshness(_admin: dict = Depends(get_admin_user)) -> dict:
         return await get_data_freshness()
     except Exception as e:
         raise HTTPException(500, f"Failed to get freshness data: {e}")
+
+
+@router.post("/revalidate", status_code=202)
+async def revalidate_listings(request: Request, _admin: dict = Depends(get_admin_user)) -> dict:
+    """Clear detail_enriched_at markers to force re-validation of all listings.
+
+    The next enrichment cycle will re-fetch detail pages and auto-correct
+    any discrepancies between search card data and detail page data.
+    """
+    worker = request.app.state.scraper_worker
+    if worker is None:
+        raise HTTPException(503, "Scraper not available (no database)")
+
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE properties
+            SET data = data - 'detail_enriched_at'
+            WHERE (data->>'detail_enriched_at') IS NOT NULL
+            """
+        )
+        # Result is like "UPDATE 123"
+        count = int(result.split()[-1]) if result else 0
+
+    return {
+        "status": "markers_cleared",
+        "listings_to_revalidate": count,
+        "message": f"Cleared {count} listings. They will be re-validated on next enrichment cycle.",
+    }

@@ -462,6 +462,15 @@ export interface DataWarning {
   action: string;
 }
 
+export interface DataQuality {
+  total: number;
+  avg_score: number;
+  high_quality: number;
+  low_quality: number;
+  flagged: number;
+  corrected: number;
+}
+
 export interface ScraperStatus {
   enabled?: boolean;
   message?: string;
@@ -472,6 +481,7 @@ export interface ScraperStatus {
   total_listings_stored: number;
   errors: string[];
   data_warnings?: DataWarning[];
+  data_quality?: DataQuality;
   next_run_at: string | null;
   current_phase: string | null;
   current_step: number;
