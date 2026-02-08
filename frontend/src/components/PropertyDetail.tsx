@@ -468,20 +468,27 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   )}
                 </div>
 
-                {/* Category breakdown */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
-                  {(['kitchen', 'bathroom', 'floors', 'exterior'] as const).map((cat) => {
-                    const score = listing.condition_details![cat] as number;
-                    return (
-                      <div key={cat} className="text-center p-2 rounded-lg bg-muted/50">
-                        <div className={`text-lg font-bold ${getConditionColor(score)}`}>
-                          {score.toFixed(1)}
-                        </div>
-                        <div className="text-xs text-muted-foreground capitalize">{cat}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* Category breakdown — only show categories visible in photos */}
+                {(() => {
+                  const cats = (['kitchen', 'bathroom', 'floors', 'exterior'] as const)
+                    .filter((cat) => listing.condition_details![cat] != null);
+                  if (cats.length === 0) return null;
+                  return (
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      {cats.map((cat) => {
+                        const score = listing.condition_details![cat] as number;
+                        return (
+                          <div key={cat} className="text-center p-2 rounded-lg bg-muted/50">
+                            <div className={`text-lg font-bold ${getConditionColor(score)}`}>
+                              {score.toFixed(1)}
+                            </div>
+                            <div className="text-xs text-muted-foreground capitalize">{cat}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
 
                 {/* AI Notes */}
                 {listing.condition_details.notes && (

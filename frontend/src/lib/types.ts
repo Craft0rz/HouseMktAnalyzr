@@ -30,10 +30,10 @@ export interface PropertyListing {
   photo_urls: string[];
   condition_score: number | null;
   condition_details: {
-    kitchen: number;
-    bathroom: number;
-    floors: number;
-    exterior: number;
+    kitchen: number | null;
+    bathroom: number | null;
+    floors: number | null;
+    exterior: number | null;
     renovation_needed: boolean;
     notes: string;
   } | null;

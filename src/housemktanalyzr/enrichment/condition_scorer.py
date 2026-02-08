@@ -44,10 +44,10 @@ class ConditionAssessment(BaseModel):
     """Pydantic schema for Gemini structured JSON output."""
 
     overall: float = Field(ge=1, le=10, description="Overall condition 1-10")
-    kitchen: float = Field(ge=1, le=10, description="Kitchen condition 1-10")
-    bathroom: float = Field(ge=1, le=10, description="Bathroom condition 1-10")
-    floors: float = Field(ge=1, le=10, description="Floor/interior condition 1-10")
-    exterior: float = Field(ge=1, le=10, description="Exterior/facade condition 1-10")
+    kitchen: float | None = Field(default=None, description="Kitchen condition 1-10, null if not visible")
+    bathroom: float | None = Field(default=None, description="Bathroom condition 1-10, null if not visible")
+    floors: float | None = Field(default=None, description="Floor/interior condition 1-10, null if not visible")
+    exterior: float | None = Field(default=None, description="Exterior/facade condition 1-10, null if not visible")
     renovation_needed: bool = Field(
         description="Whether significant renovation is needed (>$20k)"
     )
@@ -61,10 +61,10 @@ class ConditionScoreResult:
     """Result of AI condition scoring for a property."""
 
     overall_score: float
-    kitchen_score: float
-    bathroom_score: float
-    floors_score: float
-    exterior_score: float
+    kitchen_score: float | None
+    bathroom_score: float | None
+    floors_score: float | None
+    exterior_score: float | None
     renovation_needed: bool
     notes: str
 
@@ -76,16 +76,18 @@ and rate the property's physical condition.
 Property context: {property_type} in {city}, built {year_built}.
 
 Rate each category from 1 (terrible/needs full renovation) to 10 (pristine/newly renovated):
-- Overall: General impression of the entire property
+- Overall: General impression of the entire property (always score this)
 - Kitchen: Cabinets, countertops, appliances, flooring
 - Bathroom: Fixtures, tiles, vanity, overall cleanliness
 - Floors: Condition of flooring throughout (hardwood, tile, carpet)
 - Exterior: Facade, roof visible condition, windows, entrance
 
-If a category is not visible in the photos, estimate based on the overall condition.
+IMPORTANT: Only score a category if you can actually see it in the photos. \
+If a kitchen, bathroom, floor, or exterior is NOT visible in any photo, return null \
+for that category. Do NOT guess or estimate unseen areas.
 
 Also determine if significant renovation is needed (>$20,000 estimated), and \
-provide 2-3 sentence notes about key observations.
+provide 2-3 sentence notes about what you can actually observe.
 
 Be calibrated: 5 = average/functional but dated. 7 = good condition with minor wear. \
 9-10 = recently renovated/new."""
