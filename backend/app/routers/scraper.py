@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ..db import get_scraper_stats
+from ..db import get_scraper_stats, get_scrape_job_history, get_data_freshness
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -40,3 +40,22 @@ async def scraper_stats() -> dict:
         return await get_scraper_stats()
     except Exception as e:
         raise HTTPException(500, f"Failed to get stats: {e}")
+
+
+@router.get("/history")
+async def scraper_history(limit: int = 20) -> dict:
+    """Return recent scrape job history from the database."""
+    try:
+        jobs = await get_scrape_job_history(limit=limit)
+        return {"jobs": jobs, "count": len(jobs)}
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get history: {e}")
+
+
+@router.get("/freshness")
+async def data_freshness() -> dict:
+    """Return data freshness indicators for all data sources."""
+    try:
+        return await get_data_freshness()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to get freshness data: {e}")

@@ -395,3 +395,86 @@ export interface RemovedListing {
   last_seen_at: string | null;
   days_on_market: number | null;
 }
+
+// Scraper status types
+
+export interface EnrichmentPhaseProgress {
+  total: number;
+  done: number;
+  failed: number;
+  phase: 'pending' | 'running' | 'done';
+}
+
+export interface RefreshStatus {
+  status: 'pending' | 'running' | 'skipped' | 'done' | 'failed';
+}
+
+export interface StepResult {
+  region: string;
+  type: string;
+  count: number;
+  duration_sec: number;
+  error: string | null;
+}
+
+export interface ScraperStatus {
+  enabled?: boolean;
+  message?: string;
+  is_running: boolean;
+  last_run_started: string | null;
+  last_run_completed: string | null;
+  last_run_duration_sec: number | null;
+  total_listings_stored: number;
+  errors: string[];
+  next_run_at: string | null;
+  current_phase: string | null;
+  current_step: number;
+  total_steps: number;
+  current_region: string | null;
+  current_type: string | null;
+  step_results: StepResult[];
+  enrichment_progress: {
+    details: EnrichmentPhaseProgress;
+    walk_scores: EnrichmentPhaseProgress;
+    photos: EnrichmentPhaseProgress;
+    conditions: EnrichmentPhaseProgress;
+  };
+  refresh_progress: {
+    market: RefreshStatus;
+    rent: RefreshStatus;
+    demographics: RefreshStatus;
+    neighbourhood: RefreshStatus;
+  };
+}
+
+export interface ScrapeJob {
+  id: number;
+  started_at: string | null;
+  completed_at: string | null;
+  status: 'running' | 'completed' | 'failed';
+  total_listings: number;
+  total_enriched: number;
+  errors: string[];
+  step_log: StepResult[];
+  duration_sec: number | null;
+}
+
+export interface ScrapeJobHistoryResponse {
+  jobs: ScrapeJob[];
+  count: number;
+}
+
+export interface DataSourceFreshness {
+  last_fetched: string | null;
+  age_hours: number | null;
+  threshold_hours: number;
+  total_active?: number;
+}
+
+export interface DataFreshnessResponse {
+  market_data: DataSourceFreshness;
+  rent_data: DataSourceFreshness;
+  demographics: DataSourceFreshness;
+  neighbourhood: DataSourceFreshness;
+  listings: DataSourceFreshness;
+}

@@ -6,6 +6,8 @@ import os
 from datetime import datetime, timezone
 
 from .constants import SCRAPE_MATRIX
+from datetime import timedelta
+
 from .db import (
     cache_listings, get_pool,
     get_listings_without_details, update_listing_details,
@@ -17,6 +19,7 @@ from .db import (
     upsert_demographics_batch, get_demographics_age,
     upsert_neighbourhood_stats_batch, get_neighbourhood_stats_age,
     mark_stale_listings, mark_delisted,
+    insert_scrape_job,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,24 @@ class ScraperWorker:
             "total_listings_stored": 0,
             "errors": [],
             "next_run_at": None,
+            "current_phase": None,
+            "current_step": 0,
+            "total_steps": len(SCRAPE_MATRIX),
+            "current_region": None,
+            "current_type": None,
+            "step_results": [],
+            "enrichment_progress": {
+                "details": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+                "walk_scores": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+                "photos": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+                "conditions": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            },
+            "refresh_progress": {
+                "market": {"status": "pending"},
+                "rent": {"status": "pending"},
+                "demographics": {"status": "pending"},
+                "neighbourhood": {"status": "pending"},
+            },
         }
 
     async def start(self):
@@ -80,7 +101,7 @@ class ScraperWorker:
             except Exception:
                 logger.exception("Scrape cycle failed unexpectedly")
 
-            next_run = datetime.now(timezone.utc).isoformat()
+            next_run = (datetime.now(timezone.utc) + timedelta(hours=self._interval_hours)).isoformat()
             self._status["next_run_at"] = next_run
             await asyncio.sleep(self._interval_hours * 3600)
 
@@ -94,12 +115,36 @@ class ScraperWorker:
         start_time = datetime.now(timezone.utc)
         self._status["last_run_started"] = start_time.isoformat()
 
+        # Reset progress tracking
+        self._status["current_phase"] = "scraping"
+        self._status["current_step"] = 0
+        self._status["step_results"] = []
+        self._status["enrichment_progress"] = {
+            "details": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            "walk_scores": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            "photos": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            "conditions": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+        }
+        self._status["refresh_progress"] = {
+            "market": {"status": "pending"},
+            "rent": {"status": "pending"},
+            "demographics": {"status": "pending"},
+            "neighbourhood": {"status": "pending"},
+        }
+
         total_stored = 0
         errors = []
 
         try:
             async with CentrisScraper(request_interval=self._request_interval) as scraper:
-                for region, prop_type, search_url in SCRAPE_MATRIX:
+                for step_idx, (region, prop_type, search_url) in enumerate(SCRAPE_MATRIX, 1):
+                    self._status["current_step"] = step_idx
+                    self._status["current_region"] = region
+                    self._status["current_type"] = prop_type
+                    step_start = datetime.now(timezone.utc)
+                    step_count = 0
+                    step_error = None
+
                     try:
                         listings = await scraper.fetch_all_listings(
                             search_url=search_url,
@@ -113,6 +158,7 @@ class ScraperWorker:
                                 region=region,
                             )
                             total_stored += count
+                            step_count = count
                             logger.info(
                                 f"Scraped {region}/{prop_type}: "
                                 f"{len(listings)} found, {count} stored"
@@ -124,6 +170,7 @@ class ScraperWorker:
                         msg = f"{region}/{prop_type}: {e}"
                         logger.warning(f"Rate limited — {msg}")
                         errors.append(msg)
+                        step_error = str(e)
                         await asyncio.sleep(30)
 
                     except asyncio.CancelledError:
@@ -133,6 +180,16 @@ class ScraperWorker:
                         msg = f"{region}/{prop_type}: {e}"
                         logger.error(f"Error scraping — {msg}")
                         errors.append(msg)
+                        step_error = str(e)
+
+                    step_duration = (datetime.now(timezone.utc) - step_start).total_seconds()
+                    self._status["step_results"].append({
+                        "region": region,
+                        "type": prop_type,
+                        "count": step_count,
+                        "duration_sec": round(step_duration, 1),
+                        "error": step_error,
+                    })
 
         finally:
             end_time = datetime.now(timezone.utc)
@@ -150,6 +207,7 @@ class ScraperWorker:
             )
 
         # Mark listings not seen recently as stale/delisted
+        self._status["current_phase"] = "lifecycle_sweep"
         try:
             stale = await mark_stale_listings(ttl_hours=self._ttl_hours)
             delisted = await mark_delisted(hours=48)
@@ -159,18 +217,27 @@ class ScraperWorker:
             logger.exception("Lifecycle sweep failed")
 
         # Refresh market data (interest rates, CPI) if stale
+        self._status["current_phase"] = "refreshing_market"
+        self._status["refresh_progress"]["market"]["status"] = "running"
         await self._refresh_market_data()
 
         # Refresh CMHC rent data if stale
+        self._status["current_phase"] = "refreshing_rent"
+        self._status["refresh_progress"]["rent"]["status"] = "running"
         await self._refresh_rent_data()
 
         # Refresh demographics data if stale
+        self._status["current_phase"] = "refreshing_demographics"
+        self._status["refresh_progress"]["demographics"]["status"] = "running"
         await self._refresh_demographics()
 
         # Refresh Montreal neighbourhood data (crime, permits, taxes)
+        self._status["current_phase"] = "refreshing_neighbourhood"
+        self._status["refresh_progress"]["neighbourhood"]["status"] = "running"
         await self._refresh_neighbourhood_data()
 
         # Run alert checker after scrape completes
+        self._status["current_phase"] = "checking_alerts"
         try:
             from .alert_checker import check_all_alerts
             result = await check_all_alerts()
@@ -183,16 +250,48 @@ class ScraperWorker:
             logger.exception("Alert check failed after scrape cycle")
 
         # Enrich listings with detail-page data (gross_revenue, postal_code, etc.)
+        self._status["current_phase"] = "enriching_details"
+        self._status["enrichment_progress"]["details"]["phase"] = "running"
         await self._enrich_listing_details()
 
         # Enrich listings with Walk Scores
+        self._status["current_phase"] = "enriching_walk_scores"
+        self._status["enrichment_progress"]["walk_scores"]["phase"] = "running"
         await self._enrich_walk_scores()
 
         # Enrich listings with photo URLs (for listings not already covered by detail enrichment)
+        self._status["current_phase"] = "enriching_photos"
+        self._status["enrichment_progress"]["photos"]["phase"] = "running"
         await self._enrich_photo_urls()
 
         # Enrich listings with AI condition scores
+        self._status["current_phase"] = "enriching_conditions"
+        self._status["enrichment_progress"]["conditions"]["phase"] = "running"
         await self._enrich_condition_scores()
+
+        # Persist job history to database
+        total_enriched = sum(
+            self._status["enrichment_progress"][k]["done"]
+            for k in ("details", "walk_scores", "photos", "conditions")
+        )
+        final_status = "failed" if errors else "completed"
+        try:
+            await insert_scrape_job(
+                started_at=start_time,
+                completed_at=datetime.now(timezone.utc),
+                status=final_status,
+                total_listings=total_stored,
+                total_enriched=total_enriched,
+                errors=errors,
+                step_log=self._status["step_results"],
+                duration_sec=round((datetime.now(timezone.utc) - start_time).total_seconds(), 1),
+            )
+        except Exception:
+            logger.exception("Failed to persist scrape job to database")
+
+        self._status["current_phase"] = None
+        self._status["current_region"] = None
+        self._status["current_type"] = None
 
     async def _enrich_listing_details(self):
         """Fetch detail pages to fill in gross_revenue, postal_code, and other fields.
@@ -214,8 +313,10 @@ class ScraperWorker:
 
         if not listings:
             logger.info("Detail enrichment: all listings already have details")
+            self._status["enrichment_progress"]["details"]["phase"] = "done"
             return
 
+        self._status["enrichment_progress"]["details"]["total"] = len(listings)
         logger.info(f"Detail enrichment: fetching {len(listings)} detail pages (delay={delay}s)")
         enriched = 0
         failed = 0
@@ -249,7 +350,10 @@ class ScraperWorker:
                 except Exception as e:
                     logger.warning(f"Detail enrichment failed for {item['id']}: {e}")
                     failed += 1
+                self._status["enrichment_progress"]["details"]["done"] = enriched
+                self._status["enrichment_progress"]["details"]["failed"] = failed
 
+        self._status["enrichment_progress"]["details"]["phase"] = "done"
         logger.info(f"Detail enrichment done: {enriched} enriched, {failed} failed")
 
     async def _enrich_walk_scores(self):
@@ -267,8 +371,10 @@ class ScraperWorker:
 
         if not listings:
             logger.info("Walk Score: all listings already enriched")
+            self._status["enrichment_progress"]["walk_scores"]["phase"] = "done"
             return
 
+        self._status["enrichment_progress"]["walk_scores"]["total"] = len(listings)
         logger.info(f"Walk Score: enriching {len(listings)} listings (delay={delay}s)")
         enriched = 0
         failed = 0
@@ -298,9 +404,12 @@ class ScraperWorker:
             except Exception as e:
                 logger.warning(f"Walk Score failed for {item['id']}: {e}")
                 failed += 1
+            self._status["enrichment_progress"]["walk_scores"]["done"] = enriched
+            self._status["enrichment_progress"]["walk_scores"]["failed"] = failed
 
             await asyncio.sleep(delay)
 
+        self._status["enrichment_progress"]["walk_scores"]["phase"] = "done"
         logger.info(f"Walk Score enrichment done: {enriched} enriched, {failed} failed")
 
     async def _enrich_photo_urls(self):
@@ -318,8 +427,10 @@ class ScraperWorker:
 
         if not listings:
             logger.info("Photos: all listings already have photos")
+            self._status["enrichment_progress"]["photos"]["phase"] = "done"
             return
 
+        self._status["enrichment_progress"]["photos"]["total"] = len(listings)
         logger.info(f"Photos: fetching detail pages for {len(listings)} listings")
         enriched = 0
         failed = 0
@@ -342,7 +453,10 @@ class ScraperWorker:
                 except Exception as e:
                     logger.warning(f"Photo fetch failed for {item['id']}: {e}")
                     failed += 1
+                self._status["enrichment_progress"]["photos"]["done"] = enriched
+                self._status["enrichment_progress"]["photos"]["failed"] = failed
 
+        self._status["enrichment_progress"]["photos"]["phase"] = "done"
         logger.info(f"Photo enrichment done: {enriched} enriched, {failed} failed")
 
     async def _enrich_condition_scores(self):
@@ -350,6 +464,7 @@ class ScraperWorker:
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
             logger.info("Condition scoring skipped: GEMINI_API_KEY not set")
+            self._status["enrichment_progress"]["conditions"]["phase"] = "done"
             return
 
         from housemktanalyzr.enrichment.condition_scorer import score_property_condition
@@ -365,8 +480,10 @@ class ScraperWorker:
 
         if not listings:
             logger.info("Condition scoring: all eligible listings already scored")
+            self._status["enrichment_progress"]["conditions"]["phase"] = "done"
             return
 
+        self._status["enrichment_progress"]["conditions"]["total"] = len(listings)
         logger.info(
             f"Condition scoring: processing {len(listings)} listings "
             f"(delay={delay}s, ~{len(listings) * delay / 60:.1f}min)"
@@ -403,9 +520,12 @@ class ScraperWorker:
             except Exception as e:
                 logger.warning(f"Condition scoring failed for {item['id']}: {e}")
                 failed += 1
+            self._status["enrichment_progress"]["conditions"]["done"] = scored
+            self._status["enrichment_progress"]["conditions"]["failed"] = failed
 
             await asyncio.sleep(delay)
 
+        self._status["enrichment_progress"]["conditions"]["phase"] = "done"
         logger.info(f"Condition scoring done: {scored} scored, {failed} failed")
 
     async def _refresh_market_data(self):
@@ -419,6 +539,7 @@ class ScraperWorker:
             age = await get_market_data_age("boc_mortgage_5yr")
             if age is not None and age < refresh_hours:
                 logger.info(f"Market data: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                self._status["refresh_progress"]["market"]["status"] = "skipped"
                 return
         except Exception:
             logger.exception("Failed to check market data age")
@@ -456,11 +577,13 @@ class ScraperWorker:
                 total_upserted += count
 
             logger.info(f"Market data: upserted {total_upserted} observations")
+            self._status["refresh_progress"]["market"]["status"] = "done"
 
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Market data refresh failed")
+            self._status["refresh_progress"]["market"]["status"] = "failed"
         finally:
             await client.close()
 
@@ -474,6 +597,7 @@ class ScraperWorker:
             age = await get_rent_data_age()
             if age is not None and age < refresh_hours:
                 logger.info(f"Rent data: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                self._status["refresh_progress"]["rent"]["status"] = "skipped"
                 return
         except Exception:
             logger.exception("Failed to check rent data age")
@@ -544,11 +668,13 @@ class ScraperWorker:
                 total_upserted += await upsert_rent_data_batch(hist_rows)
 
             logger.info(f"Rent data: upserted {total_upserted} rows")
+            self._status["refresh_progress"]["rent"]["status"] = "done"
 
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Rent data refresh failed")
+            self._status["refresh_progress"]["rent"]["status"] = "failed"
         finally:
             await client.close()
 
@@ -562,6 +688,7 @@ class ScraperWorker:
             age = await get_demographics_age()
             if age is not None and age < refresh_hours:
                 logger.info(f"Demographics: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                self._status["refresh_progress"]["demographics"]["status"] = "skipped"
                 return
         except Exception:
             logger.exception("Failed to check demographics age")
@@ -591,11 +718,13 @@ class ScraperWorker:
 
             count = await upsert_demographics_batch(rows)
             logger.info(f"Demographics: upserted {count} municipality profiles")
+            self._status["refresh_progress"]["demographics"]["status"] = "done"
 
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Demographics refresh failed")
+            self._status["refresh_progress"]["demographics"]["status"] = "failed"
         finally:
             await client.close()
 
@@ -609,6 +738,7 @@ class ScraperWorker:
             age = await get_neighbourhood_stats_age()
             if age is not None and age < refresh_hours:
                 logger.info(f"Neighbourhood data: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                self._status["refresh_progress"]["neighbourhood"]["status"] = "skipped"
                 return
         except Exception:
             logger.exception("Failed to check neighbourhood data age")
@@ -659,9 +789,12 @@ class ScraperWorker:
             else:
                 logger.warning("Neighbourhood data: no results from Montreal Open Data")
 
+            self._status["refresh_progress"]["neighbourhood"]["status"] = "done"
+
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Neighbourhood data refresh failed")
+            self._status["refresh_progress"]["neighbourhood"]["status"] = "failed"
         finally:
             await client.close()

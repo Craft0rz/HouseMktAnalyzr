@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Building2, BarChart3, Bell, Calculator, Briefcase, Menu, Sun, Moon } from 'lucide-react';
+import { Building2, BarChart3, Bell, Calculator, Briefcase, Activity, Menu, Sun, Moon } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { cn } from '@/lib/utils';
@@ -28,6 +28,7 @@ export function Header() {
     { name: t('header.calculator'), href: '/calculator', icon: Calculator },
     { name: t('header.alerts'), href: '/alerts', icon: Bell },
     { name: t('header.portfolio'), href: '/portfolio', icon: Briefcase },
+    { name: t('header.status'), href: '/status', icon: Activity },
   ];
 
   return (

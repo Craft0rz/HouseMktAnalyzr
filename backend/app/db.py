@@ -247,6 +247,29 @@ async def _create_tables():
             )
         """)
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS scrape_jobs (
+                id SERIAL PRIMARY KEY,
+                started_at TIMESTAMPTZ NOT NULL,
+                completed_at TIMESTAMPTZ,
+                status TEXT NOT NULL DEFAULT 'running',
+                total_listings INTEGER DEFAULT 0,
+                total_enriched INTEGER DEFAULT 0,
+                errors JSONB DEFAULT '[]'::jsonb,
+                step_log JSONB DEFAULT '[]'::jsonb,
+                duration_sec REAL
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_scrape_jobs_started
+            ON scrape_jobs(started_at DESC)
+        """)
+        # Mark abandoned running jobs as failed on startup
+        await conn.execute("""
+            UPDATE scrape_jobs SET status = 'failed', completed_at = NOW()
+            WHERE status = 'running' AND started_at < NOW() - INTERVAL '24 hours'
+        """)
+
 
 # --- Property cache helpers ---
 
@@ -1362,3 +1385,144 @@ async def mark_delisted(hours: int = 48) -> int:
     if count:
         logger.info(f"Marked {count} listings as delisted (not seen for {hours}+ hours)")
     return count
+
+
+# --- Scrape job history helpers ---
+
+async def insert_scrape_job(
+    started_at: datetime,
+    completed_at: datetime | None,
+    status: str,
+    total_listings: int,
+    total_enriched: int,
+    errors: list[str],
+    step_log: list[dict],
+    duration_sec: float | None,
+) -> int:
+    """Insert a scrape job record and return its ID."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            INSERT INTO scrape_jobs
+                (started_at, completed_at, status, total_listings,
+                 total_enriched, errors, step_log, duration_sec)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
+            RETURNING id
+            """,
+            started_at,
+            completed_at,
+            status,
+            total_listings,
+            total_enriched,
+            json.dumps(errors),
+            json.dumps(step_log),
+            duration_sec,
+        )
+    return row["id"]
+
+
+async def get_scrape_job_history(limit: int = 20) -> list[dict]:
+    """Get the most recent scrape jobs, newest first."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, started_at, completed_at, status,
+                   total_listings, total_enriched, errors,
+                   step_log, duration_sec
+            FROM scrape_jobs
+            ORDER BY started_at DESC
+            LIMIT $1
+            """,
+            limit,
+        )
+    return [
+        {
+            "id": r["id"],
+            "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+            "completed_at": r["completed_at"].isoformat() if r["completed_at"] else None,
+            "status": r["status"],
+            "total_listings": r["total_listings"],
+            "total_enriched": r["total_enriched"],
+            "errors": json.loads(r["errors"]) if r["errors"] else [],
+            "step_log": json.loads(r["step_log"]) if r["step_log"] else [],
+            "duration_sec": r["duration_sec"],
+        }
+        for r in rows
+    ]
+
+
+async def get_data_freshness() -> dict:
+    """Get freshness (age in hours + last fetched timestamp) for all data sources."""
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+    result = {}
+
+    async with pool.acquire() as conn:
+        # Market data
+        row = await conn.fetchrow(
+            "SELECT MAX(fetched_at) as latest FROM market_data WHERE series_id = 'boc_mortgage_5yr'"
+        )
+        if row and row["latest"]:
+            age = (now - row["latest"]).total_seconds() / 3600
+            result["market_data"] = {
+                "last_fetched": row["latest"].isoformat(),
+                "age_hours": round(age, 1),
+                "threshold_hours": 24,
+            }
+        else:
+            result["market_data"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 24}
+
+        # Rent data
+        row = await conn.fetchrow("SELECT MAX(fetched_at) as latest FROM rent_data")
+        if row and row["latest"]:
+            age = (now - row["latest"]).total_seconds() / 3600
+            result["rent_data"] = {
+                "last_fetched": row["latest"].isoformat(),
+                "age_hours": round(age, 1),
+                "threshold_hours": 168,
+            }
+        else:
+            result["rent_data"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 168}
+
+        # Demographics
+        row = await conn.fetchrow("SELECT MAX(fetched_at) as latest FROM demographics")
+        if row and row["latest"]:
+            age = (now - row["latest"]).total_seconds() / 3600
+            result["demographics"] = {
+                "last_fetched": row["latest"].isoformat(),
+                "age_hours": round(age, 1),
+                "threshold_hours": 720,
+            }
+        else:
+            result["demographics"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 720}
+
+        # Neighbourhood stats
+        row = await conn.fetchrow("SELECT MAX(fetched_at) as latest FROM neighbourhood_stats")
+        if row and row["latest"]:
+            age = (now - row["latest"]).total_seconds() / 3600
+            result["neighbourhood"] = {
+                "last_fetched": row["latest"].isoformat(),
+                "age_hours": round(age, 1),
+                "threshold_hours": 168,
+            }
+        else:
+            result["neighbourhood"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 168}
+
+        # Listings
+        row = await conn.fetchrow(
+            "SELECT MAX(fetched_at) as latest, COUNT(*) as total FROM properties WHERE status = 'active'"
+        )
+        if row and row["latest"]:
+            age = (now - row["latest"]).total_seconds() / 3600
+            result["listings"] = {
+                "last_fetched": row["latest"].isoformat(),
+                "age_hours": round(age, 1),
+                "threshold_hours": 4,
+                "total_active": row["total"],
+            }
+        else:
+            result["listings"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 4, "total_active": 0}
+
+    return result

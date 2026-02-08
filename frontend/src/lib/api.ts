@@ -342,4 +342,36 @@ export const healthApi = {
   },
 };
 
+// Scraper status endpoints
+export const scraperApi = {
+  status: (): Promise<import('./types').ScraperStatus> => {
+    return fetchApi('/api/scraper/status');
+  },
+
+  history: (limit = 20): Promise<import('./types').ScrapeJobHistoryResponse> => {
+    return fetchApi(`/api/scraper/history?limit=${limit}`);
+  },
+
+  freshness: (): Promise<import('./types').DataFreshnessResponse> => {
+    return fetchApi('/api/scraper/freshness');
+  },
+
+  trigger: (): Promise<{ status: string; message: string }> => {
+    return fetchApi('/api/scraper/trigger', { method: 'POST' });
+  },
+
+  stats: (): Promise<{
+    groups: Array<{
+      region: string;
+      property_type: string;
+      count: number;
+      oldest: string | null;
+      newest: string | null;
+    }>;
+    total: number;
+  }> => {
+    return fetchApi('/api/scraper/stats');
+  },
+};
+
 export { ApiError };

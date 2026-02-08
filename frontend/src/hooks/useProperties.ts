@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { propertiesApi, analysisApi, alertsApi, portfolioApi } from '@/lib/api';
+import { propertiesApi, analysisApi, alertsApi, portfolioApi, scraperApi } from '@/lib/api';
 import type {
   PropertySearchParams,
   PropertyListing,
@@ -222,6 +222,46 @@ export function useTogglePortfolioStatus() {
     mutationFn: (itemId: string) => portfolioApi.toggleStatus(itemId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+    },
+  });
+}
+
+// Scraper status hooks
+
+export function useScraperStatus(enabled = true) {
+  return useQuery({
+    queryKey: ['scraper', 'status'],
+    queryFn: () => scraperApi.status(),
+    enabled,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data?.is_running ? 5000 : 60000;
+    },
+  });
+}
+
+export function useScraperHistory(limit = 20) {
+  return useQuery({
+    queryKey: ['scraper', 'history', limit],
+    queryFn: () => scraperApi.history(limit),
+  });
+}
+
+export function useDataFreshness() {
+  return useQuery({
+    queryKey: ['scraper', 'freshness'],
+    queryFn: () => scraperApi.freshness(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useTriggerScrape() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => scraperApi.trigger(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scraper'] });
     },
   });
 }
