@@ -1,5 +1,6 @@
 """Investment analysis API endpoints."""
 
+import asyncio
 import logging
 import os
 from decimal import Decimal
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 calculator = InvestmentCalculator()
 ranker = PropertyRanker()
 
+# Timeout for individual DB queries in location scoring (seconds)
+_DB_QUERY_TIMEOUT = 5
+
 
 def _to_float(val) -> float | None:
     """Convert Decimal or other numeric types to float."""
@@ -29,77 +33,117 @@ def _to_float(val) -> float | None:
     return float(val)
 
 
-async def _apply_location_score(
+async def _fetch_location_data(city: str) -> dict:
+    """Fetch all location data for a city in parallel with timeouts.
+
+    Returns dict with keys: safety_score, vacancy_rate, rent_cagr,
+    median_household_income. All values are None if unavailable.
+    """
+    result = {
+        "safety_score": None,
+        "vacancy_rate": None,
+        "rent_cagr": None,
+        "median_household_income": None,
+    }
+
+    if not os.environ.get("DATABASE_URL"):
+        return result
+
+    try:
+        from ..db import (
+            get_neighbourhood_stats_for_borough,
+            get_demographics_for_city,
+            get_rent_history,
+        )
+    except ImportError:
+        return result
+
+    async def _get_safety():
+        try:
+            return await asyncio.wait_for(
+                get_neighbourhood_stats_for_borough(city),
+                timeout=_DB_QUERY_TIMEOUT,
+            )
+        except Exception:
+            return None
+
+    async def _get_demographics():
+        try:
+            return await asyncio.wait_for(
+                get_demographics_for_city(city),
+                timeout=_DB_QUERY_TIMEOUT,
+            )
+        except Exception:
+            return None
+
+    async def _get_rent():
+        try:
+            return await asyncio.wait_for(
+                get_rent_history(city, "2br", limit=10),
+                timeout=_DB_QUERY_TIMEOUT,
+            )
+        except Exception:
+            return None
+
+    stats, demo, history = await asyncio.gather(
+        _get_safety(), _get_demographics(), _get_rent()
+    )
+
+    if stats:
+        result["safety_score"] = _to_float(stats.get("safety_score"))
+
+    if demo and demo.get("median_household_income"):
+        result["median_household_income"] = _to_float(
+            demo["median_household_income"]
+        )
+
+    if history:
+        vacancies = [r for r in history if r.get("vacancy_rate") is not None]
+        if vacancies:
+            result["vacancy_rate"] = _to_float(vacancies[0]["vacancy_rate"])
+
+        rents_with_years = [
+            (r["year"], float(r["avg_rent"]))
+            for r in history
+            if r.get("avg_rent") is not None
+        ]
+        if len(rents_with_years) >= 2:
+            rents_with_years.sort()
+            n = min(5, len(rents_with_years) - 1)
+            start_val = rents_with_years[-(n + 1)][1]
+            end_val = rents_with_years[-1][1]
+            if start_val > 0 and end_val > 0:
+                result["rent_cagr"] = ((end_val / start_val) ** (1 / n) - 1) * 100
+
+    return result
+
+
+def _apply_location_score(
     metrics: InvestmentMetrics,
-    city: str,
+    location_data: dict,
     condition_score: float | None = None,
 ) -> InvestmentMetrics:
     """Apply Location & Quality score (0-30) to the financial base (0-70).
 
-    Fetches safety, vacancy, rent CAGR, and affordability data from DB,
-    combines with AI condition score, and adds to the financial pillar.
-    If DB data is unavailable, only condition score is applied.
+    Uses pre-fetched location_data dict (from _fetch_location_data) to avoid
+    per-listing DB queries. If DB data is unavailable, only condition score
+    is applied.
     """
-    safety_score = None
-    vacancy_rate = None
-    rent_cagr = None
     rent_to_income = None
-
-    if os.environ.get("DATABASE_URL"):
-        try:
-            from ..db import (
-                get_neighbourhood_stats_for_borough,
-                get_demographics_for_city,
-            )
-
-            # Safety score from neighbourhood stats
-            stats = await get_neighbourhood_stats_for_borough(city)
-            if stats:
-                safety_score = _to_float(stats.get("safety_score"))
-
-            # Demographics for rent-to-income ratio
-            demo = await get_demographics_for_city(city)
-            if demo and demo.get("median_household_income"):
-                income = _to_float(demo["median_household_income"])
-                if income and income > 0 and metrics.estimated_monthly_rent > 0:
-                    units = max(1, metrics.purchase_price // metrics.price_per_unit) if metrics.price_per_unit > 0 else 1
-                    per_unit_rent = metrics.estimated_monthly_rent / units
-                    rent_to_income = (per_unit_rent * 12) / income * 100
-
-            # Rent trend data (vacancy + CAGR)
-            try:
-                from ..db import get_rent_history
-                bedrooms = 2  # Default for zone-level comparison
-                bed_map = {0: "bachelor", 1: "1br", 2: "2br", 3: "3br+"}
-                bedroom_type = bed_map[bedrooms]
-                history = await get_rent_history(city, bedroom_type, limit=10)
-                if history:
-                    vacancies = [r for r in history if r.get("vacancy_rate") is not None]
-                    if vacancies:
-                        vacancy_rate = _to_float(vacancies[0]["vacancy_rate"])
-
-                    rents_with_years = [
-                        (r["year"], float(r["avg_rent"]))
-                        for r in history
-                        if r.get("avg_rent") is not None
-                    ]
-                    if len(rents_with_years) >= 2:
-                        rents_with_years.sort()
-                        n = min(5, len(rents_with_years) - 1)
-                        start_val = rents_with_years[-(n + 1)][1]
-                        end_val = rents_with_years[-1][1]
-                        if start_val > 0 and end_val > 0:
-                            rent_cagr = ((end_val / start_val) ** (1 / n) - 1) * 100
-            except Exception:
-                pass
-
-        except Exception as e:
-            logger.debug(f"Location data fetch failed for {city}: {e}")
+    income = location_data.get("median_household_income")
+    if income and income > 0 and metrics.estimated_monthly_rent > 0:
+        units = (
+            max(1, metrics.purchase_price // metrics.price_per_unit)
+            if metrics.price_per_unit > 0
+            else 1
+        )
+        per_unit_rent = metrics.estimated_monthly_rent / units
+        rent_to_income = (per_unit_rent * 12) / income * 100
 
     location_score, location_breakdown = calculator.calculate_location_score(
-        safety_score=safety_score,
-        vacancy_rate=vacancy_rate,
-        rent_cagr=rent_cagr,
+        safety_score=location_data.get("safety_score"),
+        vacancy_rate=location_data.get("vacancy_rate"),
+        rent_cagr=location_data.get("rent_cagr"),
         rent_to_income=rent_to_income,
         condition_score=condition_score,
     )
@@ -186,8 +230,9 @@ async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
             interest_rate=request.interest_rate,
             expense_ratio=request.expense_ratio,
         )
-        metrics = await _apply_location_score(
-            metrics, request.listing.city, request.listing.condition_score
+        location_data = await _fetch_location_data(request.listing.city)
+        metrics = _apply_location_score(
+            metrics, location_data, request.listing.condition_score
         )
         return metrics
 
@@ -209,18 +254,30 @@ async def analyze_batch(request: AnalyzeBatchRequest) -> BatchAnalysisResponse:
             expense_ratio=request.expense_ratio,
         )
 
-        # Apply location score and build response
+        # Batch-fetch location data by unique city (instead of per-listing)
+        unique_cities = list({listing.city for listing, _ in results if listing.city})
+        city_data_list = await asyncio.gather(
+            *[_fetch_location_data(city) for city in unique_cities]
+        )
+        city_data_map = dict(zip(unique_cities, city_data_list))
+        empty_location = {
+            "safety_score": None, "vacancy_rate": None,
+            "rent_cagr": None, "median_household_income": None,
+        }
+
+        # Apply location score using cached city data
         response_results = []
         for listing, metrics in results:
-            metrics = await _apply_location_score(
-                metrics, listing.city, listing.condition_score
+            location_data = city_data_map.get(listing.city, empty_location)
+            metrics = _apply_location_score(
+                metrics, location_data, listing.condition_score
             )
             response_results.append(PropertyWithMetrics(listing=listing, metrics=metrics))
 
-        # Calculate summary statistics
-        scores = [m.score for _, m in results]
-        cap_rates = [m.cap_rate for _, m in results if m.cap_rate]
-        cash_flows = [m.cash_flow_monthly for _, m in results if m.cash_flow_monthly is not None]
+        # Calculate summary statistics from enriched results
+        scores = [r.metrics.score for r in response_results]
+        cap_rates = [r.metrics.cap_rate for r in response_results if r.metrics.cap_rate]
+        cash_flows = [r.metrics.cash_flow_monthly for r in response_results if r.metrics.cash_flow_monthly is not None]
 
         summary = {
             "avg_score": round(sum(scores) / len(scores), 1) if scores else 0,
@@ -380,11 +437,23 @@ async def get_top_opportunities(
     # Analyze all listings (always fresh)
     results = ranker.analyze_batch(listings)
 
-    # Apply location score to each result
+    # Batch-fetch location data by unique city
+    unique_cities = list({listing.city for listing, _ in results if listing.city})
+    city_data_list = await asyncio.gather(
+        *[_fetch_location_data(city) for city in unique_cities]
+    )
+    city_data_map = dict(zip(unique_cities, city_data_list))
+    empty_location = {
+        "safety_score": None, "vacancy_rate": None,
+        "rent_cagr": None, "median_household_income": None,
+    }
+
+    # Apply location score using cached city data
     enriched = []
     for listing, metrics in results:
-        metrics = await _apply_location_score(
-            metrics, listing.city, listing.condition_score
+        location_data = city_data_map.get(listing.city, empty_location)
+        metrics = _apply_location_score(
+            metrics, location_data, listing.condition_score
         )
         enriched.append((listing, metrics))
     results = enriched
