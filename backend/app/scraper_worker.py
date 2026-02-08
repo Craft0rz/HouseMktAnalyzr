@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from .constants import SCRAPE_MATRIX
 from .db import (
     cache_listings, get_pool,
+    get_listings_without_details, update_listing_details,
     get_listings_without_walk_score, update_walk_scores,
     get_listings_without_photos, update_photo_urls,
     get_listings_without_condition_score, update_condition_score,
@@ -171,14 +172,75 @@ class ScraperWorker:
         except Exception:
             logger.exception("Alert check failed after scrape cycle")
 
+        # Enrich listings with detail-page data (gross_revenue, postal_code, etc.)
+        await self._enrich_listing_details()
+
         # Enrich listings with Walk Scores
         await self._enrich_walk_scores()
 
-        # Enrich listings with photo URLs (prerequisite for condition scoring)
+        # Enrich listings with photo URLs (for listings not already covered by detail enrichment)
         await self._enrich_photo_urls()
 
         # Enrich listings with AI condition scores
         await self._enrich_condition_scores()
+
+    async def _enrich_listing_details(self):
+        """Fetch detail pages to fill in gross_revenue, postal_code, and other fields.
+
+        Search cards don't include revenue, postal code, lot size, year built,
+        assessment, or taxes. This step fetches the full listing page and merges
+        all available fields into the cached JSONB data.
+        """
+        from housemktanalyzr.collectors.centris import CentrisScraper
+
+        batch_size = int(os.environ.get("DETAIL_ENRICH_BATCH_SIZE", 50))
+        delay = float(os.environ.get("DETAIL_ENRICH_DELAY", 1.5))
+
+        try:
+            listings = await get_listings_without_details(limit=batch_size)
+        except Exception:
+            logger.exception("Failed to query listings for detail enrichment")
+            return
+
+        if not listings:
+            logger.info("Detail enrichment: all listings already have details")
+            return
+
+        logger.info(f"Detail enrichment: fetching {len(listings)} detail pages (delay={delay}s)")
+        enriched = 0
+        failed = 0
+
+        async with CentrisScraper(request_interval=delay) as scraper:
+            for item in listings:
+                try:
+                    detailed = await scraper.get_listing_details(
+                        item["id"], url=item.get("url") or None
+                    )
+                    if detailed:
+                        fields = {
+                            "gross_revenue": detailed.gross_revenue,
+                            "postal_code": detailed.postal_code,
+                            "lot_sqft": detailed.lot_sqft,
+                            "year_built": detailed.year_built,
+                            "municipal_assessment": detailed.municipal_assessment,
+                            "annual_taxes": detailed.annual_taxes,
+                            "sqft": detailed.sqft,
+                        }
+                        # Also grab photos if available
+                        if detailed.photo_urls:
+                            fields["photo_urls"] = detailed.photo_urls
+
+                        await update_listing_details(item["id"], fields)
+                        enriched += 1
+                    else:
+                        failed += 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Detail enrichment failed for {item['id']}: {e}")
+                    failed += 1
+
+        logger.info(f"Detail enrichment done: {enriched} enriched, {failed} failed")
 
     async def _enrich_walk_scores(self):
         """Fetch walk/transit/bike scores for listings that don't have them."""

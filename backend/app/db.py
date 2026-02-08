@@ -506,6 +506,67 @@ async def update_photo_urls(listing_id: str, photo_urls: list[str]) -> bool:
     return True
 
 
+async def get_listings_without_details(limit: int = 50) -> list[dict]:
+    """Get cached listings that haven't been enriched with detail-page data.
+
+    Listings from search cards are missing gross_revenue, postal_code,
+    and other fields only available on the individual listing page.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, data FROM properties
+            WHERE expires_at > $1
+              AND (data->>'gross_revenue') IS NULL
+              AND (data->>'postal_code') IS NULL
+            ORDER BY fetched_at DESC
+            LIMIT $2
+            """,
+            now, limit,
+        )
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        results.append({
+            "id": row["id"],
+            "url": data.get("url", ""),
+        })
+    return results
+
+
+async def update_listing_details(
+    listing_id: str, detail_fields: dict
+) -> bool:
+    """Merge detail-page fields into a cached listing's JSONB data.
+
+    Only updates fields that have a non-None value in detail_fields,
+    preserving existing data for fields not present in the update.
+    """
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT data FROM properties WHERE id = $1", listing_id
+        )
+        if not row:
+            return False
+
+        data = json.loads(row["data"])
+        for key, value in detail_fields.items():
+            if value is not None:
+                data[key] = value
+
+        await conn.execute(
+            "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+            json.dumps(data), listing_id,
+        )
+    return True
+
+
 async def get_listings_without_condition_score(limit: int = 25) -> list[dict]:
     """Get cached listings that have photos but no condition score.
 
