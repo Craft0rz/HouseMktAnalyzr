@@ -18,13 +18,18 @@ logger = logging.getLogger(__name__)
 # Sources: CMHC 2025 Rental Market Report, Quebec bank underwriting models,
 # CORPIQ/TAL guidelines, SoumissionsAssurances.ca broker data.
 DEFAULT_EXPENSE_RATIOS = {
-    "property_tax_pct": 0.012,  # ~1.2% of value (Montreal average, fallback only)
+    "property_tax_pct": 0.012,  # ~1.2% of value (Quebec average, fallback only)
     "insurance_pct": 0.005,  # ~0.5% of value (QC broker avg 0.45-0.59%)
     "maintenance_pct": 0.10,  # ~10% of rent (bank model: 8-15%; older stock: 10-12%)
-    "vacancy_pct": 0.03,  # ~3% (CMHC Montreal CMA avg 2.9%, bank standard 5%)
-    "management_pct": 0.00,  # 0% if self-managed, 5-8% if hired
-    "total_expense_ratio": 0.40,  # ~40% of gross rent (bank model midpoint; 35% only for small owner-managed plex)
+    "vacancy_pct": 0.03,  # ~3% (CMHC avg ~2.9%, bank standard 5%)
+    "management_pct": 0.05,  # 5% of rent (industry standard; 0% only if self-managed)
+    "capex_reserve_pct": 0.05,  # 5% of rent for capital expenditure reserves (roof, foundation, plumbing)
+    "total_expense_ratio": 0.45,  # ~45% of gross rent (bank model midpoint with management + capex)
 }
+
+# Quebec TAL (Tribunal administratif du logement) rent increase guideline.
+# Updated annually; this is used for rent control warnings on multi-unit properties.
+TAL_GUIDELINE_INCREASE_PCT = 3.3  # 2025 guideline ~3.3% (varies by component)
 
 # Two-pillar scoring: Financial (70) + Location & Quality (30) = 100
 SCORING_WEIGHTS = {
@@ -113,7 +118,7 @@ class InvestmentCalculator:
         GRM = Purchase Price / Annual Rent
 
         Lower GRM means you're paying less per dollar of rent.
-        Typical range: 8-15 for multi-family in Montreal area.
+        Typical range: 8-15 for multi-family in Quebec.
 
         Args:
             price: Purchase price in CAD
@@ -210,15 +215,19 @@ class InvestmentCalculator:
         monthly_maintenance = int(monthly_rent * DEFAULT_EXPENSE_RATIOS["maintenance_pct"])
         monthly_vacancy = int(monthly_rent * DEFAULT_EXPENSE_RATIOS["vacancy_pct"])
         monthly_management = int(monthly_rent * DEFAULT_EXPENSE_RATIOS["management_pct"])
+        monthly_capex = int(monthly_rent * DEFAULT_EXPENSE_RATIOS["capex_reserve_pct"])
 
-        return monthly_tax + monthly_insurance + monthly_maintenance + monthly_vacancy + monthly_management
+        return (
+            monthly_tax + monthly_insurance + monthly_maintenance
+            + monthly_vacancy + monthly_management + monthly_capex
+        )
 
     def estimate_monthly_cash_flow(
         self,
         monthly_rent: int,
         monthly_mortgage: int,
         monthly_expenses: Optional[int] = None,
-        expense_ratio: float = 0.35,
+        expense_ratio: float = 0.45,
     ) -> int:
         """Estimate monthly cash flow.
 
@@ -454,6 +463,23 @@ class InvestmentCalculator:
         if listing.sqft and listing.sqft > 0:
             price_per_sqft = round(price / listing.sqft, 2)
 
+        # Rate sensitivity: cash flow at base, -1.5%, +1.5%
+        rate_sensitivity = self._compute_rate_sensitivity(
+            principal=principal,
+            base_rate=interest_rate,
+            monthly_rent=monthly_rent,
+            monthly_expenses=monthly_expenses,
+        )
+
+        # TAL rent control warning for multi-unit properties
+        rent_control_risk = None
+        if listing.units >= 2:
+            rent_control_risk = (
+                f"Quebec rent control (TAL): existing tenant rents increase "
+                f"~{TAL_GUIDELINE_INCREASE_PCT}%/yr. Market rents may not apply "
+                f"to occupied units."
+            )
+
         # Calculate financial score (0-70 pillar)
         score, breakdown = self._calculate_score(
             cap_rate=cap,
@@ -475,6 +501,8 @@ class InvestmentCalculator:
             cash_flow_monthly=round(monthly_cash_flow, 2),
             score=round(score, 1),
             score_breakdown=breakdown,
+            rate_sensitivity=rate_sensitivity,
+            rent_control_risk=rent_control_risk,
         )
 
     @staticmethod
@@ -491,7 +519,7 @@ class InvestmentCalculator:
         Combined with the Financial pillar (0-70), the total is 0-100.
 
         Args:
-            safety_score: 0-10 score from Montreal Open Data crime stats
+            safety_score: 0-10 score from open data crime stats
             vacancy_rate: CMHC vacancy rate percentage (lower is better)
             rent_cagr: 5-year CAGR of rents in the zone (higher = appreciating)
             rent_to_income: Rent-to-income ratio % (sweet spot 20-30%)
@@ -560,6 +588,27 @@ class InvestmentCalculator:
         total = min(30.0, sum(breakdown.values()))
         return total, breakdown
 
+    def _compute_rate_sensitivity(
+        self,
+        principal: int,
+        base_rate: float,
+        monthly_rent: int,
+        monthly_expenses: int,
+    ) -> dict[str, float]:
+        """Compute cash flow at base rate and +/- 1.5% for stress testing."""
+        results = {}
+        for label, rate in [
+            ("low", max(0.01, base_rate - 0.015)),
+            ("base", base_rate),
+            ("high", base_rate + 0.015),
+        ]:
+            mortgage = self.calculate_mortgage_payment(principal, rate)
+            cf = monthly_rent - monthly_expenses - mortgage
+            results[f"{label}_rate"] = round(rate * 100, 2)
+            results[f"{label}_cash_flow"] = round(cf, 2)
+            results[f"{label}_mortgage"] = mortgage
+        return results
+
     def _calculate_score(
         self,
         cap_rate: float,
@@ -572,7 +621,7 @@ class InvestmentCalculator:
         The Location & Quality pillar (0-30) is added separately via
         calculate_location_score().
 
-        Scoring criteria (Montreal multi-family market):
+        Scoring criteria (Quebec multi-family market):
         - Cap rate (0-25): 5%+ is good, 7%+ is excellent
         - Cash flow (0-25): Positive is good, $200+/mo is excellent
         - Price per unit (0-20): <$200k is good, <$150k is excellent

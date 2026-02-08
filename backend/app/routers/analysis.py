@@ -33,6 +33,59 @@ def _to_float(val) -> float | None:
     return float(val)
 
 
+async def _fetch_comparable_ppu(
+    region: str, property_type: str, units: int,
+) -> dict | None:
+    """Fetch comparable price-per-unit stats from cached listings.
+
+    Returns median, avg, and count for similar property types in the same region.
+    """
+    if not os.environ.get("DATABASE_URL"):
+        return None
+    try:
+        from ..db import get_pool
+        pool = get_pool()
+        if pool is None:
+            return None
+
+        # Match property types: if plex, compare against all plex types
+        plex_types = ("DUPLEX", "TRIPLEX", "QUADPLEX", "MULTIPLEX")
+        if property_type in plex_types:
+            type_filter = "AND data->>'property_type' IN ('DUPLEX','TRIPLEX','QUADPLEX','MULTIPLEX')"
+        else:
+            type_filter = f"AND data->>'property_type' = '{property_type}'"
+
+        query = f"""
+            SELECT
+                percentile_cont(0.5) WITHIN GROUP (
+                    ORDER BY (data->>'price')::int / GREATEST((data->>'units')::int, 1)
+                ) AS median_ppu,
+                avg((data->>'price')::int / GREATEST((data->>'units')::int, 1))::int AS avg_ppu,
+                count(*) AS cnt
+            FROM listings
+            WHERE region = $1
+              AND (data->>'units')::int >= 2
+              AND status = 'active'
+              {type_filter}
+        """
+        async with pool.acquire() as conn:
+            row = await asyncio.wait_for(
+                conn.fetchrow(query, region),
+                timeout=_DB_QUERY_TIMEOUT,
+            )
+        if row and row["cnt"] and row["cnt"] >= 3:
+            return {
+                "median": int(row["median_ppu"]),
+                "avg": int(row["avg_ppu"]),
+                "count": int(row["cnt"]),
+                "region": region,
+                "property_type": property_type,
+            }
+    except Exception as e:
+        logger.debug(f"Comparable PPU query failed: {e}")
+    return None
+
+
 async def _fetch_location_data(
     city: str, postal_code: str | None = None
 ) -> dict:
@@ -262,12 +315,21 @@ async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
             interest_rate=request.interest_rate,
             expense_ratio=request.expense_ratio,
         )
-        location_data = await _fetch_location_data(
-            request.listing.city, request.listing.postal_code
+        location_data, comparable_ppu = await asyncio.gather(
+            _fetch_location_data(
+                request.listing.city, request.listing.postal_code
+            ),
+            _fetch_comparable_ppu(
+                region=request.listing.city.lower(),
+                property_type=request.listing.property_type.value,
+                units=request.listing.units,
+            ),
         )
         metrics = _apply_location_score(
             metrics, location_data, request.listing.condition_score
         )
+        if comparable_ppu:
+            metrics.comparable_ppu = comparable_ppu
         return metrics
 
     except Exception as e:

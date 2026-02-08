@@ -161,6 +161,24 @@ class InvestmentMetrics(BaseModel):
         default_factory=dict, description="Component scores breakdown"
     )
 
+    # Rate sensitivity: cash flow at different interest rates
+    rate_sensitivity: dict[str, float] | None = Field(
+        default=None,
+        description="Cash flow at base, -1.5%, +1.5% rates: {low_rate, low_cash_flow, base_rate, base_cash_flow, high_rate, high_cash_flow}",
+    )
+
+    # Quebec rent control warning
+    rent_control_risk: str | None = Field(
+        default=None,
+        description="TAL rent control warning for multi-unit properties",
+    )
+
+    # Comparable price-per-door from other listings in same region
+    comparable_ppu: dict[str, Any] | None = Field(
+        default=None,
+        description="Comparable price-per-unit stats: {median, avg, count, region, property_type}",
+    )
+
     model_config = {
         "validate_assignment": True,
     }

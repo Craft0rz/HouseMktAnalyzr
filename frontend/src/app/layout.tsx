@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "HouseMktAnalyzr - Real Estate Investment Analysis",
-  description: "Analyze investment properties in Greater Montreal. Find the best cap rates, cash flow, and ROI opportunities.",
+  description: "Analyze investment properties across Quebec. Find the best cap rates, cash flow, and ROI opportunities.",
 };
 
 export default function RootLayout({

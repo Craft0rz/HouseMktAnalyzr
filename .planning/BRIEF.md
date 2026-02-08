@@ -1,6 +1,6 @@
 # HouseMktAnalyzr
 
-**One-liner**: Residential real estate investment analyzer for Greater Montreal that identifies and ranks the best mid/long-term opportunities.
+**One-liner**: Residential real estate investment analyzer for Quebec that identifies and ranks the best mid/long-term opportunities.
 
 ## Problem
 
@@ -17,7 +17,7 @@ How we know it worked:
 
 ## Constraints
 
-- **Region**: Greater Montreal initially (expandable to other regions later)
+- **Region**: Province of Quebec (Montreal, Quebec City, Sherbrooke CMAs)
 - **Property Types**: Houses, duplexes, triplexes, and multi-door buildings
 - **Data Sources**: Research needed - Centris, Realtor.ca, potential API access
 - **Tech Stack**: Python recommended (aligns with user's existing tooling)

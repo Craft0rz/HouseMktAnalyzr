@@ -1,6 +1,6 @@
 # HouseMktAnalyzr
 
-Residential real estate investment analyzer for Greater Montreal. Find and rank the best multi-family investment opportunities based on cap rate, cash flow, and ROI metrics.
+Residential real estate investment analyzer for Quebec. Find and rank the best multi-family investment opportunities based on cap rate, cash flow, and ROI metrics.
 
 ## Features
 
@@ -10,7 +10,7 @@ Residential real estate investment analyzer for Greater Montreal. Find and rank 
 - **Interactive Dashboard**: Streamlit-based UI for browsing and comparing properties
 - **Side-by-Side Comparison**: Compare 2-4 properties with highlighted metrics
 - **Alert System**: Save search criteria and get notified of new matching properties
-- **CMHC Data**: Rental estimates based on Montreal area market data
+- **CMHC Data**: Rental estimates based on CMHC market data (Montreal, Quebec City, Sherbrooke CMAs)
 
 ## Installation
 

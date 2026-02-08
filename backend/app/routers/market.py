@@ -606,10 +606,10 @@ async def get_neighbourhood(
     borough: str = Query(description="Borough or neighbourhood name"),
     assessment: int | None = Query(default=None, description="Property assessment for tax estimate"),
 ):
-    """Get safety, permit activity, and tax data for a Montreal borough.
+    """Get safety, permit activity, and tax data for a borough.
 
     Returns crime stats, building permits, tax rates, safety score,
-    and gentrification signal from Montreal Open Data.
+    and gentrification signal from municipal open data.
     """
     current_year = date.today().year - 1
 

@@ -44,6 +44,26 @@ export interface PropertyListing {
   raw_data: Record<string, unknown> | null;
 }
 
+export interface RateSensitivity {
+  low_rate: number;
+  low_cash_flow: number;
+  low_mortgage: number;
+  base_rate: number;
+  base_cash_flow: number;
+  base_mortgage: number;
+  high_rate: number;
+  high_cash_flow: number;
+  high_mortgage: number;
+}
+
+export interface ComparablePPU {
+  median: number;
+  avg: number;
+  count: number;
+  region: string;
+  property_type: string;
+}
+
 export interface InvestmentMetrics {
   property_id: string;
   purchase_price: number;
@@ -60,6 +80,9 @@ export interface InvestmentMetrics {
   score_breakdown: Record<string, number>;
   annual_rent: number;
   is_positive_cash_flow: boolean;
+  rate_sensitivity: RateSensitivity | null;
+  rent_control_risk: string | null;
+  comparable_ppu: ComparablePPU | null;
 }
 
 export interface PropertyWithMetrics {

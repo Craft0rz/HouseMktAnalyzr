@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="HouseMktAnalyzr API",
-    description="Real estate investment analysis API for Greater Montreal",
+    description="Real estate investment analysis API for Quebec",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",

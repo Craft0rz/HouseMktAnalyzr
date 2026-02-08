@@ -290,6 +290,8 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
         insurance: listing.price * 0.005 / 12,
         maintenance: monthlyIncome * 0.10,
         vacancy: monthlyIncome * 0.03,
+        management: monthlyIncome * 0.05,
+        capex: monthlyIncome * 0.05,
       };
   const totalExpenses = Object.values(monthlyExpenses).reduce((a, b) => a + b, 0);
   const netCashFlow = monthlyIncome - totalExpenses;
@@ -567,6 +569,14 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                         <span className="text-muted-foreground">{t('detail.vacancy')}</span>
                         <span className="text-red-600">-{formatPrice((monthlyExpenses as any).vacancy, locale)}</span>
                       </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('detail.management')}</span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).management, locale)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('detail.capexReserve')}</span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).capex, locale)}</span>
+                      </div>
                     </>
                   )}
                 </div>
@@ -667,6 +677,113 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </div>
             </CardContent>
           </Card>
+
+          {/* Rate Sensitivity */}
+          {metrics.rate_sensitivity && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  {t('detail.rateSensitivity')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {(['low', 'base', 'high'] as const).map((level) => {
+                    const rate = metrics.rate_sensitivity![`${level}_rate`];
+                    const cf = metrics.rate_sensitivity![`${level}_cash_flow`];
+                    const isBase = level === 'base';
+                    return (
+                      <div
+                        key={level}
+                        className={`p-3 rounded-lg ${isBase ? 'bg-muted/80 ring-1 ring-border' : 'bg-muted/40'}`}
+                      >
+                        <div className="text-xs text-muted-foreground mb-1">
+                          {level === 'low' ? t('detail.optimistic') : level === 'high' ? t('detail.pessimistic') : t('detail.current')}
+                        </div>
+                        <div className="text-sm font-medium">{rate}%</div>
+                        <div className={`text-lg font-bold ${cf >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {cf >= 0 ? '+' : ''}{formatPrice(cf, locale)}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">{t('detail.perMonth')}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {metrics.rate_sensitivity.high_cash_flow < 0 && metrics.rate_sensitivity.base_cash_flow >= 0 && (
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-3 border border-amber-200 dark:border-amber-900">
+                    <p className="text-xs text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                      {t('detail.rateSensitivityWarning')}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* TAL Rent Control Warning */}
+          {metrics.rent_control_risk && listing.units >= 2 && (
+            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-4 border border-amber-200 dark:border-amber-900">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <div className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('detail.rentControlTitle')}</div>
+                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                    {t('detail.rentControlDesc')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Comparable Price-per-Door */}
+          {metrics.comparable_ppu && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  {t('detail.comparableTitle')}
+                  <span className="text-xs text-muted-foreground font-normal ml-auto">
+                    {metrics.comparable_ppu.count} {t('detail.comparableProperties')}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <div className="text-xs text-muted-foreground mb-1">{t('detail.medianPPU')}</div>
+                    <div className="text-lg font-bold">{formatPrice(metrics.comparable_ppu.median, locale)}</div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <div className="text-xs text-muted-foreground mb-1">{t('detail.thisPPU')}</div>
+                    <div className="text-lg font-bold">{formatPrice(metrics.price_per_unit, locale)}</div>
+                  </div>
+                </div>
+                {(() => {
+                  const diff = ((metrics.price_per_unit - metrics.comparable_ppu!.median) / metrics.comparable_ppu!.median) * 100;
+                  const isBelow = diff < -5;
+                  const isAbove = diff > 5;
+                  return (
+                    <div className={`rounded-lg p-3 border text-xs ${
+                      isBelow
+                        ? 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-900 text-green-700 dark:text-green-400'
+                        : isAbove
+                          ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-400'
+                          : 'bg-muted/30 border-border text-muted-foreground'
+                    }`}>
+                      {isBelow
+                        ? t('detail.ppuBelowMedian', { pct: Math.abs(diff).toFixed(0) })
+                        : isAbove
+                          ? t('detail.ppuAboveMedian', { pct: diff.toFixed(0) })
+                          : t('detail.ppuAtMedian')
+                      }
+                    </div>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Walk Score / Condition — loading state */}
           {detailLoading && (
@@ -926,6 +1043,9 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   {t('detail.rentalMarket')}
                   <span className="text-xs text-muted-foreground font-normal ml-auto">
                     CMHC {rentTrend.zone}
+                    {rentTrend.years.length > 0 && (
+                      <> &middot; {t('detail.dataVintage', { year: rentTrend.years[rentTrend.years.length - 1] })}</>
+                    )}
                   </span>
                 </CardTitle>
               </CardHeader>

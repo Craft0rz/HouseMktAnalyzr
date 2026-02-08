@@ -1,7 +1,7 @@
 """Census demographic data from Statistics Canada SDMX API.
 
 Fetches median household income, population, and household size
-for Greater Montreal municipalities. No authentication required.
+for Quebec municipalities. No authentication required.
 
 Data source: Statistics Canada 2021 Census Profile
 https://api.statcan.gc.ca/census-recensement/profile/sdmx/rest/

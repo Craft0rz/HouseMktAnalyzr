@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build a residential real estate investment analyzer for Greater Montreal. Start with project foundation and data models, then research and implement data collection from available sources. Develop a scoring/ranking engine for investment analysis, create a dashboard for comparing opportunities, add an alert system for new matches, and finish with testing and polish.
+Build a residential real estate investment analyzer for Quebec. Start with project foundation and data models, then research and implement data collection from available sources. Develop a scoring/ranking engine for investment analysis, create a dashboard for comparing opportunities, add an alert system for new matches, and finish with testing and polish.
 
 ## Phases
 
