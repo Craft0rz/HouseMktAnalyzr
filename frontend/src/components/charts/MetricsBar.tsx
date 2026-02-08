@@ -18,6 +18,7 @@ interface MetricsBarProps {
   properties: PropertyWithMetrics[];
   metric: 'score' | 'cap_rate' | 'cash_flow' | 'yield';
   className?: string;
+  onBarClick?: (property: PropertyWithMetrics) => void;
 }
 
 const SCORE_LABEL_MAP: Record<string, string> = {
@@ -31,7 +32,7 @@ const SCORE_LABEL_MAP: Record<string, string> = {
   condition: 'score.condition',
 };
 
-export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
+export function MetricsBar({ properties, metric, className, onBarClick }: MetricsBarProps) {
   const { t, locale } = useTranslation();
 
   const formatCurrency = (v: number) =>
@@ -77,6 +78,7 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
 
   const data = properties
     .map((p) => ({
+      id: p.listing.id,
       name: p.listing.address.split(',')[0].substring(0, 20),
       value: config.getValue(p) ?? 0,
       fullAddress: p.listing.address,
@@ -280,7 +282,16 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
             content={<DetailTooltip />}
             cursor={{ fill: 'var(--muted)', opacity: 0.3 }}
           />
-          <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+          <Bar
+            dataKey="value"
+            radius={[0, 4, 4, 0]}
+            style={onBarClick ? { cursor: 'pointer' } : undefined}
+            onClick={onBarClick ? (_data, index) => {
+              const entry = data[index];
+              const property = properties.find((p) => p.listing.id === entry.id);
+              if (property) onBarClick(property);
+            } : undefined}
+          >
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={config.color(entry.value)} />
             ))}

@@ -27,15 +27,23 @@ import {
 import { LoadingCard } from '@/components/LoadingCard';
 import { useTopOpportunities } from '@/hooks/useProperties';
 import { MetricsBar, PriceCapScatter } from '@/components/charts';
+import { PropertyDetail } from '@/components/PropertyDetail';
 import { formatPrice, formatCashFlow, getScoreColor } from '@/lib/formatters';
 import { marketApi } from '@/lib/api';
-import type { MarketSummaryResponse } from '@/lib/types';
+import type { MarketSummaryResponse, PropertyWithMetrics } from '@/lib/types';
 import { useTranslation } from '@/i18n/LanguageContext';
 
 export default function Home() {
   const { t, locale } = useTranslation();
   const [region, setRegion] = useState('montreal');
   const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
+  const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  const handlePropertyClick = (property: PropertyWithMetrics) => {
+    setSelectedProperty(property);
+    setDetailOpen(true);
+  };
   const { data: topOpportunities, isLoading } = useTopOpportunities(
     { region, limit: 10, min_score: 50 },
     true
@@ -184,7 +192,8 @@ export default function Home() {
                     {properties.map((property, index) => (
                       <tr
                         key={property.listing.id}
-                        className="border-b last:border-0 hover:bg-muted/50 transition-colors"
+                        className="border-b last:border-0 hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={() => handlePropertyClick(property)}
                       >
                         <td className="px-4 py-2.5 text-xs text-muted-foreground tabular-nums">{index + 1}</td>
                         <td className="px-2 py-2.5">
@@ -261,7 +270,7 @@ export default function Home() {
                 <CardTitle className="text-sm font-medium">{t('home.topByScore')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <MetricsBar properties={properties} metric="score" />
+                <MetricsBar properties={properties} metric="score" onBarClick={handlePropertyClick} />
               </CardContent>
             </Card>
             <Card>
@@ -269,7 +278,7 @@ export default function Home() {
                 <CardTitle className="text-sm font-medium">{t('home.capRateComparison')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <MetricsBar properties={properties} metric="cap_rate" />
+                <MetricsBar properties={properties} metric="cap_rate" onBarClick={handlePropertyClick} />
               </CardContent>
             </Card>
           </div>
@@ -290,7 +299,7 @@ export default function Home() {
                 <CardTitle className="text-sm font-medium">{t('home.cashFlowComparison')}</CardTitle>
               </CardHeader>
               <CardContent>
-                <MetricsBar properties={properties} metric="cash_flow" />
+                <MetricsBar properties={properties} metric="cash_flow" onBarClick={handlePropertyClick} />
               </CardContent>
             </Card>
           </div>
@@ -356,6 +365,12 @@ export default function Home() {
           </CardContent>
         </Card>
       )}
+
+      <PropertyDetail
+        property={selectedProperty}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }
