@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -875,38 +876,126 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   )}
                 </div>
 
-                {/* Mini rent history bar chart */}
+                {/* Rent trend chart with forecast */}
                 {rentTrend.rents.length >= 3 && (
                   <div>
-                    <div className="text-xs text-muted-foreground mb-2">Rent History</div>
-                    <div className="flex items-end gap-1 h-20">
-                      {(() => {
-                        const recent = rentTrend.rents.slice(-8);
-                        const recentYears = rentTrend.years.slice(-8);
-                        const maxRent = Math.max(...recent);
-                        // Use 0 as baseline so bars are proportional to actual rent values
-                        return recent.map((rent, i) => (
-                          <div
-                            key={recentYears[i]}
-                            className="flex-1 flex flex-col items-center gap-0.5"
-                          >
-                            <span className="text-[8px] text-muted-foreground font-medium">
-                              ${Math.round(rent)}
-                            </span>
-                            <div
-                              className="w-full bg-primary/70 rounded-sm transition-all"
-                              style={{
-                                height: `${Math.max((rent / maxRent) * 100, 10)}%`,
-                              }}
-                              title={`${recentYears[i]}: $${Math.round(rent)}`}
-                            />
-                            <span className="text-[9px] text-muted-foreground">
-                              {String(recentYears[i]).slice(-2)}
-                            </span>
-                          </div>
-                        ));
-                      })()}
+                    <div className="text-xs text-muted-foreground mb-2">Rent Trend</div>
+                    <div className="h-44">
+                      <ResponsiveContainer width="100%" height="100%">
+                        {(() => {
+                          const historyData = rentTrend.years.slice(-8).map((yr, i) => ({
+                            year: yr,
+                            rent: Math.round(rentTrend.rents.slice(-8)[i]),
+                          }));
+                          const forecastData = rentTrend.forecasts.map(f => ({
+                            year: f.year,
+                            forecast: Math.round(f.projected_rent),
+                            forecastLower: Math.round(f.lower_bound),
+                            forecastUpper: Math.round(f.upper_bound),
+                          }));
+                          // Bridge: last history point starts the forecast line
+                          const lastHistory = historyData[historyData.length - 1];
+                          const bridgedForecast = lastHistory
+                            ? [{ year: lastHistory.year, forecast: lastHistory.rent, forecastLower: lastHistory.rent, forecastUpper: lastHistory.rent }, ...forecastData]
+                            : forecastData;
+                          const chartData = historyData.map(d => ({
+                            ...d,
+                            ...bridgedForecast.find(f => f.year === d.year),
+                          }));
+                          bridgedForecast.forEach(f => {
+                            if (!chartData.find(d => d.year === f.year)) {
+                              chartData.push({ ...f, rent: undefined as unknown as number });
+                            }
+                          });
+                          chartData.sort((a, b) => a.year - b.year);
+
+                          const perUnitRent = listing.estimated_rent && listing.units
+                            ? Math.round(listing.estimated_rent / listing.units)
+                            : null;
+
+                          return (
+                            <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
+                              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                              <XAxis
+                                dataKey="year"
+                                tick={{ fontSize: 10 }}
+                                tickFormatter={(v) => String(v).slice(-2)}
+                                className="text-muted-foreground"
+                              />
+                              <YAxis
+                                tick={{ fontSize: 10 }}
+                                tickFormatter={(v) => `$${v}`}
+                                className="text-muted-foreground"
+                                domain={['auto', 'auto']}
+                              />
+                              <Tooltip
+                                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'hsl(var(--popover))' }}
+                                formatter={(value, name) => {
+                                  const label = name === 'rent' ? 'Avg Rent' : name === 'forecast' ? 'Forecast' : String(name);
+                                  return [`$${value}/mo`, label];
+                                }}
+                                labelFormatter={(label) => `${label}`}
+                              />
+                              {/* Forecast confidence band */}
+                              <Area
+                                type="monotone"
+                                dataKey="forecastUpper"
+                                stroke="none"
+                                fill="hsl(var(--primary))"
+                                fillOpacity={0.08}
+                                connectNulls={false}
+                              />
+                              <Area
+                                type="monotone"
+                                dataKey="forecastLower"
+                                stroke="none"
+                                fill="hsl(var(--background))"
+                                fillOpacity={1}
+                                connectNulls={false}
+                              />
+                              {/* Historical rent */}
+                              <Area
+                                type="monotone"
+                                dataKey="rent"
+                                stroke="hsl(var(--primary))"
+                                fill="hsl(var(--primary))"
+                                fillOpacity={0.15}
+                                strokeWidth={2}
+                                dot={{ r: 3, fill: 'hsl(var(--primary))' }}
+                                connectNulls={false}
+                              />
+                              {/* Forecast line */}
+                              <Area
+                                type="monotone"
+                                dataKey="forecast"
+                                stroke="hsl(var(--primary))"
+                                fill="none"
+                                strokeWidth={2}
+                                strokeDasharray="5 3"
+                                dot={{ r: 3, fill: 'hsl(var(--primary))', strokeDasharray: '' }}
+                                connectNulls={false}
+                              />
+                              {/* Property's rent reference line */}
+                              {perUnitRent && (
+                                <ReferenceLine
+                                  y={perUnitRent}
+                                  stroke="hsl(var(--chart-2))"
+                                  strokeDasharray="3 3"
+                                  label={{ value: `Your rent: $${perUnitRent}`, position: 'insideTopRight', fontSize: 10, fill: 'hsl(var(--chart-2))' }}
+                                />
+                              )}
+                            </AreaChart>
+                          );
+                        })()}
+                      </ResponsiveContainer>
                     </div>
+                    {rentTrend.forecasts.length > 0 && (
+                      <div className="text-[10px] text-muted-foreground mt-1">
+                        Dashed line = linear forecast (
+                        {rentTrend.forecasts[0]?.year}&ndash;{rentTrend.forecasts[rentTrend.forecasts.length - 1]?.year}
+                        )
+                      </div>
+                    )}
                   </div>
                 )}
 
