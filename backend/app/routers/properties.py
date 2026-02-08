@@ -400,12 +400,35 @@ async def get_property_details(
         except Exception as e:
             logger.warning(f"DB read failed: {e}")
 
-    if listing is None:
+    # Fetch detail page if listing is missing or lacks detail-page fields
+    needs_detail = listing is None or (
+        listing.gross_revenue is None
+        and listing.annual_taxes is None
+        and listing.municipal_assessment is None
+    )
+    if needs_detail:
         try:
             async with CentrisScraper() as scraper:
-                listing = await scraper.get_listing_details(normalized_id)
+                detailed = await scraper.get_listing_details(
+                    normalized_id, url=listing.url if listing else None
+                )
+            if detailed and listing is not None:
+                # Merge detail-page fields into cached listing
+                listing.gross_revenue = detailed.gross_revenue or listing.gross_revenue
+                listing.annual_taxes = detailed.annual_taxes or listing.annual_taxes
+                listing.municipal_assessment = detailed.municipal_assessment or listing.municipal_assessment
+                listing.postal_code = detailed.postal_code or listing.postal_code
+                listing.sqft = detailed.sqft or listing.sqft
+                listing.lot_sqft = detailed.lot_sqft or listing.lot_sqft
+                listing.year_built = detailed.year_built or listing.year_built
+                if detailed.photo_urls and not listing.photo_urls:
+                    listing.photo_urls = detailed.photo_urls
+            elif detailed:
+                listing = detailed
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to get details: {str(e)}")
+            if listing is None:
+                raise HTTPException(status_code=500, detail=f"Failed to get details: {str(e)}")
+            logger.warning(f"Detail enrichment failed, using cached data: {e}")
 
         if not listing:
             raise HTTPException(status_code=404, detail="Listing not found")
