@@ -306,29 +306,61 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
         <div className="mt-4 px-6 pb-8 space-y-5">
           {/* Score and Price Hero */}
-          <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50">
-            <div className="flex items-center gap-4">
-              <ScoreGauge score={metrics.score} size={100} />
-              <div>
-                <div className="text-sm text-muted-foreground">Investment Score</div>
-                <div className="text-sm mt-1">
-                  {metrics.score >= 70 ? (
-                    <Badge className="bg-green-500">Excellent</Badge>
-                  ) : metrics.score >= 50 ? (
-                    <Badge className="bg-yellow-500">Good</Badge>
-                  ) : (
-                    <Badge variant="destructive">Below Average</Badge>
-                  )}
+          <div className="p-4 rounded-lg bg-muted/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <ScoreGauge score={metrics.score} size={100} />
+                <div>
+                  <div className="text-sm text-muted-foreground">Investment Score</div>
+                  <div className="text-sm mt-1">
+                    {metrics.score >= 70 ? (
+                      <Badge className="bg-green-500">Excellent</Badge>
+                    ) : metrics.score >= 50 ? (
+                      <Badge className="bg-yellow-500">Good</Badge>
+                    ) : (
+                      <Badge variant="destructive">Below Average</Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-muted-foreground">Asking Price</div>
+                <div className="text-2xl font-bold">{formatPrice(listing.price)}</div>
+                <div className="text-xs text-muted-foreground">
+                  {formatPrice(metrics.price_per_unit)}/unit
                 </div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-sm text-muted-foreground">Asking Price</div>
-              <div className="text-2xl font-bold">{formatPrice(listing.price)}</div>
-              <div className="text-xs text-muted-foreground">
-                {formatPrice(metrics.price_per_unit)}/unit
-              </div>
-            </div>
+            {/* Two-pillar summary */}
+            {metrics.score_breakdown && Object.keys(metrics.score_breakdown).length > 0 && (() => {
+              const fin = (metrics.score_breakdown.cap_rate ?? 0) + (metrics.score_breakdown.cash_flow ?? 0) + (metrics.score_breakdown.price_per_unit ?? 0);
+              const loc = (metrics.score_breakdown.neighbourhood_safety ?? 0) + (metrics.score_breakdown.neighbourhood_vacancy ?? 0) + (metrics.score_breakdown.neighbourhood_rent_growth ?? 0) + (metrics.score_breakdown.neighbourhood_affordability ?? 0) + (metrics.score_breakdown.condition ?? 0);
+              const hasLoc = loc > 0;
+              return (
+                <div className="flex gap-3">
+                  <div className="flex-1 rounded-md bg-background/60 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Financial</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-lg font-semibold tabular-nums">{fin.toFixed(0)}</span>
+                      <span className="text-xs text-muted-foreground">/70</span>
+                    </div>
+                    <div className="mt-1 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${Math.min(100, (fin / 70) * 100)}%` }} />
+                    </div>
+                  </div>
+                  <div className="flex-1 rounded-md bg-background/60 px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Location & Quality</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-lg font-semibold tabular-nums">{hasLoc ? loc.toFixed(0) : '--'}</span>
+                      <span className="text-xs text-muted-foreground">/30</span>
+                    </div>
+                    <div className="mt-1 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${hasLoc ? Math.min(100, (loc / 30) * 100) : 0}%` }} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Quick Actions */}
@@ -350,6 +382,19 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           </div>
 
           <Separator />
+
+          {/* Score Breakdown */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Calculator className="h-4 w-4" />
+                Score Breakdown
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScoreBreakdown scoreBreakdown={metrics.score_breakdown} />
+            </CardContent>
+          </Card>
 
           {/* Monthly Cash Flow Breakdown */}
           <Card>
@@ -1115,19 +1160,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </CardContent>
             </Card>
           )}
-
-          {/* Score Breakdown */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Calculator className="h-4 w-4" />
-                Score Breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScoreBreakdown scoreBreakdown={metrics.score_breakdown} />
-            </CardContent>
-          </Card>
 
           {/* Property Details (collapsed) */}
           <Card>

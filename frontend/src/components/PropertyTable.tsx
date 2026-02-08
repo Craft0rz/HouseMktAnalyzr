@@ -126,12 +126,37 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
       ),
       cell: ({ row }) => {
         const score = row.original.metrics.score;
+        const bd = row.original.metrics.score_breakdown;
+        const fin = bd ? (bd.cap_rate ?? 0) + (bd.cash_flow ?? 0) + (bd.price_per_unit ?? 0) : 0;
+        const loc = bd ? (bd.neighbourhood_safety ?? 0) + (bd.neighbourhood_vacancy ?? 0) + (bd.neighbourhood_rent_growth ?? 0) + (bd.neighbourhood_affordability ?? 0) + (bd.condition ?? 0) : 0;
         return (
-          <div className="flex items-center gap-2">
+          <div className="group relative flex items-center gap-2">
             <div
               className={`w-2 h-2 rounded-full ${getScoreColor(score)}`}
             />
             <span className="font-medium">{score.toFixed(0)}</span>
+            {bd && Object.keys(bd).length > 0 && (
+              <div className="invisible group-hover:visible absolute left-0 top-full mt-1 z-50 w-44 rounded-md border bg-popover p-2 text-xs shadow-md">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Financial</span>
+                  <span className="font-medium tabular-nums">{fin.toFixed(0)}/70</span>
+                </div>
+                <div className="mt-1 h-1 w-full rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-green-500" style={{ width: `${Math.min(100, (fin / 70) * 100)}%` }} />
+                </div>
+                {loc > 0 && (
+                  <>
+                    <div className="flex justify-between mt-1.5">
+                      <span className="text-muted-foreground">Location</span>
+                      <span className="font-medium tabular-nums">{loc.toFixed(0)}/30</span>
+                    </div>
+                    <div className="mt-1 h-1 w-full rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, (loc / 30) * 100)}%` }} />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         );
       },
