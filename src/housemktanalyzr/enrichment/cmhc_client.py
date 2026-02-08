@@ -17,13 +17,16 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# CMHC internal geography IDs (NOT Census GeoUIDs)
+# CMHC internal geography IDs (NOT Census GeoUIDs).
+# Use discover_cmhc_geo_id() to find IDs for new CMAs.
 CMHC_GEO_IDS = {
     "montreal": "1060",
     "toronto": "2270",
     "vancouver": "2410",
     "ottawa": "1640",
     "calgary": "0140",
+    "quebec": "1400",
+    "sherbrooke": "1800",
 }
 
 # Table IDs for Rental Market Survey
@@ -328,3 +331,39 @@ class CMHCClient:
             rents=rents,
             vacancies=vacancies,
         )
+
+
+async def discover_cmhc_geo_id(cma_name: str, id_range: range | None = None) -> str | None:
+    """Probe the CMHC API to discover the GeographyId for a CMA.
+
+    Tries candidate IDs against the avg_rent_by_zone table and checks
+    the response for the CMA name. Run once per new CMA, then add the
+    result to CMHC_GEO_IDS.
+
+    Usage:
+        import asyncio
+        geo_id = asyncio.run(discover_cmhc_geo_id("Québec"))
+    """
+    if id_range is None:
+        id_range = range(1, 3000)
+
+    url = "https://www03.cmhc-schl.gc.ca/hmip-pimh/en/TableMapChart/ExportTable"
+    target = cma_name.lower()
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for candidate in id_range:
+            geo_id = f"{candidate:04d}"
+            try:
+                resp = await client.post(url, data={
+                    "TableId": "2.1.11.3",
+                    "GeographyId": geo_id,
+                    "GeographyTypeId": "3",
+                    "exportType": "csv",
+                    "Frequency": "Annual",
+                })
+                if resp.status_code == 200 and target in resp.text.lower():
+                    logger.info(f"Discovered CMHC geo_id for {cma_name}: {geo_id}")
+                    return geo_id
+            except Exception:
+                continue
+    return None

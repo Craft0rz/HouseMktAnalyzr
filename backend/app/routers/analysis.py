@@ -61,6 +61,7 @@ async def _fetch_location_data(
         from ..db import (
             get_neighbourhood_stats_for_borough,
             get_demographics_for_city,
+            get_demographics_by_csd,
             get_rent_history_fuzzy,
         )
         from ..geo_mapping import (
@@ -89,10 +90,21 @@ async def _fetch_location_data(
 
     async def _get_demographics():
         try:
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 get_demographics_for_city(demo_key),
                 timeout=_DB_QUERY_TIMEOUT,
             )
+            if result:
+                return result
+            # Fallback: try CSD code lookup for non-Montreal municipalities
+            from housemktanalyzr.enrichment.demographics import get_csd_for_city
+            csd = get_csd_for_city(demo_key)
+            if csd:
+                return await asyncio.wait_for(
+                    get_demographics_by_csd(csd),
+                    timeout=_DB_QUERY_TIMEOUT,
+                )
+            return None
         except Exception:
             return None
 

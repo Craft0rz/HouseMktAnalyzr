@@ -589,8 +589,9 @@ class ScraperWorker:
             await client.close()
 
     async def _refresh_rent_data(self):
-        """Fetch CMHC rent and vacancy data if stale (refreshes weekly)."""
+        """Fetch CMHC rent and vacancy data for all active CMAs if stale."""
         from housemktanalyzr.enrichment.cmhc_client import CMHCClient
+        from .constants import CMA_CONFIG, get_active_cmas
 
         refresh_hours = float(os.environ.get("RENT_DATA_REFRESH_HOURS", 168))  # weekly
 
@@ -603,9 +604,6 @@ class ScraperWorker:
         except Exception:
             logger.exception("Failed to check rent data age")
 
-        logger.info("Rent data: refreshing from CMHC")
-        client = CMHCClient("montreal")
-
         bed_attr_map = {
             "bachelor": "bachelor",
             "1br": "one_br",
@@ -613,71 +611,82 @@ class ScraperWorker:
             "3br+": "three_br_plus",
         }
 
+        active_cmas = get_active_cmas()
+        logger.info(f"Rent data: refreshing from CMHC for {len(active_cmas)} CMA(s): {active_cmas}")
+
         total_upserted = 0
-        try:
-            # Fetch current year snapshot (rents + vacancy by zone)
-            snapshot = await client.get_snapshot()
+        for cma_key in active_cmas:
+            config = CMA_CONFIG.get(cma_key)
+            if not config:
+                logger.warning(f"Rent data: no CMA_CONFIG for '{cma_key}', skipping")
+                continue
 
-            rows = []
-            for rent_data in snapshot.rents:
-                for bed_key, attr in bed_attr_map.items():
-                    val = getattr(rent_data, attr, None)
-                    if val is not None:
-                        rows.append({
-                            "zone": rent_data.zone,
-                            "bedroom_type": bed_key,
-                            "year": rent_data.year,
-                            "avg_rent": val,
-                        })
+            client = CMHCClient(cma_key)
+            try:
+                # Fetch current year snapshot (rents + vacancy by zone)
+                snapshot = await client.get_snapshot()
 
-            for vac_data in snapshot.vacancies:
-                for bed_key, attr in bed_attr_map.items():
-                    val = getattr(vac_data, attr, None)
-                    if val is not None:
-                        # Find matching row or create new one
-                        found = False
-                        for row in rows:
-                            if row["zone"] == vac_data.zone and row["bedroom_type"] == bed_key and row["year"] == vac_data.year:
-                                row["vacancy_rate"] = val
-                                found = True
-                                break
-                        if not found:
+                rows = []
+                for rent_data in snapshot.rents:
+                    for bed_key, attr in bed_attr_map.items():
+                        val = getattr(rent_data, attr, None)
+                        if val is not None:
                             rows.append({
-                                "zone": vac_data.zone,
+                                "zone": rent_data.zone,
                                 "bedroom_type": bed_key,
-                                "year": vac_data.year,
-                                "vacancy_rate": val,
+                                "year": rent_data.year,
+                                "avg_rent": val,
                             })
 
-            if rows:
-                total_upserted += await upsert_rent_data_batch(rows)
+                for vac_data in snapshot.vacancies:
+                    for bed_key, attr in bed_attr_map.items():
+                        val = getattr(vac_data, attr, None)
+                        if val is not None:
+                            found = False
+                            for row in rows:
+                                if row["zone"] == vac_data.zone and row["bedroom_type"] == bed_key and row["year"] == vac_data.year:
+                                    row["vacancy_rate"] = val
+                                    found = True
+                                    break
+                            if not found:
+                                rows.append({
+                                    "zone": vac_data.zone,
+                                    "bedroom_type": bed_key,
+                                    "year": vac_data.year,
+                                    "vacancy_rate": val,
+                                })
 
-            # Also fetch historical CMA-level rents for trend analysis
-            historical = await client.get_historical_rents()
-            hist_rows = []
-            for h in historical:
-                for bed_key, attr in bed_attr_map.items():
-                    val = getattr(h, attr, None)
-                    if val is not None:
-                        hist_rows.append({
-                            "zone": "Montreal CMA Total",
-                            "bedroom_type": bed_key,
-                            "year": h.year,
-                            "avg_rent": val,
-                        })
-            if hist_rows:
-                total_upserted += await upsert_rent_data_batch(hist_rows)
+                if rows:
+                    total_upserted += await upsert_rent_data_batch(rows)
 
-            logger.info(f"Rent data: upserted {total_upserted} rows")
-            self._status["refresh_progress"]["rent"]["status"] = "done"
+                # Also fetch historical CMA-level rents for trend analysis
+                fallback_zone = config["fallback_zone"]
+                historical = await client.get_historical_rents()
+                hist_rows = []
+                for h in historical:
+                    for bed_key, attr in bed_attr_map.items():
+                        val = getattr(h, attr, None)
+                        if val is not None:
+                            hist_rows.append({
+                                "zone": fallback_zone,
+                                "bedroom_type": bed_key,
+                                "year": h.year,
+                                "avg_rent": val,
+                            })
+                if hist_rows:
+                    total_upserted += await upsert_rent_data_batch(hist_rows)
 
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("Rent data refresh failed")
-            self._status["refresh_progress"]["rent"]["status"] = "failed"
-        finally:
-            await client.close()
+                logger.info(f"Rent data ({cma_key}): upserted for this CMA")
+
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(f"Rent data refresh failed for CMA '{cma_key}'")
+            finally:
+                await client.close()
+
+        logger.info(f"Rent data: upserted {total_upserted} rows total across {len(active_cmas)} CMA(s)")
+        self._status["refresh_progress"]["rent"]["status"] = "done" if total_upserted > 0 else "failed"
 
     async def _refresh_demographics(self):
         """Fetch StatCan census demographics if stale (refreshes monthly)."""

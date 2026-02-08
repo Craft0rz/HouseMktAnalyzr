@@ -85,14 +85,31 @@ CMA_CSDS = {
     "south-shore": "2458227",  # default to Longueuil
     "laurentides": "2475017",  # default to Saint-Jerome
     "lanaudiere": "2460013",  # default to Repentigny
-    # --- Quebec CMA --- (uncomment when activated)
-    # "quebec-city": "2423027",
-    # "levis": "2425213",
-    # "saint-augustin-de-desmaures": "2423057",
-    # "beauport": "2423027",  # borough of Quebec City
-    # --- Sherbrooke CMA --- (uncomment when activated)
-    # "sherbrooke": "2443027",
-    # "magog": "2445072",
+    # --- Quebec CMA ---
+    "quebec": "2423027",
+    "quebec-city": "2423027",
+    "levis": "2425213",
+    "l-ancienne-lorette": "2423057",
+    "saint-augustin-de-desmaures": "2423072",
+    "beauport": "2423027",  # borough of Quebec City
+    "charlesbourg": "2423027",  # borough of Quebec City
+    "sainte-foy": "2423027",  # borough of Quebec City
+    "shannon": "2422020",
+    "boischatel": "2421045",
+    "stoneham-et-tewkesbury": "2422010",
+    "saint-henri": "2425080",
+    "capitale-nationale": "2423027",  # default to Quebec City
+    # --- Sherbrooke CMA ---
+    "sherbrooke": "2443027",
+    "magog": "2445072",
+    "orford": "2445055",
+    "ascot-corner": "2441058",
+    "compton": "2441038",
+    "waterville": "2441013",
+    "north-hatley": "2445030",
+    "fleurimont": "2443027",  # merged into Sherbrooke
+    "lennoxville": "2443027",  # merged into Sherbrooke
+    "estrie": "2443027",  # default to Sherbrooke
 }
 
 

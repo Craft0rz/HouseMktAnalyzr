@@ -28,6 +28,8 @@ REGION_URL_MAPPING = {
     "rive-sud": "monteregie",       # alias for south-shore
     "laurentides": "laurentides",
     "lanaudiere": "lanaudiere",
+    "capitale-nationale": "capitale-nationale",
+    "estrie": "estrie",
 }
 
 # Build scrape matrix: (region_key, type_key, full_url) for all combinations
@@ -54,9 +56,14 @@ CMA_CONFIG: dict[str, dict] = {
         "cmhc_geo_id": "1060",
         "fallback_zone": "Montreal CMA Total",
     },
-    # Uncomment and fill geo IDs when activating new CMAs:
-    # "quebec": {"cmhc_geo_id": "XXXX", "fallback_zone": "Quebec CMA Total"},
-    # "sherbrooke": {"cmhc_geo_id": "XXXX", "fallback_zone": "Sherbrooke CMA Total"},
+    "quebec": {
+        "cmhc_geo_id": "1400",
+        "fallback_zone": "Quebec CMA Total",
+    },
+    "sherbrooke": {
+        "cmhc_geo_id": "1800",
+        "fallback_zone": "Sherbrooke CMA Total",
+    },
 }
 
 # Region → CMA mapping. Every region in REGION_URL_MAPPING should map here.
@@ -67,8 +74,8 @@ REGION_CMA: dict[str, str] = {
     "rive-sud": "montreal",
     "laurentides": "montreal",
     "lanaudiere": "montreal",
-    # "quebec-city": "quebec",
-    # "estrie": "sherbrooke",
+    "capitale-nationale": "quebec",
+    "estrie": "sherbrooke",
 }
 
 
