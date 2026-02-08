@@ -177,27 +177,18 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
             <span>{t('chart.annualRent')}</span>
             <span style={tabNum}>{formatCurrency(entry.annualRent)}</span>
           </div>
-          {noi != null && (
-            <div style={rowStyle}>
-              <span>{t('chart.noi')}</span>
-              <span style={tabNum}>{formatCurrency(noi)}</span>
-            </div>
-          )}
           {entry.totalExpenses != null && (
             <div style={rowStyle}>
               <span>{t('chart.expenses')}</span>
               <span style={tabNum}>{formatCurrency(entry.totalExpenses)}</span>
             </div>
           )}
-          <div style={rowStyle}>
-            <span>{t('chart.pricePerUnit')}</span>
-            <span style={tabNum}>{formatCurrency(entry.pricePerUnit)}</span>
-          </div>
-          <div style={rowStyle}>
-            <span>{t('chart.grossYield')}</span>
-            <span style={tabNum}>{entry.grossYield?.toFixed(1)}%</span>
-          </div>
-          {scoreFooter}
+          {noi != null && (
+            <div style={rowStyle}>
+              <span>{t('chart.noi')}</span>
+              <span style={tabNum}>{formatCurrency(noi)}</span>
+            </div>
+          )}
         </div>
       );
     }
@@ -228,17 +219,6 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
               <span style={tabNum}>{formatCurrency(entry.totalExpenses)}{t('common.perMonth')}</span>
             </div>
           )}
-          {entry.capRate != null && (
-            <div style={rowStyle}>
-              <span>{t('chart.capRate')}</span>
-              <span style={tabNum}>{entry.capRate.toFixed(2)}%</span>
-            </div>
-          )}
-          <div style={rowStyle}>
-            <span>{t('chart.grossYield')}</span>
-            <span style={tabNum}>{entry.grossYield?.toFixed(1)}%</span>
-          </div>
-          {scoreFooter}
         </div>
       );
     }
@@ -261,17 +241,6 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
             <span>{t('chart.price')}</span>
             <span style={tabNum}>{formatCurrency(entry.price)}</span>
           </div>
-          <div style={rowStyle}>
-            <span>{t('chart.pricePerUnit')}</span>
-            <span style={tabNum}>{formatCurrency(entry.pricePerUnit)}</span>
-          </div>
-          {entry.capRate != null && (
-            <div style={rowStyle}>
-              <span>{t('chart.capRate')}</span>
-              <span style={tabNum}>{entry.capRate.toFixed(2)}%</span>
-            </div>
-          )}
-          {scoreFooter}
         </div>
       );
     }
