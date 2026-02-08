@@ -234,3 +234,35 @@ export interface UpdatePortfolioItemRequest {
   current_expenses?: number;
   notes?: string;
 }
+
+// Market intelligence types
+export interface MarketObservation {
+  date: string;
+  value: number;
+}
+
+export interface RateSeriesResponse {
+  series_id: string;
+  label: string;
+  latest_value: number | null;
+  latest_date: string | null;
+  direction: 'up' | 'down' | 'stable';
+  observations: MarketObservation[];
+}
+
+export interface MarketRatesResponse {
+  mortgage_5yr: RateSeriesResponse | null;
+  policy_rate: RateSeriesResponse | null;
+  prime_rate: RateSeriesResponse | null;
+  cpi: RateSeriesResponse | null;
+  last_updated: string | null;
+}
+
+export interface MarketSummaryResponse {
+  mortgage_rate: number | null;
+  policy_rate: number | null;
+  prime_rate: number | null;
+  cpi: number | null;
+  mortgage_direction: 'up' | 'down' | 'stable';
+  policy_direction: 'up' | 'down' | 'stable';
+}

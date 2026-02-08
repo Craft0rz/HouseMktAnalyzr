@@ -19,6 +19,8 @@ import type {
   CreatePortfolioItemRequest,
   UpdatePortfolioItemRequest,
   PortfolioStatus,
+  MarketRatesResponse,
+  MarketSummaryResponse,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -256,6 +258,17 @@ export const portfolioApi = {
     return fetchApi(`/api/portfolio/${encodeURIComponent(itemId)}/toggle-status`, {
       method: 'POST',
     });
+  },
+};
+
+// Market intelligence endpoints
+export const marketApi = {
+  rates: (lookbackMonths = 12): Promise<MarketRatesResponse> => {
+    return fetchApi(`/api/market/rates?lookback_months=${lookbackMonths}`);
+  },
+
+  summary: (): Promise<MarketSummaryResponse> => {
+    return fetchApi('/api/market/summary');
   },
 };
 

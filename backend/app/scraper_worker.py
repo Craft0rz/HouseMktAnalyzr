@@ -11,6 +11,7 @@ from .db import (
     get_listings_without_walk_score, update_walk_scores,
     get_listings_without_photos, update_photo_urls,
     get_listings_without_condition_score, update_condition_score,
+    upsert_market_data, get_market_data_age,
 )
 
 logger = logging.getLogger(__name__)
@@ -142,6 +143,9 @@ class ScraperWorker:
                 f"Scrape cycle finished: {total_stored} listings stored, "
                 f"{len(errors)} errors, {duration:.0f}s elapsed"
             )
+
+        # Refresh market data (interest rates, CPI) if stale
+        await self._refresh_market_data()
 
         # Run alert checker after scrape completes
         try:
@@ -319,3 +323,59 @@ class ScraperWorker:
             await asyncio.sleep(delay)
 
         logger.info(f"Condition scoring done: {scored} scored, {failed} failed")
+
+    async def _refresh_market_data(self):
+        """Fetch latest market rates from Bank of Canada if data is stale."""
+        from housemktanalyzr.enrichment.market_data import BankOfCanadaClient, BOC_SERIES
+
+        refresh_hours = float(os.environ.get("MARKET_DATA_REFRESH_HOURS", 24))
+
+        # Check if data is fresh enough
+        try:
+            age = await get_market_data_age("boc_mortgage_5yr")
+            if age is not None and age < refresh_hours:
+                logger.info(f"Market data: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                return
+        except Exception:
+            logger.exception("Failed to check market data age")
+
+        logger.info("Market data: refreshing from Bank of Canada")
+        client = BankOfCanadaClient()
+
+        series_map = {
+            "policy_rate": "boc_policy_rate",
+            "mortgage_5yr": "boc_mortgage_5yr",
+            "mortgage_3yr": "boc_mortgage_3yr",
+            "mortgage_1yr": "boc_mortgage_1yr",
+            "cpi": "boc_cpi",
+            "prime_rate": "boc_prime_rate",
+        }
+
+        total_upserted = 0
+        try:
+            rates = await client.get_all_rates(lookback_years=5)
+
+            for name, history in rates.items():
+                db_series_id = series_map.get(name)
+                if not db_series_id:
+                    continue
+
+                observations = [
+                    {"date": obs.date, "value": obs.value}
+                    for obs in history.observations
+                ]
+                count = await upsert_market_data(
+                    series_id=db_series_id,
+                    observations=observations,
+                    source="bank_of_canada",
+                )
+                total_upserted += count
+
+            logger.info(f"Market data: upserted {total_upserted} observations")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Market data refresh failed")
+        finally:
+            await client.close()

@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_pool, close_pool, get_pool
-from .routers import alerts, analysis, portfolio, properties, scraper
+from .routers import alerts, analysis, market, portfolio, properties, scraper
 from .scraper_worker import ScraperWorker
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,7 @@ app.include_router(analysis.router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(scraper.router, prefix="/api/scraper", tags=["Scraper"])
+app.include_router(market.router, prefix="/api/market", tags=["Market"])
 
 
 @app.get("/")

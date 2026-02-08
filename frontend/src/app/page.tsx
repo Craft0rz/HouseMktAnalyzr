@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Building2, TrendingUp, Calculator, Bell, BarChart3, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Building2, TrendingUp, TrendingDown, Calculator, Bell, BarChart3, Search, Minus, Landmark } from 'lucide-react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,8 @@ import { LoadingCard } from '@/components/LoadingCard';
 import { useTopOpportunities } from '@/hooks/useProperties';
 import { MetricsBar, PriceCapScatter, PriceDistribution } from '@/components/charts';
 import { formatPrice, getScoreColor } from '@/lib/formatters';
+import { marketApi } from '@/lib/api';
+import type { MarketSummaryResponse } from '@/lib/types';
 
 const REGIONS = [
   { value: 'montreal', label: 'Montreal Island' },
@@ -62,10 +64,15 @@ const features = [
 
 export default function Home() {
   const [region, setRegion] = useState('montreal');
+  const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
   const { data: topOpportunities, isLoading } = useTopOpportunities(
     { region, limit: 10, min_score: 50 },
     true
   );
+
+  useEffect(() => {
+    marketApi.summary().then(setMarketData).catch(() => {});
+  }, []);
 
   const properties = topOpportunities?.results || [];
   const hasData = properties.length > 0;
@@ -131,6 +138,65 @@ export default function Home() {
           </SelectContent>
         </Select>
       </div>
+
+      {/* Market Rates Banner */}
+      {marketData && (marketData.mortgage_rate != null || marketData.policy_rate != null) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Landmark className="h-4 w-4" />
+              Current Interest Rates
+              <span className="text-xs text-muted-foreground font-normal ml-auto">Bank of Canada</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {marketData.mortgage_rate != null && (
+                <div className="flex items-center gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">5yr Mortgage</div>
+                    <div className="text-2xl font-bold">{marketData.mortgage_rate.toFixed(2)}%</div>
+                  </div>
+                  {marketData.mortgage_direction === 'down' ? (
+                    <TrendingDown className="h-5 w-5 text-green-500" />
+                  ) : marketData.mortgage_direction === 'up' ? (
+                    <TrendingUp className="h-5 w-5 text-red-500" />
+                  ) : (
+                    <Minus className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+              )}
+              {marketData.policy_rate != null && (
+                <div className="flex items-center gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Policy Rate</div>
+                    <div className="text-2xl font-bold">{marketData.policy_rate.toFixed(2)}%</div>
+                  </div>
+                  {marketData.policy_direction === 'down' ? (
+                    <TrendingDown className="h-5 w-5 text-green-500" />
+                  ) : marketData.policy_direction === 'up' ? (
+                    <TrendingUp className="h-5 w-5 text-red-500" />
+                  ) : (
+                    <Minus className="h-5 w-5 text-muted-foreground" />
+                  )}
+                </div>
+              )}
+              {marketData.prime_rate != null && (
+                <div>
+                  <div className="text-xs text-muted-foreground">Prime Rate</div>
+                  <div className="text-2xl font-bold">{marketData.prime_rate.toFixed(2)}%</div>
+                </div>
+              )}
+              {marketData.cpi != null && (
+                <div>
+                  <div className="text-xs text-muted-foreground">CPI Index</div>
+                  <div className="text-2xl font-bold">{marketData.cpi.toFixed(1)}</div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Analytics Section */}
       {isLoading ? (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,8 +16,8 @@ import {
 } from '@/components/ui/sheet';
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
-import { propertiesApi } from '@/lib/api';
-import type { PropertyWithMetrics, PropertyListing } from '@/lib/types';
+import { propertiesApi, marketApi } from '@/lib/api';
+import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -194,6 +194,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
@@ -217,6 +218,13 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
       }
     }).finally(() => {
       if (!cancelled) setDetailLoading(false);
+    });
+
+    // Fetch market data in parallel
+    marketApi.summary().then((data) => {
+      if (!cancelled) setMarketData(data);
+    }).catch(() => {
+      // Market data is supplementary — don't show errors
     });
 
     return () => { cancelled = true; };
@@ -628,6 +636,83 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   <div className="rounded-lg bg-muted/30 p-3 border border-muted">
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {listing.condition_details.notes}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Market Context */}
+          {marketData && (marketData.mortgage_rate != null || marketData.policy_rate != null) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  Market Context
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {marketData.mortgage_rate != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-muted-foreground">5yr Mortgage</span>
+                        {marketData.mortgage_direction === 'up' ? (
+                          <TrendingUp className="h-3 w-3 text-red-500" />
+                        ) : marketData.mortgage_direction === 'down' ? (
+                          <TrendingDown className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Minus className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="text-lg font-bold">{marketData.mortgage_rate.toFixed(2)}%</div>
+                    </div>
+                  )}
+                  {marketData.policy_rate != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-muted-foreground">BoC Policy</span>
+                        {marketData.policy_direction === 'up' ? (
+                          <TrendingUp className="h-3 w-3 text-red-500" />
+                        ) : marketData.policy_direction === 'down' ? (
+                          <TrendingDown className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Minus className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="text-lg font-bold">{marketData.policy_rate.toFixed(2)}%</div>
+                    </div>
+                  )}
+                  {marketData.prime_rate != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Prime Rate</div>
+                      <div className="text-lg font-bold">{marketData.prime_rate.toFixed(2)}%</div>
+                    </div>
+                  )}
+                  {marketData.cpi != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">CPI Index</div>
+                      <div className="text-lg font-bold">{marketData.cpi.toFixed(1)}</div>
+                    </div>
+                  )}
+                </div>
+                {/* Mortgage impact based on real rate */}
+                {marketData.mortgage_rate != null && (
+                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-900">
+                    <p className="text-xs text-muted-foreground">
+                      At the current posted rate ({marketData.mortgage_rate.toFixed(2)}%), your monthly payment would be{' '}
+                      <span className="font-semibold text-foreground">
+                        {formatPrice(
+                          (() => {
+                            const r = marketData.mortgage_rate! / 100 / 12;
+                            const n = 25 * 12;
+                            const p = listing.price * 0.8;
+                            return p * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+                          })()
+                        )}
+                      </span>
+                      {' '}(20% down, 25yr amortization)
                     </p>
                   </div>
                 )}

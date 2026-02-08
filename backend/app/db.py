@@ -130,6 +130,22 @@ async def _create_tables():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS market_data (
+                id SERIAL PRIMARY KEY,
+                series_id TEXT NOT NULL,
+                date DATE NOT NULL,
+                value NUMERIC NOT NULL,
+                source TEXT NOT NULL,
+                fetched_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(series_id, date)
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_market_data_series_date
+            ON market_data(series_id, date DESC)
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS portfolio (
                 id TEXT PRIMARY KEY,
                 property_id TEXT NOT NULL UNIQUE,
@@ -485,6 +501,132 @@ async def update_condition_score(
             json.dumps(data), listing_id,
         )
     return True
+
+
+async def upsert_market_data(
+    series_id: str,
+    observations: list[dict],
+    source: str,
+) -> int:
+    """Upsert time-series observations into market_data table.
+
+    Args:
+        series_id: Series identifier (e.g. 'boc_mortgage_5yr')
+        observations: List of dicts with 'date' (date) and 'value' (float)
+        source: Data source name (e.g. 'bank_of_canada')
+
+    Returns:
+        Number of rows upserted
+    """
+    if not observations:
+        return 0
+
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        count = 0
+        for obs in observations:
+            await conn.execute(
+                """
+                INSERT INTO market_data (series_id, date, value, source, fetched_at)
+                VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (series_id, date) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    fetched_at = EXCLUDED.fetched_at
+                """,
+                series_id, obs["date"], float(obs["value"]), source, now,
+            )
+            count += 1
+
+    return count
+
+
+async def get_market_series(
+    series_id: str,
+    start_date=None,
+    end_date=None,
+    limit: int = 500,
+) -> list[dict]:
+    """Query market_data for a series, ordered by date descending.
+
+    Returns list of dicts with 'date' and 'value' keys.
+    """
+    pool = get_pool()
+
+    conditions = ["series_id = $1"]
+    params: list = [series_id]
+    idx = 2
+
+    if start_date is not None:
+        conditions.append(f"date >= ${idx}")
+        params.append(start_date)
+        idx += 1
+
+    if end_date is not None:
+        conditions.append(f"date <= ${idx}")
+        params.append(end_date)
+        idx += 1
+
+    where = " AND ".join(conditions)
+    query = f"""
+        SELECT date, value FROM market_data
+        WHERE {where}
+        ORDER BY date DESC
+        LIMIT ${idx}
+    """
+    params.append(limit)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+
+    return [
+        {"date": row["date"].isoformat(), "value": float(row["value"])}
+        for row in rows
+    ]
+
+
+async def get_latest_market_value(series_id: str) -> Optional[dict]:
+    """Get the most recent value for a market data series."""
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT date, value, fetched_at FROM market_data
+            WHERE series_id = $1
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            series_id,
+        )
+
+    if row:
+        return {
+            "date": row["date"].isoformat(),
+            "value": float(row["value"]),
+            "fetched_at": row["fetched_at"].isoformat() if row["fetched_at"] else None,
+        }
+    return None
+
+
+async def get_market_data_age(series_id: str) -> Optional[float]:
+    """Get the age in hours of the most recent fetch for a series.
+
+    Returns None if no data exists.
+    """
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT MAX(fetched_at) as latest FROM market_data WHERE series_id = $1",
+            series_id,
+        )
+
+    if row and row["latest"]:
+        age = datetime.now(timezone.utc) - row["latest"]
+        return age.total_seconds() / 3600
+    return None
 
 
 async def get_scraper_stats() -> dict:
