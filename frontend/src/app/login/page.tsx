@@ -21,13 +21,14 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await login({ email, password });
+      await login({ email, password, remember_me: rememberMe });
       toast.success(t('auth.loginSuccess'));
       router.push('/search');
     } catch (err) {
@@ -41,7 +42,7 @@ export default function LoginPage() {
   const handleGoogleSuccess = async (credential: string) => {
     setIsLoading(true);
     try {
-      await loginWithGoogle(credential);
+      await loginWithGoogle(credential, rememberMe);
       toast.success(t('auth.loginSuccess'));
       router.push('/search');
     } catch (err) {
@@ -96,6 +97,16 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              {t('auth.rememberMe')}
+            </label>
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (

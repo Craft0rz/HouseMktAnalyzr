@@ -456,10 +456,10 @@ export const authApi = {
     });
   },
 
-  googleAuth: (idToken: string): Promise<import('./types').AuthResponse> => {
+  googleAuth: (idToken: string, rememberMe?: boolean): Promise<import('./types').AuthResponse> => {
     return fetchApi('/api/auth/google', {
       method: 'POST',
-      body: JSON.stringify({ id_token: idToken }),
+      body: JSON.stringify({ id_token: idToken, remember_me: rememberMe ?? false }),
     });
   },
 

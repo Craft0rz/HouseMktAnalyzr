@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { authApi, TOKEN_KEY, REFRESH_KEY } from './api';
+import { authApi, ApiError, TOKEN_KEY, REFRESH_KEY } from './api';
 import type { User, AuthResponse, RegisterRequest, LoginRequest } from './types';
 
 interface AuthContextType {
@@ -10,7 +10,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   login: (data: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<void>;
-  loginWithGoogle: (idToken: string) => Promise<void>;
+  loginWithGoogle: (idToken: string, rememberMe?: boolean) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -39,7 +39,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     authApi.me()
       .then(setUser)
-      .catch(() => clearTokens())
+      .catch((err) => {
+        // Only clear tokens on 401 (invalid/expired token).
+        // Network errors or 5xx during deploys should not sign the user out.
+        if (err instanceof ApiError && err.status === 401) {
+          clearTokens();
+        }
+      })
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -58,8 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     handleAuthResponse(response);
   }, [handleAuthResponse]);
 
-  const loginWithGoogle = useCallback(async (idToken: string) => {
-    const response = await authApi.googleAuth(idToken);
+  const loginWithGoogle = useCallback(async (idToken: string, rememberMe?: boolean) => {
+    const response = await authApi.googleAuth(idToken, rememberMe);
     handleAuthResponse(response);
   }, [handleAuthResponse]);
 

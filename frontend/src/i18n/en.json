@@ -578,6 +578,7 @@
   "status.disabled": "Scraper is not available (no database connection)",
 
   "auth.signIn": "Sign In",
+  "auth.rememberMe": "Stay logged in",
   "auth.signUp": "Sign Up",
   "auth.signOut": "Sign Out",
   "auth.email": "Email",

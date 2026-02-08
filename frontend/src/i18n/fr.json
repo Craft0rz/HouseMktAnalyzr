@@ -578,6 +578,7 @@
   "status.disabled": "Le scraper n'est pas disponible (pas de connexion à la base de données)",
 
   "auth.signIn": "Se connecter",
+  "auth.rememberMe": "Rester connect\u00e9",
   "auth.signUp": "S'inscrire",
   "auth.signOut": "Se déconnecter",
   "auth.email": "Courriel",

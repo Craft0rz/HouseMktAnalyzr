@@ -42,10 +42,12 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+    remember_me: bool = False
 
 
 class GoogleAuthRequest(BaseModel):
     id_token: str
+    remember_me: bool = False
 
 
 class RefreshRequest(BaseModel):
@@ -115,7 +117,10 @@ async def login(body: LoginRequest, request: Request):
 
     tokens, raw_refresh = _issue_tokens(user)
     user_agent, ip_address = _get_client_info(request)
-    await store_refresh_token(str(user["id"]), raw_refresh, user_agent, ip_address)
+    await store_refresh_token(
+        str(user["id"]), raw_refresh, user_agent, ip_address,
+        remember_me=body.remember_me,
+    )
 
     return AuthResponse(user=user_to_response(user), tokens=tokens)
 
@@ -152,7 +157,10 @@ async def google_auth(body: GoogleAuthRequest, request: Request):
 
     tokens, raw_refresh = _issue_tokens(user)
     user_agent, ip_address = _get_client_info(request)
-    await store_refresh_token(str(user["id"]), raw_refresh, user_agent, ip_address)
+    await store_refresh_token(
+        str(user["id"]), raw_refresh, user_agent, ip_address,
+        remember_me=body.remember_me,
+    )
 
     return AuthResponse(user=user_to_response(user), tokens=tokens)
 

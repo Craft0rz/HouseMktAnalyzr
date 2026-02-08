@@ -25,6 +25,7 @@ SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+REFRESH_TOKEN_LONG_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_LONG_EXPIRE_DAYS", "30"))
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 # Bearer token extractor
@@ -106,12 +107,14 @@ def decode_access_token(token: str) -> dict:
 
 
 async def store_refresh_token(
-    user_id: str, token: str, user_agent: str = "", ip_address: str = ""
+    user_id: str, token: str, user_agent: str = "", ip_address: str = "",
+    remember_me: bool = False,
 ) -> str:
     """Hash and store a refresh token. Returns the token ID."""
     pool = get_pool()
     token_id = uuid.uuid4()
-    expires_at = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    ttl_days = REFRESH_TOKEN_LONG_EXPIRE_DAYS if remember_me else REFRESH_TOKEN_EXPIRE_DAYS
+    expires_at = datetime.now(timezone.utc) + timedelta(days=ttl_days)
     async with pool.acquire() as conn:
         await conn.execute(
             """

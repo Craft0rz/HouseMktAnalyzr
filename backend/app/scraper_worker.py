@@ -661,22 +661,40 @@ class ScraperWorker:
                 if rows:
                     total_upserted += await upsert_rent_data_batch(rows)
 
-                # Also fetch historical CMA-level rents for trend analysis
+                # Also fetch historical CMA-level rents + vacancy for trend analysis
                 fallback_zone = config["fallback_zone"]
                 historical = await client.get_historical_rents()
-                hist_rows = []
+                hist_rows: dict[tuple[str, int], dict] = {}
                 for h in historical:
                     for bed_key, attr in bed_attr_map.items():
                         val = getattr(h, attr, None)
                         if val is not None:
-                            hist_rows.append({
+                            key = (bed_key, h.year)
+                            hist_rows[key] = {
                                 "zone": fallback_zone,
                                 "bedroom_type": bed_key,
                                 "year": h.year,
                                 "avg_rent": val,
-                            })
+                            }
+
+                historical_vac = await client.get_historical_vacancy()
+                for hv in historical_vac:
+                    for bed_key, attr in bed_attr_map.items():
+                        val = hv.get(attr)
+                        if val is not None:
+                            key = (bed_key, hv["year"])
+                            if key in hist_rows:
+                                hist_rows[key]["vacancy_rate"] = val
+                            else:
+                                hist_rows[key] = {
+                                    "zone": fallback_zone,
+                                    "bedroom_type": bed_key,
+                                    "year": hv["year"],
+                                    "vacancy_rate": val,
+                                }
+
                 if hist_rows:
-                    total_upserted += await upsert_rent_data_batch(hist_rows)
+                    total_upserted += await upsert_rent_data_batch(list(hist_rows.values()))
 
                 logger.info(f"Rent data ({cma_key}): upserted for this CMA")
 
