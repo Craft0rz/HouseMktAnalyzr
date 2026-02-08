@@ -92,6 +92,12 @@ async def _create_tables():
             CREATE INDEX IF NOT EXISTS idx_properties_status
             ON properties(status)
         """)
+        # Backfill lifecycle columns for existing rows (idempotent)
+        await conn.execute("""
+            UPDATE properties
+            SET first_seen_at = fetched_at, last_seen_at = fetched_at
+            WHERE first_seen_at IS NULL AND fetched_at IS NOT NULL
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
