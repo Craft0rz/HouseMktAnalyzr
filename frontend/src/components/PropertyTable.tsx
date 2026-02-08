@@ -205,7 +205,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
         const isStale = lc?.status === 'stale';
         const isDelisted = lc?.status === 'delisted';
         return (
-          <div className="max-w-[220px]">
+          <div className="max-w-[220px]" title={`MLS ${row.original.listing.id}`}>
             <div className="flex items-center gap-1.5">
               <span className="font-medium truncate">{row.original.listing.address}</span>
               {isNew && (
@@ -218,10 +218,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
                 <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">{t('table.removed')}</Badge>
               )}
             </div>
-            <div className="text-sm text-muted-foreground">
-              {row.original.listing.city}
-              <span className="ml-1.5 text-xs opacity-60">#{row.original.listing.id}</span>
-            </div>
+            <div className="text-sm text-muted-foreground">{row.original.listing.city}</div>
           </div>
         );
       },
