@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2 } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -44,10 +44,30 @@ const getScoreColor = (score: number) => {
   return 'text-red-600';
 };
 
+const getScoreBg = (score: number) => {
+  if (score >= 70) return 'bg-green-500';
+  if (score >= 50) return 'bg-yellow-500';
+  return 'bg-red-500';
+};
+
+const getWalkLabel = (score: number) => {
+  if (score >= 90) return "Walker's Paradise";
+  if (score >= 70) return 'Very Walkable';
+  if (score >= 50) return 'Somewhat Walkable';
+  if (score >= 25) return 'Car-Dependent';
+  return 'Almost All Errands Require a Car';
+};
+
 const getConditionColor = (score: number) => {
   if (score >= 7) return 'text-green-600';
   if (score >= 5) return 'text-yellow-600';
   return 'text-red-600';
+};
+
+const getConditionBg = (score: number) => {
+  if (score >= 7) return 'bg-green-500';
+  if (score >= 5) return 'bg-yellow-500';
+  return 'bg-red-500';
 };
 
 const getConditionLabel = (score: number) => {
@@ -55,6 +75,13 @@ const getConditionLabel = (score: number) => {
   if (score >= 6) return 'Good';
   if (score >= 4) return 'Fair';
   return 'Poor';
+};
+
+const conditionCategoryIcons: Record<string, string> = {
+  kitchen: '🍳',
+  bathroom: '🚿',
+  floors: '🏠',
+  exterior: '🏢',
 };
 
 const getPropertyTypeLabel = (type: string) => {
@@ -462,33 +489,52 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <MapPin className="h-4 w-4" />
+                  <Footprints className="h-4 w-4" />
                   Walkability
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid grid-cols-3 gap-3 text-sm">
+              <CardContent className="space-y-3">
                 {listing.walk_score != null && (
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <div className={`text-2xl font-bold ${getScoreColor(listing.walk_score)}`}>
-                      {listing.walk_score}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Footprints className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Walk Score</span>
+                      </div>
+                      <span className={`text-sm font-bold ${getScoreColor(listing.walk_score)}`}>{listing.walk_score}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Walk</div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div className={`absolute inset-y-0 left-0 rounded-full transition-all ${getScoreBg(listing.walk_score)}`} style={{ width: `${listing.walk_score}%` }} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{getWalkLabel(listing.walk_score)}</p>
                   </div>
                 )}
                 {listing.transit_score != null && (
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <div className={`text-2xl font-bold ${getScoreColor(listing.transit_score)}`}>
-                      {listing.transit_score}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Bus className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Transit Score</span>
+                      </div>
+                      <span className={`text-sm font-bold ${getScoreColor(listing.transit_score)}`}>{listing.transit_score}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Transit</div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div className={`absolute inset-y-0 left-0 rounded-full transition-all ${getScoreBg(listing.transit_score)}`} style={{ width: `${listing.transit_score}%` }} />
+                    </div>
                   </div>
                 )}
                 {listing.bike_score != null && (
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <div className={`text-2xl font-bold ${getScoreColor(listing.bike_score)}`}>
-                      {listing.bike_score}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Bike className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>Bike Score</span>
+                      </div>
+                      <span className={`text-sm font-bold ${getScoreColor(listing.bike_score)}`}>{listing.bike_score}</span>
                     </div>
-                    <div className="text-xs text-muted-foreground mt-1">Bike</div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div className={`absolute inset-y-0 left-0 rounded-full transition-all ${getScoreBg(listing.bike_score)}`} style={{ width: `${listing.bike_score}%` }} />
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -500,27 +546,48 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <Wrench className="h-4 w-4" />
+                  <Sparkles className="h-4 w-4" />
                   Property Condition
-                  <Badge variant="outline" className="text-xs ml-auto">AI</Badge>
+                  <Badge variant="outline" className="text-[10px] ml-auto font-normal gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    AI Analysis
+                  </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Overall score */}
-                <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                  <div>
-                    <div className={`text-3xl font-bold ${getConditionColor(listing.condition_score)}`}>
+                {/* Overall score hero */}
+                <div className="flex items-center gap-4 p-3 rounded-lg bg-muted/50">
+                  <div className={`flex items-center justify-center w-14 h-14 rounded-full border-[3px] ${
+                    listing.condition_score >= 7 ? 'border-green-500' :
+                    listing.condition_score >= 5 ? 'border-yellow-500' : 'border-red-500'
+                  }`}>
+                    <span className={`text-xl font-bold ${getConditionColor(listing.condition_score)}`}>
                       {listing.condition_score.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-sm font-semibold ${getConditionColor(listing.condition_score)}`}>
+                        {getConditionLabel(listing.condition_score)}
+                      </span>
+                      {listing.condition_details.renovation_needed && (
+                        <Badge variant="destructive" className="text-[10px] gap-1 h-5">
+                          <AlertTriangle className="h-3 w-3" />
+                          Reno Needed
+                        </Badge>
+                      )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {getConditionLabel(listing.condition_score)} condition
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden mt-2">
+                      <div
+                        className={`absolute inset-y-0 left-0 rounded-full transition-all ${getConditionBg(listing.condition_score)}`}
+                        style={{ width: `${listing.condition_score * 10}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                      <span>Poor</span>
+                      <span>Excellent</span>
                     </div>
                   </div>
-                  {listing.condition_details.renovation_needed && (
-                    <Badge variant="destructive" className="text-xs">
-                      Reno Needed
-                    </Badge>
-                  )}
                 </div>
 
                 {/* Category breakdown — only show categories visible in photos */}
@@ -529,15 +596,26 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                     .filter((cat) => listing.condition_details![cat] != null);
                   if (cats.length === 0) return null;
                   return (
-                    <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="space-y-2">
                       {cats.map((cat) => {
                         const score = listing.condition_details![cat] as number;
                         return (
-                          <div key={cat} className="text-center p-2 rounded-lg bg-muted/50">
-                            <div className={`text-lg font-bold ${getConditionColor(score)}`}>
-                              {score.toFixed(1)}
+                          <div key={cat} className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-sm">
+                                <span>{conditionCategoryIcons[cat]}</span>
+                                <span className="capitalize">{cat}</span>
+                              </div>
+                              <span className={`text-sm font-bold ${getConditionColor(score)}`}>
+                                {score.toFixed(1)}<span className="text-muted-foreground font-normal">/10</span>
+                              </span>
                             </div>
-                            <div className="text-xs text-muted-foreground capitalize">{cat}</div>
+                            <div className="relative h-1.5 rounded-full bg-muted overflow-hidden">
+                              <div
+                                className={`absolute inset-y-0 left-0 rounded-full transition-all ${getConditionBg(score)}`}
+                                style={{ width: `${score * 10}%` }}
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -547,9 +625,11 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
                 {/* AI Notes */}
                 {listing.condition_details.notes && (
-                  <p className="text-xs text-muted-foreground italic">
-                    {listing.condition_details.notes}
-                  </p>
+                  <div className="rounded-lg bg-muted/30 p-3 border border-muted">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {listing.condition_details.notes}
+                    </p>
+                  </div>
                 )}
               </CardContent>
             </Card>
