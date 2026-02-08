@@ -33,8 +33,16 @@ def _to_float(val) -> float | None:
     return float(val)
 
 
-async def _fetch_location_data(city: str) -> dict:
-    """Fetch all location data for a city in parallel with timeouts.
+async def _fetch_location_data(
+    city: str, postal_code: str | None = None
+) -> dict:
+    """Fetch all location data for a listing in parallel with timeouts.
+
+    Uses geo_mapping to resolve listing fields (city, postal_code) to the
+    correct keys for each data source:
+    - neighbourhood_stats: borough name (from postal code FSA)
+    - rent_data: CMHC zone candidates (borough → partial match → CMA Total)
+    - demographics: normalized municipality name
 
     Returns dict with keys: safety_score, vacancy_rate, rent_cagr,
     median_household_income. All values are None if unavailable.
@@ -53,15 +61,27 @@ async def _fetch_location_data(city: str) -> dict:
         from ..db import (
             get_neighbourhood_stats_for_borough,
             get_demographics_for_city,
-            get_rent_history,
+            get_rent_history_fuzzy,
+        )
+        from ..geo_mapping import (
+            resolve_borough,
+            resolve_rent_zone,
+            resolve_demographics_key,
         )
     except ImportError:
         return result
 
+    # Resolve names before querying
+    borough = resolve_borough(city, postal_code)
+    rent_zone_candidates = resolve_rent_zone(city, postal_code)
+    demo_key = resolve_demographics_key(city)
+
     async def _get_safety():
+        if not borough:
+            return None
         try:
             return await asyncio.wait_for(
-                get_neighbourhood_stats_for_borough(city),
+                get_neighbourhood_stats_for_borough(borough),
                 timeout=_DB_QUERY_TIMEOUT,
             )
         except Exception:
@@ -70,7 +90,7 @@ async def _fetch_location_data(city: str) -> dict:
     async def _get_demographics():
         try:
             return await asyncio.wait_for(
-                get_demographics_for_city(city),
+                get_demographics_for_city(demo_key),
                 timeout=_DB_QUERY_TIMEOUT,
             )
         except Exception:
@@ -79,7 +99,7 @@ async def _fetch_location_data(city: str) -> dict:
     async def _get_rent():
         try:
             return await asyncio.wait_for(
-                get_rent_history(city, "2br", limit=10),
+                get_rent_history_fuzzy(rent_zone_candidates, "2br", limit=10),
                 timeout=_DB_QUERY_TIMEOUT,
             )
         except Exception:
@@ -230,7 +250,9 @@ async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
             interest_rate=request.interest_rate,
             expense_ratio=request.expense_ratio,
         )
-        location_data = await _fetch_location_data(request.listing.city)
+        location_data = await _fetch_location_data(
+            request.listing.city, request.listing.postal_code
+        )
         metrics = _apply_location_score(
             metrics, location_data, request.listing.condition_score
         )
@@ -254,21 +276,25 @@ async def analyze_batch(request: AnalyzeBatchRequest) -> BatchAnalysisResponse:
             expense_ratio=request.expense_ratio,
         )
 
-        # Batch-fetch location data by unique city (instead of per-listing)
-        unique_cities = list({listing.city for listing, _ in results if listing.city})
-        city_data_list = await asyncio.gather(
-            *[_fetch_location_data(city) for city in unique_cities]
+        # Batch-fetch location data by unique (city, postal_code) pairs
+        unique_keys = list({
+            (listing.city, listing.postal_code)
+            for listing, _ in results if listing.city
+        })
+        location_data_list = await asyncio.gather(
+            *[_fetch_location_data(city, pc) for city, pc in unique_keys]
         )
-        city_data_map = dict(zip(unique_cities, city_data_list))
+        location_data_map = dict(zip(unique_keys, location_data_list))
         empty_location = {
             "safety_score": None, "vacancy_rate": None,
             "rent_cagr": None, "median_household_income": None,
         }
 
-        # Apply location score using cached city data
+        # Apply location score using cached location data
         response_results = []
         for listing, metrics in results:
-            location_data = city_data_map.get(listing.city, empty_location)
+            key = (listing.city, listing.postal_code)
+            location_data = location_data_map.get(key, empty_location)
             metrics = _apply_location_score(
                 metrics, location_data, listing.condition_score
             )
@@ -437,21 +463,25 @@ async def get_top_opportunities(
     # Analyze all listings (always fresh)
     results = ranker.analyze_batch(listings)
 
-    # Batch-fetch location data by unique city
-    unique_cities = list({listing.city for listing, _ in results if listing.city})
-    city_data_list = await asyncio.gather(
-        *[_fetch_location_data(city) for city in unique_cities]
+    # Batch-fetch location data by unique (city, postal_code) pairs
+    unique_keys = list({
+        (listing.city, listing.postal_code)
+        for listing, _ in results if listing.city
+    })
+    location_data_list = await asyncio.gather(
+        *[_fetch_location_data(city, pc) for city, pc in unique_keys]
     )
-    city_data_map = dict(zip(unique_cities, city_data_list))
+    location_data_map = dict(zip(unique_keys, location_data_list))
     empty_location = {
         "safety_score": None, "vacancy_rate": None,
         "rent_cagr": None, "median_household_income": None,
     }
 
-    # Apply location score using cached city data
+    # Apply location score using cached location data
     enriched = []
     for listing, metrics in results:
-        location_data = city_data_map.get(listing.city, empty_location)
+        key = (listing.city, listing.postal_code)
+        location_data = location_data_map.get(key, empty_location)
         metrics = _apply_location_score(
             metrics, location_data, listing.condition_score
         )

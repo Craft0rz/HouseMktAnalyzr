@@ -764,6 +764,50 @@ async def get_rent_history(
     return [dict(r) for r in rows]
 
 
+async def get_rent_history_fuzzy(
+    zone_candidates: list[str], bedroom_type: str, limit: int = 20
+) -> list[dict]:
+    """Get rent data trying zone candidates in order (best match first).
+
+    For each candidate, tries exact match then partial (LIKE) match.
+    Falls back through the list until data is found.
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        for candidate in zone_candidates:
+            # Exact match
+            rows = await conn.fetch(
+                """
+                SELECT year, avg_rent, vacancy_rate, universe
+                FROM rent_data
+                WHERE zone = $1 AND bedroom_type = $2
+                ORDER BY year DESC
+                LIMIT $3
+                """,
+                candidate, bedroom_type, limit,
+            )
+            if rows:
+                return [dict(r) for r in rows]
+
+            # Partial match: CMHC zones often contain borough name
+            # e.g. "Zone 5 / Le Plateau-Mont-Royal" matches "Le Plateau-Mont-Royal"
+            rows = await conn.fetch(
+                """
+                SELECT year, avg_rent, vacancy_rate, universe
+                FROM rent_data
+                WHERE LOWER(zone) LIKE '%' || LOWER($1) || '%'
+                  AND bedroom_type = $2
+                ORDER BY year DESC
+                LIMIT $3
+                """,
+                candidate, bedroom_type, limit,
+            )
+            if rows:
+                return [dict(r) for r in rows]
+
+    return []
+
+
 async def get_rent_zones() -> list[str]:
     """Get all available CMHC zones with rent data."""
     pool = get_pool()
