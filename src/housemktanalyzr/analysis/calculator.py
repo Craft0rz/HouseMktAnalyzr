@@ -25,13 +25,18 @@ DEFAULT_EXPENSE_RATIOS = {
     "total_expense_ratio": 0.35,  # ~35% of gross rent goes to expenses
 }
 
-# Scoring weights for investment quality
+# Two-pillar scoring: Financial (70) + Location & Quality (30) = 100
 SCORING_WEIGHTS = {
-    "cap_rate": 0.25,  # Higher cap rate = better
-    "cash_flow": 0.25,  # Positive cash flow = better
-    "price_per_unit": 0.20,  # Lower price per unit = better
-    "gross_yield": 0.15,  # Higher yield = better
-    "grm": 0.15,  # Lower GRM = better
+    # Financial pillar (0-70)
+    "cap_rate": 25,       # Higher cap rate = better
+    "cash_flow": 25,      # Positive cash flow = better
+    "price_per_unit": 20, # Lower price per unit = better
+    # Location & Quality pillar (0-30)
+    "safety": 8,          # Low crime = better
+    "vacancy": 7,         # Low vacancy = high demand
+    "rent_growth": 7,     # Rising rents = upside
+    "affordability": 4,   # Rent-to-income sweet spot
+    "condition": 4,       # AI-assessed property condition
 }
 
 
@@ -398,13 +403,11 @@ class InvestmentCalculator:
         if listing.sqft and listing.sqft > 0:
             price_per_sqft = round(price / listing.sqft, 2)
 
-        # Calculate score
+        # Calculate financial score (0-70 pillar)
         score, breakdown = self._calculate_score(
             cap_rate=cap,
             cash_flow=monthly_cash_flow,
             price_per_unit=price_per_unit,
-            gross_yield=gross_yield,
-            grm=grm,
         )
 
         return InvestmentMetrics(
@@ -420,27 +423,109 @@ class InvestmentCalculator:
             score_breakdown=breakdown,
         )
 
+    @staticmethod
+    def calculate_location_score(
+        safety_score: float | None = None,
+        vacancy_rate: float | None = None,
+        rent_cagr: float | None = None,
+        rent_to_income: float | None = None,
+        condition_score: float | None = None,
+    ) -> tuple[float, dict[str, float]]:
+        """Calculate Location & Quality score (0-30 points).
+
+        This is the second pillar of the two-pillar scoring system.
+        Combined with the Financial pillar (0-70), the total is 0-100.
+
+        Args:
+            safety_score: 0-10 score from Montreal Open Data crime stats
+            vacancy_rate: CMHC vacancy rate percentage (lower is better)
+            rent_cagr: 5-year CAGR of rents in the zone (higher = appreciating)
+            rent_to_income: Rent-to-income ratio % (sweet spot 20-30%)
+            condition_score: AI-assessed property condition (1-10)
+
+        Returns:
+            (total_score, breakdown_dict) where total_score is 0-30
+        """
+        breakdown = {}
+
+        # Safety: 0-8 points
+        if safety_score is not None:
+            if safety_score >= 7:
+                breakdown["neighbourhood_safety"] = 8.0
+            elif safety_score >= 5:
+                breakdown["neighbourhood_safety"] = 5.0
+            elif safety_score >= 3:
+                breakdown["neighbourhood_safety"] = 3.0
+            else:
+                breakdown["neighbourhood_safety"] = 0.0
+
+        # Low vacancy = high demand: 0-7 points
+        if vacancy_rate is not None:
+            if vacancy_rate < 1.0:
+                breakdown["neighbourhood_vacancy"] = 7.0
+            elif vacancy_rate < 2.0:
+                breakdown["neighbourhood_vacancy"] = 5.0
+            elif vacancy_rate < 3.0:
+                breakdown["neighbourhood_vacancy"] = 3.0
+            else:
+                breakdown["neighbourhood_vacancy"] = 0.0
+
+        # Rent appreciation (CAGR 5yr): 0-7 points
+        if rent_cagr is not None:
+            if rent_cagr >= 4.0:
+                breakdown["neighbourhood_rent_growth"] = 7.0
+            elif rent_cagr >= 2.5:
+                breakdown["neighbourhood_rent_growth"] = 5.0
+            elif rent_cagr >= 1.5:
+                breakdown["neighbourhood_rent_growth"] = 3.0
+            else:
+                breakdown["neighbourhood_rent_growth"] = 0.0
+
+        # Rent affordability (rent-to-income ratio): 0-4 points
+        if rent_to_income is not None:
+            if 20 <= rent_to_income <= 28:
+                breakdown["neighbourhood_affordability"] = 4.0
+            elif 15 <= rent_to_income <= 32:
+                breakdown["neighbourhood_affordability"] = 2.0
+            else:
+                breakdown["neighbourhood_affordability"] = 0.0
+
+        # Property condition: 0-4 points
+        if condition_score is not None:
+            if condition_score >= 8:
+                breakdown["condition"] = 4.0
+            elif condition_score >= 6:
+                breakdown["condition"] = 3.0
+            elif condition_score >= 4:
+                breakdown["condition"] = 2.0
+            elif condition_score >= 2:
+                breakdown["condition"] = 1.0
+            else:
+                breakdown["condition"] = 0.0
+
+        total = min(30.0, sum(breakdown.values()))
+        return total, breakdown
+
     def _calculate_score(
         self,
         cap_rate: float,
         cash_flow: int,
         price_per_unit: int,
-        gross_yield: float,
-        grm: float,
     ) -> tuple[float, dict[str, float]]:
-        """Calculate investment score (0-100) with breakdown.
+        """Calculate financial investment score (0-70) with breakdown.
+
+        This is the Financial pillar of the two-pillar scoring system.
+        The Location & Quality pillar (0-30) is added separately via
+        calculate_location_score().
 
         Scoring criteria (Montreal multi-family market):
-        - Cap rate: 5%+ is good, 7%+ is excellent
-        - Cash flow: Positive is good, $200+/unit is excellent
-        - Price per unit: <$200k is good, <$150k is excellent
-        - Gross yield: 6%+ is good, 8%+ is excellent
-        - GRM: <12 is good, <10 is excellent
+        - Cap rate (0-25): 5%+ is good, 7%+ is excellent
+        - Cash flow (0-25): Positive is good, $200+/mo is excellent
+        - Price per unit (0-20): <$200k is good, <$150k is excellent
         """
         breakdown = {}
 
         # Cap rate score (0-25 points)
-        # 4% = 10pts, 5% = 15pts, 6% = 20pts, 7%+ = 25pts
         if cap_rate >= 7:
             cap_score = 25
         elif cap_rate >= 6:
@@ -454,7 +539,6 @@ class InvestmentCalculator:
         breakdown["cap_rate"] = round(cap_score, 1)
 
         # Cash flow score (0-25 points)
-        # Negative = 0, break-even = 10, $200/mo = 15, $400/mo = 20, $600+ = 25
         if cash_flow >= 600:
             cf_score = 25
         elif cash_flow >= 400:
@@ -464,11 +548,10 @@ class InvestmentCalculator:
         elif cash_flow >= 0:
             cf_score = 10
         else:
-            cf_score = max(0, 10 + cash_flow / 50)  # Deduct for negative
+            cf_score = max(0, 10 + cash_flow / 50)
         breakdown["cash_flow"] = round(cf_score, 1)
 
         # Price per unit score (0-20 points)
-        # <$150k = 20, <$200k = 15, <$250k = 10, <$300k = 5
         if price_per_unit < 150000:
             ppu_score = 20
         elif price_per_unit < 200000:
@@ -481,31 +564,5 @@ class InvestmentCalculator:
             ppu_score = max(0, 5 - (price_per_unit - 300000) / 100000)
         breakdown["price_per_unit"] = round(ppu_score, 1)
 
-        # Gross yield score (0-15 points)
-        # 5% = 5, 6% = 8, 7% = 10, 8%+ = 15
-        if gross_yield >= 8:
-            yield_score = 15
-        elif gross_yield >= 7:
-            yield_score = 10
-        elif gross_yield >= 6:
-            yield_score = 8
-        elif gross_yield >= 5:
-            yield_score = 5
-        else:
-            yield_score = max(0, gross_yield)
-        breakdown["gross_yield"] = round(yield_score, 1)
-
-        # GRM score (0-15 points)
-        # <10 = 15, <12 = 10, <14 = 5, >14 = 0
-        if grm < 10:
-            grm_score = 15
-        elif grm < 12:
-            grm_score = 10
-        elif grm < 14:
-            grm_score = 5
-        else:
-            grm_score = max(0, 5 - (grm - 14))
-        breakdown["grm"] = round(grm_score, 1)
-
         total_score = sum(breakdown.values())
-        return min(100, total_score), breakdown
+        return min(70, total_score), breakdown

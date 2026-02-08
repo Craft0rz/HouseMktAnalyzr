@@ -16,7 +16,7 @@ import { Card, CardContent } from '@/components/ui/card';
 const REGIONS = [
   { value: 'montreal', label: 'Montreal Island' },
   { value: 'laval', label: 'Laval' },
-  { value: 'south-shore', label: 'South Shore' },
+  { value: 'south-shore', label: 'South Shore / Montérégie' },
   { value: 'north-shore', label: 'North Shore' },
   { value: 'laurentides', label: 'Laurentides' },
   { value: 'lanaudiere', label: 'Lanaudière' },

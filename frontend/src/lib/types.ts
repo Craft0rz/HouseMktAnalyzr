@@ -281,6 +281,7 @@ export interface RentTrendResponse {
   years: number[];
   rents: number[];
   annual_growth_rate: number | null;
+  cagr_5yr: number | null;
   growth_direction: 'accelerating' | 'decelerating' | 'stable';
   forecasts: RentForecast[];
   vacancy_rate: number | null;

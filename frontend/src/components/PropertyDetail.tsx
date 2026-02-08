@@ -95,11 +95,11 @@ const getPropertyTypeLabel = (type: string) => {
   return labels[type] || type;
 };
 
-// Circular score gauge component
+// Circular score gauge component (0-100)
 function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
   const radius = (size - 12) / 2;
   const circumference = radius * 2 * Math.PI;
-  const progress = (score / 100) * circumference;
+  const progress = Math.min(score / 100, 1) * circumference;
   const strokeWidth = 8;
 
   const getColor = (s: number) => {
@@ -111,7 +111,6 @@ function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg className="transform -rotate-90" width={size} height={size}>
-        {/* Background circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -121,7 +120,6 @@ function ScoreGauge({ score, size = 120 }: { score: number; size?: number }) {
           fill="none"
           className="text-muted/20"
         />
-        {/* Progress circle */}
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -776,7 +774,9 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-muted-foreground">Annual Growth</span>
+                      <span className="text-xs text-muted-foreground">
+                        {rentTrend.cagr_5yr != null ? 'CAGR 5yr' : 'Annual Growth'}
+                      </span>
                       {rentTrend.growth_direction === 'accelerating' ? (
                         <TrendingUp className="h-3 w-3 text-orange-500" />
                       ) : rentTrend.growth_direction === 'decelerating' ? (
@@ -786,10 +786,17 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       )}
                     </div>
                     <div className="text-lg font-bold">
-                      {rentTrend.annual_growth_rate != null
-                        ? `${rentTrend.annual_growth_rate > 0 ? '+' : ''}${rentTrend.annual_growth_rate}%`
-                        : '—'}
+                      {rentTrend.cagr_5yr != null
+                        ? `${rentTrend.cagr_5yr > 0 ? '+' : ''}${rentTrend.cagr_5yr}%`
+                        : rentTrend.annual_growth_rate != null
+                          ? `${rentTrend.annual_growth_rate > 0 ? '+' : ''}${rentTrend.annual_growth_rate}%`
+                          : '—'}
                     </div>
+                    {rentTrend.cagr_5yr != null && rentTrend.annual_growth_rate != null && (
+                      <div className="text-[10px] text-muted-foreground">
+                        Linear: {rentTrend.annual_growth_rate > 0 ? '+' : ''}{rentTrend.annual_growth_rate}%/yr
+                      </div>
+                    )}
                   </div>
                   {rentTrend.vacancy_rate != null && (
                     <div className="p-3 rounded-lg bg-muted/50">
@@ -822,22 +829,24 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                 {rentTrend.rents.length >= 3 && (
                   <div>
                     <div className="text-xs text-muted-foreground mb-2">Rent History</div>
-                    <div className="flex items-end gap-1 h-16">
+                    <div className="flex items-end gap-1 h-20">
                       {(() => {
                         const recent = rentTrend.rents.slice(-8);
                         const recentYears = rentTrend.years.slice(-8);
                         const maxRent = Math.max(...recent);
-                        const minRent = Math.min(...recent);
-                        const range = maxRent - minRent || 1;
+                        // Use 0 as baseline so bars are proportional to actual rent values
                         return recent.map((rent, i) => (
                           <div
                             key={recentYears[i]}
-                            className="flex-1 flex flex-col items-center gap-1"
+                            className="flex-1 flex flex-col items-center gap-0.5"
                           >
+                            <span className="text-[8px] text-muted-foreground font-medium">
+                              ${Math.round(rent)}
+                            </span>
                             <div
-                              className="w-full bg-primary/70 rounded-sm"
+                              className="w-full bg-primary/70 rounded-sm transition-all"
                               style={{
-                                height: `${Math.max(((rent - minRent) / range) * 100, 8)}%`,
+                                height: `${Math.max((rent / maxRent) * 100, 10)}%`,
                               }}
                               title={`${recentYears[i]}: $${Math.round(rent)}`}
                             />

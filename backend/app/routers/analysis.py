@@ -2,6 +2,7 @@
 
 import logging
 import os
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -17,6 +18,99 @@ logger = logging.getLogger(__name__)
 # Shared calculator and ranker instances
 calculator = InvestmentCalculator()
 ranker = PropertyRanker()
+
+
+def _to_float(val) -> float | None:
+    """Convert Decimal or other numeric types to float."""
+    if val is None:
+        return None
+    if isinstance(val, Decimal):
+        return float(val)
+    return float(val)
+
+
+async def _apply_location_score(
+    metrics: InvestmentMetrics,
+    city: str,
+    condition_score: float | None = None,
+) -> InvestmentMetrics:
+    """Apply Location & Quality score (0-30) to the financial base (0-70).
+
+    Fetches safety, vacancy, rent CAGR, and affordability data from DB,
+    combines with AI condition score, and adds to the financial pillar.
+    If DB data is unavailable, only condition score is applied.
+    """
+    safety_score = None
+    vacancy_rate = None
+    rent_cagr = None
+    rent_to_income = None
+
+    if os.environ.get("DATABASE_URL"):
+        try:
+            from ..db import (
+                get_neighbourhood_stats_for_borough,
+                get_demographics_for_city,
+            )
+
+            # Safety score from neighbourhood stats
+            stats = await get_neighbourhood_stats_for_borough(city)
+            if stats:
+                safety_score = _to_float(stats.get("safety_score"))
+
+            # Demographics for rent-to-income ratio
+            demo = await get_demographics_for_city(city)
+            if demo and demo.get("median_household_income"):
+                income = _to_float(demo["median_household_income"])
+                if income and income > 0 and metrics.estimated_monthly_rent > 0:
+                    units = max(1, metrics.purchase_price // metrics.price_per_unit) if metrics.price_per_unit > 0 else 1
+                    per_unit_rent = metrics.estimated_monthly_rent / units
+                    rent_to_income = (per_unit_rent * 12) / income * 100
+
+            # Rent trend data (vacancy + CAGR)
+            try:
+                from ..db import get_rent_history
+                bedrooms = 2  # Default for zone-level comparison
+                bed_map = {0: "bachelor", 1: "1br", 2: "2br", 3: "3br+"}
+                bedroom_type = bed_map[bedrooms]
+                history = await get_rent_history(city, bedroom_type, limit=10)
+                if history:
+                    vacancies = [r for r in history if r.get("vacancy_rate") is not None]
+                    if vacancies:
+                        vacancy_rate = _to_float(vacancies[0]["vacancy_rate"])
+
+                    rents_with_years = [
+                        (r["year"], float(r["avg_rent"]))
+                        for r in history
+                        if r.get("avg_rent") is not None
+                    ]
+                    if len(rents_with_years) >= 2:
+                        rents_with_years.sort()
+                        n = min(5, len(rents_with_years) - 1)
+                        start_val = rents_with_years[-(n + 1)][1]
+                        end_val = rents_with_years[-1][1]
+                        if start_val > 0 and end_val > 0:
+                            rent_cagr = ((end_val / start_val) ** (1 / n) - 1) * 100
+            except Exception:
+                pass
+
+        except Exception as e:
+            logger.debug(f"Location data fetch failed for {city}: {e}")
+
+    location_score, location_breakdown = calculator.calculate_location_score(
+        safety_score=safety_score,
+        vacancy_rate=vacancy_rate,
+        rent_cagr=rent_cagr,
+        rent_to_income=rent_to_income,
+        condition_score=condition_score,
+    )
+
+    if location_score > 0:
+        metrics.score = min(100, round(metrics.score + location_score, 1))
+        metrics.score_breakdown.update(
+            {k: round(v, 1) for k, v in location_breakdown.items()}
+        )
+
+    return metrics
 
 
 class AnalyzeRequest(BaseModel):
@@ -83,7 +177,7 @@ async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
     """Analyze a single property listing.
 
     Calculates all investment metrics including cap rate, cash flow,
-    gross yield, and investment score.
+    gross yield, investment score, and neighbourhood quality bonus.
     """
     try:
         metrics = calculator.analyze_property(
@@ -91,6 +185,9 @@ async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
             down_payment_pct=request.down_payment_pct,
             interest_rate=request.interest_rate,
             expense_ratio=request.expense_ratio,
+        )
+        metrics = await _apply_location_score(
+            metrics, request.listing.city, request.listing.condition_score
         )
         return metrics
 
@@ -112,9 +209,12 @@ async def analyze_batch(request: AnalyzeBatchRequest) -> BatchAnalysisResponse:
             expense_ratio=request.expense_ratio,
         )
 
-        # Build response with combined listing + metrics
+        # Apply location score and build response
         response_results = []
         for listing, metrics in results:
+            metrics = await _apply_location_score(
+                metrics, listing.city, listing.condition_score
+            )
             response_results.append(PropertyWithMetrics(listing=listing, metrics=metrics))
 
         # Calculate summary statistics
@@ -279,6 +379,18 @@ async def get_top_opportunities(
 
     # Analyze all listings (always fresh)
     results = ranker.analyze_batch(listings)
+
+    # Apply location score to each result
+    enriched = []
+    for listing, metrics in results:
+        metrics = await _apply_location_score(
+            metrics, listing.city, listing.condition_score
+        )
+        enriched.append((listing, metrics))
+    results = enriched
+
+    # Re-sort by score (location may change ordering)
+    results.sort(key=lambda x: x[1].score, reverse=True)
 
     # Filter by minimum score
     filtered = [(l, m) for l, m in results if m.score >= min_score]

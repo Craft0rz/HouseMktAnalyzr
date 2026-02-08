@@ -28,6 +28,7 @@ class RentTrend:
     years: list[int]
     rents: list[float]
     annual_growth_rate: float | None  # percentage
+    cagr_5yr: float | None  # 5-year CAGR percentage
     growth_direction: str  # "accelerating", "decelerating", "stable"
     forecasts: list[RentForecast]
     vacancy_rate: float | None = None
@@ -38,7 +39,7 @@ def compute_trend(
     years: list[int],
     values: list[float],
     forecast_years: int = 3,
-) -> tuple[float | None, str, list[RentForecast]]:
+) -> tuple[float | None, float | None, str, list[RentForecast]]:
     """Compute linear trend and forecast from historical data.
 
     Args:
@@ -47,10 +48,10 @@ def compute_trend(
         forecast_years: How many years to forecast forward
 
     Returns:
-        (annual_growth_rate_pct, growth_direction, forecasts)
+        (annual_growth_rate_pct, cagr_5yr_pct, growth_direction, forecasts)
     """
     if len(years) < 2 or len(values) < 2:
-        return None, "stable", []
+        return None, None, "stable", []
 
     # Pair and sort
     paired = sorted(zip(years, values))
@@ -65,7 +66,7 @@ def compute_trend(
     ss_xx = sum((xs[i] - x_mean) ** 2 for i in range(n))
 
     if ss_xx == 0:
-        return None, "stable", []
+        return None, None, "stable", []
 
     slope = ss_xy / ss_xx
     intercept = y_mean - slope * x_mean
@@ -76,6 +77,15 @@ def compute_trend(
         growth_rate = (slope / current) * 100
     else:
         growth_rate = 0.0
+
+    # CAGR 5yr: compound annual growth rate over the last 5 years (or all available)
+    cagr_5yr = None
+    cagr_n = min(5, n - 1)
+    if cagr_n >= 1:
+        start_val = ys[-(cagr_n + 1)]
+        end_val = ys[-1]
+        if start_val > 0 and end_val > 0:
+            cagr_5yr = round(((end_val / start_val) ** (1 / cagr_n) - 1) * 100, 1)
 
     # Determine if growth is accelerating or decelerating
     # Compare first-half growth to second-half growth
@@ -99,12 +109,11 @@ def compute_trend(
     else:
         std_err = 0
 
-    # Forecast
-    last_year = xs[-1]
+    # Forecast: anchor from the last actual observation, project forward using slope
     forecasts = []
     for i in range(1, forecast_years + 1):
-        future_year = last_year + i
-        projected = intercept + slope * future_year
+        future_year = xs[-1] + i
+        projected = current + slope * i
         projected = max(projected, 0)  # rents can't be negative
         forecasts.append(RentForecast(
             year=future_year,
@@ -113,7 +122,7 @@ def compute_trend(
             upper_bound=round(projected + 1.96 * std_err, 0),
         ))
 
-    return round(growth_rate, 1), direction, forecasts
+    return round(growth_rate, 1), cagr_5yr, direction, forecasts
 
 
 def analyze_zone_rent(
@@ -138,7 +147,7 @@ def analyze_zone_rent(
     years = [r["year"] for r in historical_rents if r.get("rent") is not None]
     rents = [r["rent"] for r in historical_rents if r.get("rent") is not None]
 
-    growth_rate, direction, forecasts = compute_trend(years, rents)
+    growth_rate, cagr_5yr, direction, forecasts = compute_trend(years, rents)
 
     vacancy_direction = "stable"
     if current_vacancy is not None and previous_vacancy is not None:
@@ -153,6 +162,7 @@ def analyze_zone_rent(
         years=years,
         rents=rents,
         annual_growth_rate=growth_rate,
+        cagr_5yr=cagr_5yr,
         growth_direction=direction,
         forecasts=forecasts,
         vacancy_rate=current_vacancy,

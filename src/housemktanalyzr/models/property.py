@@ -135,7 +135,7 @@ class InvestmentMetrics(BaseModel):
 
     # Scoring
     score: float = Field(
-        ..., ge=0, le=100, description="Investment score from 0-100"
+        ..., ge=0, le=100, description="Investment score 0-100 (Financial 70 + Location 30)"
     )
     score_breakdown: dict[str, float] = Field(
         default_factory=dict, description="Component scores breakdown"

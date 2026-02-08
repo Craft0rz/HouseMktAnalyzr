@@ -57,14 +57,14 @@ PROPERTY_TYPE_URLS = {
     "ALL_PLEX": "/en/plexes~for-sale~{region}",  # All multi-family (duplex-quintuplex)
 }
 
-# Region name mappings for URL construction
+# Region name mappings for URL construction — uses Centris Geographic Areas (Level 1).
+# See sitemap: propertysubtype-sellingtype-geographicarea-1.xml
 REGION_URL_MAPPING = {
     "montreal": "montreal-island",
     "laval": "laval",
-    "south-shore": "montreal-south-shore",  # Rive-Sud (includes Longueuil)
-    "rive-sud": "montreal-south-shore",
-    "monteregie": "monteregie",
-    "north-shore": "north-shore",
+    "south-shore": "monteregie",      # full Montérégie geographic area
+    "rive-sud": "monteregie",
+    "north-shore": "montreal-north-shore",
     "laurentides": "laurentides",
     "lanaudiere": "lanaudiere",
 }
@@ -1115,34 +1115,33 @@ class CentrisScraper(DataSource):
         enrich: bool = False,
         min_price: Optional[int] = None,
         max_price: Optional[int] = None,
+        max_pages: int = 10,
     ) -> list[PropertyListing]:
-        """Fetch listings across multiple property types for more results.
+        """Fetch listings across multiple property types with full pagination.
 
-        Centris returns ~20 listings per search due to AJAX pagination.
-        This method works around that by searching property-type specific URLs
-        (e.g., /duplexes~for-sale, /triplexes~for-sale) and combining results.
+        Uses AJAX pagination (via fetch_all_listings) for each property-type
+        URL to retrieve all results, not just the first page.
 
         Args:
-            region: Geographic region (e.g., "montreal", "laval")
+            region: Geographic region (e.g., "montreal", "south-shore")
             property_types: Types to search. Defaults to all multi-family
                            (DUPLEX, TRIPLEX, QUADPLEX, MULTIPLEX)
             enrich: If True, fetch detail page for each listing (slower)
             min_price: Optional minimum price filter (applied client-side)
             max_price: Optional maximum price filter (applied client-side)
+            max_pages: Max pages per type/slug combo (default 10 = ~200 listings)
 
         Returns:
             Deduplicated list of PropertyListing objects from all types
 
         Example:
-            # Get ~60-80 multi-family listings
             listings = await scraper.fetch_listings_multi_type(
-                region="montreal",
+                region="south-shore",
                 property_types=["DUPLEX", "TRIPLEX", "QUADPLEX"],
                 min_price=400000,
                 max_price=1000000,
             )
         """
-        # Default to all multi-family types
         if property_types is None:
             property_types = ["DUPLEX", "TRIPLEX", "ALL_PLEX"]
 
@@ -1156,47 +1155,52 @@ class CentrisScraper(DataSource):
                 if t not in search_types:
                     search_types.append(t)
 
+        region_key = region.lower()
+        slug = REGION_URL_MAPPING.get(region_key, region_key)
+
         all_listings: dict[str, PropertyListing] = {}
 
         for prop_type in search_types:
-            logger.info(f"Searching {prop_type} listings in {region}...")
+            url_pattern = PROPERTY_TYPE_URLS.get(prop_type)
+            if not url_pattern:
+                continue
+
+            search_url = f"{self.BASE_URL}{url_pattern.format(region=slug)}"
+            logger.info(f"Searching {prop_type} in {slug}...")
 
             try:
-                type_listings = await self._fetch_by_type_url(prop_type, region)
+                type_listings = await self.fetch_all_listings(
+                    search_url=search_url,
+                    enrich=False,
+                    min_price=min_price,
+                    max_price=max_price,
+                    max_pages=max_pages,
+                )
 
-                # Apply price filters client-side
-                filtered = type_listings
-                if min_price:
-                    filtered = [l for l in filtered if l.price >= min_price]
-                if max_price:
-                    filtered = [l for l in filtered if l.price <= max_price]
-
-                # Deduplicate by listing ID
                 new_count = 0
-                for listing in filtered:
+                for listing in type_listings:
                     if listing.id not in all_listings:
                         all_listings[listing.id] = listing
                         new_count += 1
 
                 logger.info(
-                    f"{prop_type}: found {len(type_listings)}, "
-                    f"{len(filtered)} in price range, {new_count} new unique"
+                    f"{prop_type}/{slug}: {len(type_listings)} found, "
+                    f"{new_count} new unique"
                 )
 
             except (CaptchaError, RateLimitError) as e:
                 logger.warning(f"Search stopped due to: {e}")
                 break
             except Exception as e:
-                logger.error(f"Error searching {prop_type}: {e}")
+                logger.error(f"Error searching {prop_type}/{slug}: {e}")
 
         logger.info(
-            f"Multi-type search complete: {len(property_types)} types, "
+            f"Multi-type search complete: {len(search_types)} types, "
             f"{len(all_listings)} unique listings"
         )
 
         result = list(all_listings.values())
 
-        # Optionally enrich with detail page data
         if enrich:
             logger.info(f"Enriching {len(result)} listings with detail data...")
             enriched = []

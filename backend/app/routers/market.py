@@ -256,6 +256,7 @@ class RentTrendResponse(BaseModel):
     years: list[int]
     rents: list[float]
     annual_growth_rate: float | None
+    cagr_5yr: float | None
     growth_direction: str
     forecasts: list[RentForecastResponse]
     vacancy_rate: float | None
@@ -335,6 +336,7 @@ async def get_rent_trend(
                     years=trend.years,
                     rents=trend.rents,
                     annual_growth_rate=trend.annual_growth_rate,
+                    cagr_5yr=trend.cagr_5yr,
                     growth_direction=trend.growth_direction,
                     forecasts=[
                         RentForecastResponse(
@@ -373,6 +375,7 @@ async def get_rent_trend(
             years=trend.years,
             rents=trend.rents,
             annual_growth_rate=trend.annual_growth_rate,
+            cagr_5yr=trend.cagr_5yr,
             growth_direction=trend.growth_direction,
             forecasts=[
                 RentForecastResponse(
