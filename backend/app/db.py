@@ -78,6 +78,20 @@ async def _create_tables():
             CREATE INDEX IF NOT EXISTS idx_properties_region_type
             ON properties(region, property_type)
         """)
+        # Lifecycle tracking columns
+        await conn.execute("""
+            ALTER TABLE properties ADD COLUMN IF NOT EXISTS first_seen_at TIMESTAMPTZ
+        """)
+        await conn.execute("""
+            ALTER TABLE properties ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ
+        """)
+        await conn.execute("""
+            ALTER TABLE properties ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active'
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_properties_status
+            ON properties(status)
+        """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
@@ -283,18 +297,20 @@ async def cache_listings(
 
             await conn.execute(
                 """
-                INSERT INTO properties (id, source, city, property_type, price, data, region, fetched_at, expires_at)
-                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9)
+                INSERT INTO properties (id, source, city, property_type, price, data, region, fetched_at, expires_at, first_seen_at, last_seen_at, status)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $10, 'active')
                 ON CONFLICT (id) DO UPDATE SET
                     data = EXCLUDED.data,
                     price = EXCLUDED.price,
                     region = COALESCE(EXCLUDED.region, properties.region),
                     fetched_at = EXCLUDED.fetched_at,
-                    expires_at = EXCLUDED.expires_at
+                    expires_at = EXCLUDED.expires_at,
+                    last_seen_at = EXCLUDED.last_seen_at,
+                    status = 'active'
                 """,
                 listing.id, listing.source, listing.city,
                 listing.property_type.value, listing.price,
-                data, region, now, expires,
+                data, region, now, expires, now,
             )
 
     if price_changes:
@@ -309,15 +325,25 @@ async def get_cached_listings(
     max_price: Optional[int] = None,
     region: Optional[str] = None,
     limit: int = 100,
+    include_stale: bool = False,
 ) -> list[dict]:
-    """Get non-expired cached listings matching filters.
+    """Get cached listings matching filters.
+
+    By default returns only active (non-expired) listings.
+    With include_stale=True, also returns stale/recently-delisted listings.
 
     Returns list of raw dicts (parsed from JSONB data column).
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
 
-    conditions = ["expires_at > $1"]
+    if include_stale:
+        # Show active + stale + recently delisted (last 7 days)
+        conditions = [
+            "(expires_at > $1 OR (status IN ('stale', 'delisted') AND last_seen_at > $1 - INTERVAL '7 days'))"
+        ]
+    else:
+        conditions = ["expires_at > $1"]
     params: list = [now]
     idx = 2
 
@@ -1155,3 +1181,178 @@ async def get_scraper_stats() -> dict:
         ],
         "total": total or 0,
     }
+
+
+# --- Listing lifecycle helpers ---
+
+async def get_price_history(property_id: str) -> list[dict]:
+    """Get all price changes for a listing, newest first."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT old_price, new_price, recorded_at
+            FROM price_history
+            WHERE property_id = $1
+            ORDER BY recorded_at DESC
+            """,
+            property_id,
+        )
+    return [
+        {
+            "old_price": r["old_price"],
+            "new_price": r["new_price"],
+            "change": r["new_price"] - r["old_price"],
+            "change_pct": round(
+                (r["new_price"] - r["old_price"]) / r["old_price"] * 100, 1
+            ) if r["old_price"] else 0,
+            "recorded_at": r["recorded_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+async def get_listing_lifecycle(property_id: str) -> Optional[dict]:
+    """Get lifecycle metadata for a listing (first_seen, last_seen, status, DOM)."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT first_seen_at, last_seen_at, status, price
+            FROM properties WHERE id = $1
+            """,
+            property_id,
+        )
+    if not row:
+        return None
+
+    first_seen = row["first_seen_at"]
+    last_seen = row["last_seen_at"]
+    now = datetime.now(timezone.utc)
+
+    days_on_market = None
+    if first_seen:
+        days_on_market = (now - first_seen).days
+
+    return {
+        "first_seen_at": first_seen.isoformat() if first_seen else None,
+        "last_seen_at": last_seen.isoformat() if last_seen else None,
+        "status": row["status"] or "active",
+        "days_on_market": days_on_market,
+        "current_price": row["price"],
+    }
+
+
+async def get_batch_lifecycle() -> list[dict]:
+    """Get lifecycle metadata for all non-delisted listings.
+
+    Returns list of dicts with id, status, first_seen_at, days_on_market.
+    Used by frontend to render status badges and DOM column.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, first_seen_at, last_seen_at, status
+            FROM properties
+            WHERE status IN ('active', 'stale')
+              OR (status = 'delisted' AND last_seen_at > NOW() - INTERVAL '7 days')
+            """
+        )
+    results = []
+    for r in rows:
+        first_seen = r["first_seen_at"]
+        days_on_market = (now - first_seen).days if first_seen else None
+        results.append({
+            "id": r["id"],
+            "status": r["status"] or "active",
+            "first_seen_at": first_seen.isoformat() if first_seen else None,
+            "last_seen_at": r["last_seen_at"].isoformat() if r["last_seen_at"] else None,
+            "days_on_market": days_on_market,
+        })
+    return results
+
+
+async def get_recent_price_changes(limit: int = 100) -> list[dict]:
+    """Get listings with recent price changes (for badge display).
+
+    Returns property_id, latest old_price, new_price, change, change_pct,
+    and recorded_at for listings that had a price change in the last 30 days.
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (ph.property_id)
+                ph.property_id, ph.old_price, ph.new_price, ph.recorded_at
+            FROM price_history ph
+            JOIN properties p ON p.id = ph.property_id
+            WHERE ph.recorded_at > NOW() - INTERVAL '30 days'
+              AND p.status = 'active'
+            ORDER BY ph.property_id, ph.recorded_at DESC
+            """,
+        )
+    return [
+        {
+            "property_id": r["property_id"],
+            "old_price": r["old_price"],
+            "new_price": r["new_price"],
+            "change": r["new_price"] - r["old_price"],
+            "change_pct": round(
+                (r["new_price"] - r["old_price"]) / r["old_price"] * 100, 1
+            ) if r["old_price"] else 0,
+            "recorded_at": r["recorded_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+async def mark_stale_listings(ttl_hours: int = 6) -> int:
+    """Mark listings as 'stale' if they haven't been seen in 2+ scrape cycles.
+
+    A listing is stale if its last_seen_at is older than 2x the TTL.
+    Returns count of newly stale listings.
+    """
+    pool = get_pool()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours * 2)
+
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE properties SET status = 'stale'
+            WHERE status = 'active'
+              AND last_seen_at IS NOT NULL
+              AND last_seen_at < $1
+            """,
+            cutoff,
+        )
+    # asyncpg returns "UPDATE N"
+    count = int(result.split()[-1])
+    if count:
+        logger.info(f"Marked {count} listings as stale (not seen since {cutoff.isoformat()})")
+    return count
+
+
+async def mark_delisted(hours: int = 48) -> int:
+    """Mark stale listings as 'delisted' if not seen for 48+ hours.
+
+    Returns count of newly delisted listings.
+    """
+    pool = get_pool()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE properties SET status = 'delisted'
+            WHERE status = 'stale'
+              AND last_seen_at IS NOT NULL
+              AND last_seen_at < $1
+            """,
+            cutoff,
+        )
+    count = int(result.split()[-1])
+    if count:
+        logger.info(f"Marked {count} listings as delisted (not seen for {hours}+ hours)")
+    return count

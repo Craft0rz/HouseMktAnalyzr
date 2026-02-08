@@ -16,6 +16,123 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+@router.get("/price-changes")
+async def get_recent_price_changes():
+    """Get recent price changes across all active listings (for badges)."""
+    if not _has_db():
+        return {"changes": {}}
+
+    try:
+        from ..db import get_recent_price_changes as db_get_changes
+        changes = await db_get_changes()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get price changes: {str(e)}")
+
+    # Return as a dict keyed by property_id for O(1) lookup in frontend
+    return {
+        "changes": {
+            c["property_id"]: {
+                "old_price": c["old_price"],
+                "new_price": c["new_price"],
+                "change": c["change"],
+                "change_pct": c["change_pct"],
+                "recorded_at": c["recorded_at"],
+            }
+            for c in changes
+        }
+    }
+
+
+@router.get("/lifecycle")
+async def get_batch_lifecycle():
+    """Get lifecycle data (status, DOM, first_seen) for all listings.
+
+    Returns a map of property_id → {status, days_on_market, first_seen_at}
+    for active, stale, and recently-delisted listings.
+    """
+    if not _has_db():
+        return {"listings": {}}
+
+    try:
+        from ..db import get_batch_lifecycle as db_get_lifecycle
+        items = await db_get_lifecycle()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get lifecycle data: {str(e)}")
+
+    return {
+        "listings": {
+            item["id"]: {
+                "status": item["status"],
+                "days_on_market": item["days_on_market"],
+                "first_seen_at": item["first_seen_at"],
+                "last_seen_at": item["last_seen_at"],
+            }
+            for item in items
+        }
+    }
+
+
+@router.get("/recently-removed")
+async def get_recently_removed(
+    region: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """Get listings that were recently delisted (disappeared from Centris).
+
+    Returns properties with status 'stale' or 'delisted' that were
+    last seen within the past 7 days.
+    """
+    if not _has_db():
+        return {"listings": [], "count": 0}
+
+    try:
+        from ..db import get_pool
+        import json
+
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            params: list = []
+            idx = 1
+
+            conditions = [
+                "status IN ('stale', 'delisted')",
+                "last_seen_at > NOW() - INTERVAL '7 days'",
+            ]
+            if region:
+                conditions.append(f"region = ${idx}")
+                params.append(region)
+                idx += 1
+
+            where = " AND ".join(conditions)
+            query = f"""
+                SELECT data, status, first_seen_at, last_seen_at, price
+                FROM properties
+                WHERE {where}
+                ORDER BY last_seen_at DESC
+                LIMIT ${idx}
+            """
+            params.append(limit)
+            rows = await conn.fetch(query, *params)
+
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        results = []
+        for row in rows:
+            listing_data = json.loads(row["data"])
+            first_seen = row["first_seen_at"]
+            results.append({
+                "listing": listing_data,
+                "status": row["status"],
+                "last_seen_at": row["last_seen_at"].isoformat() if row["last_seen_at"] else None,
+                "days_on_market": (now - first_seen).days if first_seen else None,
+            })
+
+        return {"listings": results, "count": len(results)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get removed listings: {str(e)}")
+
+
 def _has_db() -> bool:
     return bool(os.environ.get("DATABASE_URL"))
 
@@ -212,6 +329,48 @@ async def get_all_listings(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"All-listings search failed: {str(e)}")
+
+
+@router.get("/{listing_id}/price-history")
+async def get_price_history(listing_id: str):
+    """Get price change history for a specific listing."""
+    normalized_id = listing_id.strip()
+    if normalized_id.isdigit():
+        normalized_id = f"centris-{normalized_id}"
+
+    if not _has_db():
+        return {"property_id": normalized_id, "changes": [], "total_change": 0, "total_change_pct": 0}
+
+    try:
+        from ..db import get_price_history as db_get_price_history, get_listing_lifecycle
+        changes = await db_get_price_history(normalized_id)
+        lifecycle = await get_listing_lifecycle(normalized_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get price history: {str(e)}")
+
+    total_change = 0
+    total_change_pct = 0.0
+    original_price = None
+    current_price = lifecycle["current_price"] if lifecycle else None
+
+    if changes:
+        # changes are newest-first; oldest change has the original price
+        original_price = changes[-1]["old_price"]
+        if current_price and original_price:
+            total_change = current_price - original_price
+            total_change_pct = round(total_change / original_price * 100, 1)
+
+    return {
+        "property_id": normalized_id,
+        "current_price": current_price,
+        "original_price": original_price,
+        "total_change": total_change,
+        "total_change_pct": total_change_pct,
+        "changes": changes,
+        "days_on_market": lifecycle["days_on_market"] if lifecycle else None,
+        "status": lifecycle["status"] if lifecycle else "active",
+        "first_seen_at": lifecycle["first_seen_at"] if lifecycle else None,
+    }
 
 
 @router.get("/{listing_id}", response_model=PropertyListing)

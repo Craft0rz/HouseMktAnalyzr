@@ -340,3 +340,89 @@ async def toggle_status(item_id: str) -> PortfolioItemResponse:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to toggle status: {str(e)}")
+
+
+@router.get("/notifications/updates")
+async def get_portfolio_updates():
+    """Get price changes and status updates for watched/owned properties.
+
+    Cross-references portfolio items with price_history and properties tables
+    to surface notifications about portfolio properties.
+    """
+    try:
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            # Get all portfolio property_ids
+            portfolio_rows = await conn.fetch(
+                "SELECT property_id, address, status as portfolio_status FROM portfolio"
+            )
+            if not portfolio_rows:
+                return {"notifications": [], "count": 0}
+
+            property_ids = [r["property_id"] for r in portfolio_rows]
+            portfolio_map = {r["property_id"]: dict(r) for r in portfolio_rows}
+
+            # Get price changes for these properties (last 30 days)
+            placeholders = ", ".join(f"${i+1}" for i in range(len(property_ids)))
+            price_changes = await conn.fetch(
+                f"""
+                SELECT DISTINCT ON (property_id)
+                    property_id, old_price, new_price, recorded_at
+                FROM price_history
+                WHERE property_id IN ({placeholders})
+                  AND recorded_at > NOW() - INTERVAL '30 days'
+                ORDER BY property_id, recorded_at DESC
+                """,
+                *property_ids,
+            )
+
+            # Get lifecycle status for these properties
+            status_rows = await conn.fetch(
+                f"""
+                SELECT id, status, last_seen_at
+                FROM properties
+                WHERE id IN ({placeholders})
+                """,
+                *property_ids,
+            )
+            status_map = {r["id"]: dict(r) for r in status_rows}
+
+        notifications = []
+
+        # Price change notifications
+        for pc in price_changes:
+            pid = pc["property_id"]
+            info = portfolio_map.get(pid, {})
+            change = pc["new_price"] - pc["old_price"]
+            notifications.append({
+                "type": "price_drop" if change < 0 else "price_increase",
+                "property_id": pid,
+                "address": info.get("address", "Unknown"),
+                "old_price": pc["old_price"],
+                "new_price": pc["new_price"],
+                "change": change,
+                "change_pct": round(change / pc["old_price"] * 100, 1) if pc["old_price"] else 0,
+                "recorded_at": pc["recorded_at"].isoformat(),
+            })
+
+        # Status change notifications (stale/delisted)
+        for pid, info in portfolio_map.items():
+            prop_status = status_map.get(pid, {})
+            listing_status = prop_status.get("status")
+            if listing_status in ("stale", "delisted"):
+                last_seen = prop_status.get("last_seen_at")
+                notifications.append({
+                    "type": "status_change",
+                    "property_id": pid,
+                    "address": info.get("address", "Unknown"),
+                    "listing_status": listing_status,
+                    "last_seen_at": last_seen.isoformat() if last_seen else None,
+                })
+
+        # Sort by most recent first
+        notifications.sort(key=lambda n: n.get("recorded_at", n.get("last_seen_at", "")), reverse=True)
+
+        return {"notifications": notifications, "count": len(notifications)}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get portfolio updates: {str(e)}")

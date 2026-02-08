@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2, Search, Archive } from 'lucide-react';
 import { SearchFilters, type SearchFilters as SearchFiltersType } from '@/components/SearchFilters';
-import { PropertyTable } from '@/components/PropertyTable';
+import { PropertyTable, type StatusFilter } from '@/components/PropertyTable';
 import { PropertyDetail } from '@/components/PropertyDetail';
 import { ComparisonBar } from '@/components/ComparisonBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,13 +12,31 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { analysisApi, propertiesApi } from '@/lib/api';
-import type { PropertyWithMetrics, BatchAnalysisResponse } from '@/lib/types';
+import type { PropertyWithMetrics, BatchAnalysisResponse, RemovedListing } from '@/lib/types';
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'new', label: 'New (≤7d)' },
+  { value: 'price_drop', label: 'Price Drops' },
+  { value: 'stale', label: 'Stale' },
+  { value: 'delisted', label: 'Removed' },
+];
 
 export default function SearchPage() {
   const [results, setResults] = useState<BatchAnalysisResponse | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [mlsNumber, setMlsNumber] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [removedListings, setRemovedListings] = useState<RemovedListing[]>([]);
+  const [showRemoved, setShowRemoved] = useState(false);
+
+  // Fetch recently removed listings
+  useEffect(() => {
+    propertiesApi.getRecentlyRemoved()
+      .then((res) => setRemovedListings(res.listings))
+      .catch(() => {});
+  }, []);
 
   const idLookupMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -140,31 +158,47 @@ export default function SearchPage() {
 
       {results && (
         <>
-          <div className="flex items-center gap-4">
-            <h2 className="text-xl font-semibold">
-              {results.count} Properties Found
-            </h2>
-            {results.summary.avg_score && (
-              <Badge variant="secondary">
-                Avg Score: {results.summary.avg_score.toFixed(0)}
-              </Badge>
-            )}
-            {results.summary.avg_cap_rate && (
-              <Badge variant="secondary">
-                Avg Cap Rate: {results.summary.avg_cap_rate.toFixed(1)}%
-              </Badge>
-            )}
-            {results.summary.positive_cash_flow_count !== undefined && (
-              <Badge variant="secondary">
-                {results.summary.positive_cash_flow_count} Positive Cash Flow
-              </Badge>
-            )}
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-semibold">
+                {results.count} Properties Found
+              </h2>
+              {results.summary.avg_score && (
+                <Badge variant="secondary">
+                  Avg Score: {results.summary.avg_score.toFixed(0)}
+                </Badge>
+              )}
+              {results.summary.avg_cap_rate && (
+                <Badge variant="secondary">
+                  Avg Cap Rate: {results.summary.avg_cap_rate.toFixed(1)}%
+                </Badge>
+              )}
+              {results.summary.positive_cash_flow_count !== undefined && (
+                <Badge variant="secondary">
+                  {results.summary.positive_cash_flow_count} Positive Cash Flow
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {STATUS_FILTERS.map((f) => (
+                <Button
+                  key={f.value}
+                  variant={statusFilter === f.value ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setStatusFilter(f.value)}
+                >
+                  {f.label}
+                </Button>
+              ))}
+            </div>
           </div>
 
           <PropertyTable
             data={results.results}
             onRowClick={handleRowClick}
             isLoading={searchMutation.isPending}
+            statusFilter={statusFilter}
           />
         </>
       )}
@@ -184,6 +218,67 @@ export default function SearchPage() {
               <li>Click any row to see full property details</li>
             </ul>
           </CardContent>
+        </Card>
+      )}
+
+      {/* Recently Removed */}
+      {removedListings.length > 0 && (
+        <Card>
+          <CardHeader className="cursor-pointer" onClick={() => setShowRemoved(!showRemoved)}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Archive className="h-5 w-5 text-muted-foreground" />
+                <CardTitle className="text-lg">Recently Removed</CardTitle>
+                <Badge variant="secondary">{removedListings.length}</Badge>
+              </div>
+              <Button variant="ghost" size="sm">
+                {showRemoved ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+            <CardDescription>
+              Listings that went stale or were delisted in the last 7 days
+            </CardDescription>
+          </CardHeader>
+          {showRemoved && (
+            <CardContent>
+              <div className="space-y-2">
+                {removedListings.map((item) => {
+                  const dom = item.days_on_market;
+                  return (
+                    <div
+                      key={item.listing.id}
+                      className="flex items-center justify-between p-3 rounded-md border hover:bg-muted/50 cursor-pointer"
+                      onClick={() => {
+                        setSelectedProperty({ listing: item.listing, metrics: {} as PropertyWithMetrics['metrics'] });
+                        setDetailOpen(true);
+                      }}
+                    >
+                      <div>
+                        <div className="font-medium">{item.listing.address}</div>
+                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                          <span>{item.listing.city}</span>
+                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">
+                            {item.status}
+                          </Badge>
+                          {dom !== null && <span>{dom}d on market</span>}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-medium">
+                          {new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(item.listing.price)}
+                        </div>
+                        {item.last_seen_at && (
+                          <div className="text-xs text-muted-foreground">
+                            Last seen {new Date(item.last_seen_at).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 

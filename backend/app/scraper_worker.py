@@ -16,6 +16,7 @@ from .db import (
     upsert_rent_data_batch, get_rent_data_age,
     upsert_demographics_batch, get_demographics_age,
     upsert_neighbourhood_stats_batch, get_neighbourhood_stats_age,
+    mark_stale_listings, mark_delisted,
 )
 
 logger = logging.getLogger(__name__)
@@ -147,6 +148,15 @@ class ScraperWorker:
                 f"Scrape cycle finished: {total_stored} listings stored, "
                 f"{len(errors)} errors, {duration:.0f}s elapsed"
             )
+
+        # Mark listings not seen recently as stale/delisted
+        try:
+            stale = await mark_stale_listings(ttl_hours=self._ttl_hours)
+            delisted = await mark_delisted(hours=48)
+            if stale or delisted:
+                logger.info(f"Lifecycle sweep: {stale} stale, {delisted} delisted")
+        except Exception:
+            logger.exception("Lifecycle sweep failed")
 
         # Refresh market data (interest rates, CPI) if stale
         await self._refresh_market_data()

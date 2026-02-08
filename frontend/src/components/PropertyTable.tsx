@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ColumnDef,
   flexRender,
@@ -10,7 +10,7 @@ import {
   SortingState,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowUpDown, ExternalLink, Plus, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ArrowUpDown, ExternalLink, Plus, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, TrendingDown, TrendingUp, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -29,13 +29,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useComparison } from '@/lib/comparison-context';
-import type { PropertyWithMetrics } from '@/lib/types';
+import { propertiesApi } from '@/lib/api';
+import type { PropertyWithMetrics, PriceChangeMap, LifecycleMap } from '@/lib/types';
+
+export type StatusFilter = 'all' | 'active' | 'new' | 'stale' | 'delisted' | 'price_drop';
 
 interface PropertyTableProps {
   data: PropertyWithMetrics[];
   onRowClick?: (property: PropertyWithMetrics) => void;
   isLoading?: boolean;
   showCompareColumn?: boolean;
+  statusFilter?: StatusFilter;
 }
 
 const formatPrice = (price: number) => {
@@ -78,11 +82,47 @@ const getPropertyTypeLabel = (type: string) => {
   return labels[type] || type;
 };
 
-export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn = true }: PropertyTableProps) {
+export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn = true, statusFilter = 'all' }: PropertyTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'metrics_score', desc: true },
   ]);
+  const [priceChanges, setPriceChanges] = useState<PriceChangeMap>({});
+  const [lifecycle, setLifecycle] = useState<LifecycleMap>({});
   const { addProperty, removeProperty, isSelected, canAdd } = useComparison();
+
+  // Fetch recent price changes and lifecycle data when data loads
+  useEffect(() => {
+    if (data.length === 0) return;
+    propertiesApi.getRecentPriceChanges()
+      .then((res) => setPriceChanges(res.changes))
+      .catch(() => {});
+    propertiesApi.getLifecycle()
+      .then((res) => setLifecycle(res.listings))
+      .catch(() => {});
+  }, [data.length]);
+
+  // Filter data based on status filter
+  const filteredData = useMemo(() => {
+    if (statusFilter === 'all') return data;
+    return data.filter((item) => {
+      const lc = lifecycle[item.listing.id];
+      const pc = priceChanges[item.listing.id];
+      switch (statusFilter) {
+        case 'active':
+          return !lc || lc.status === 'active';
+        case 'new':
+          return lc && lc.days_on_market !== null && lc.days_on_market <= 7;
+        case 'stale':
+          return lc?.status === 'stale';
+        case 'delisted':
+          return lc?.status === 'delisted';
+        case 'price_drop':
+          return pc && pc.change < 0;
+        default:
+          return true;
+      }
+    });
+  }, [data, statusFilter, lifecycle, priceChanges]);
 
   const handleCompareToggle = (e: React.MouseEvent, property: PropertyWithMetrics) => {
     e.stopPropagation();
@@ -164,12 +204,29 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
     {
       accessorKey: 'listing.address',
       header: 'Address',
-      cell: ({ row }) => (
-        <div className="max-w-[200px]">
-          <div className="font-medium truncate">{row.original.listing.address}</div>
-          <div className="text-sm text-muted-foreground">{row.original.listing.city}</div>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const lc = lifecycle[row.original.listing.id];
+        const isNew = lc && lc.days_on_market !== null && lc.days_on_market <= 7;
+        const isStale = lc?.status === 'stale';
+        const isDelisted = lc?.status === 'delisted';
+        return (
+          <div className="max-w-[220px]">
+            <div className="flex items-center gap-1.5">
+              <span className="font-medium truncate">{row.original.listing.address}</span>
+              {isNew && (
+                <Badge className="text-[9px] px-1 py-0 h-4 bg-blue-500 hover:bg-blue-500">New</Badge>
+              )}
+              {isStale && (
+                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-yellow-500/50 text-yellow-600">Stale</Badge>
+              )}
+              {isDelisted && (
+                <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">Removed</Badge>
+              )}
+            </div>
+            <div className="text-sm text-muted-foreground">{row.original.listing.city}</div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'listing.property_type',
@@ -191,12 +248,54 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           <ArrowUpDown className="ml-2 h-4 w-4" />
         </Button>
       ),
-      cell: ({ row }) => formatPrice(row.original.listing.price),
+      cell: ({ row }) => {
+        const pc = priceChanges[row.original.listing.id];
+        const isDown = pc && pc.change < 0;
+        const isUp = pc && pc.change > 0;
+        return (
+          <div className="flex items-center gap-1.5">
+            <span>{formatPrice(row.original.listing.price)}</span>
+            {isDown && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-green-500/50 text-green-600 gap-0.5">
+                <TrendingDown className="h-3 w-3" />
+                {pc.change_pct}%
+              </Badge>
+            )}
+            {isUp && (
+              <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 border-red-500/50 text-red-600 gap-0.5">
+                <TrendingUp className="h-3 w-3" />
+                +{pc.change_pct}%
+              </Badge>
+            )}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'listing.units',
       header: 'Units',
       cell: ({ row }) => row.original.listing.units,
+    },
+    {
+      id: 'dom',
+      accessorFn: (row) => lifecycle[row.listing.id]?.days_on_market ?? 9999,
+      header: ({ column }) => (
+        <Button
+          variant="ghost"
+          onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
+        >
+          <Clock className="mr-1 h-3.5 w-3.5" />
+          DOM
+          <ArrowUpDown className="ml-1 h-4 w-4" />
+        </Button>
+      ),
+      cell: ({ row }) => {
+        const lc = lifecycle[row.original.listing.id];
+        if (!lc || lc.days_on_market === null) return <span className="text-muted-foreground">-</span>;
+        const dom = lc.days_on_market;
+        const color = dom <= 7 ? 'text-blue-600' : dom <= 30 ? 'text-foreground' : dom <= 60 ? 'text-yellow-600' : 'text-red-600';
+        return <span className={`tabular-nums ${color}`}>{dom}d</span>;
+      },
     },
     {
       accessorKey: 'metrics.cap_rate',
@@ -273,7 +372,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
   ];
 
   const table = useReactTable({
-    data,
+    data: filteredData,
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -308,7 +407,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
   return (
     <div className="space-y-4">
       <div className="rounded-md border overflow-x-auto">
-        <Table className="min-w-[900px]">
+        <Table className="min-w-[1000px]">
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>

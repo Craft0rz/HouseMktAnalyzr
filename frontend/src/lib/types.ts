@@ -333,3 +333,65 @@ export interface NeighbourhoodResponse {
   safety_score: number | null;
   gentrification_signal: string | null;
 }
+
+// Price history & lifecycle types
+export interface PriceChange {
+  old_price: number;
+  new_price: number;
+  change: number;
+  change_pct: number;
+  recorded_at: string;
+}
+
+export interface PriceHistoryResponse {
+  property_id: string;
+  current_price: number | null;
+  original_price: number | null;
+  total_change: number;
+  total_change_pct: number;
+  changes: PriceChange[];
+  days_on_market: number | null;
+  status: string;
+  first_seen_at: string | null;
+}
+
+export interface PriceChangeMap {
+  [property_id: string]: {
+    old_price: number;
+    new_price: number;
+    change: number;
+    change_pct: number;
+    recorded_at: string;
+  };
+}
+
+export interface LifecycleData {
+  status: 'active' | 'stale' | 'delisted';
+  days_on_market: number | null;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+}
+
+export interface LifecycleMap {
+  [property_id: string]: LifecycleData;
+}
+
+export interface PortfolioNotification {
+  type: 'price_drop' | 'price_increase' | 'status_change';
+  property_id: string;
+  address: string;
+  old_price?: number;
+  new_price?: number;
+  change?: number;
+  change_pct?: number;
+  recorded_at?: string;
+  listing_status?: string;
+  last_seen_at?: string;
+}
+
+export interface RemovedListing {
+  listing: PropertyListing;
+  status: string;
+  last_seen_at: string | null;
+  days_on_market: number | null;
+}

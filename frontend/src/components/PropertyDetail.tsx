@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock } from 'lucide-react';
+import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,7 +18,7 @@ import {
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
 import { propertiesApi, marketApi } from '@/lib/api';
-import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse, DemographicProfile, NeighbourhoodResponse } from '@/lib/types';
+import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse, DemographicProfile, NeighbourhoodResponse, PriceHistoryResponse } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -197,6 +197,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [rentTrend, setRentTrend] = useState<RentTrendResponse | null>(null);
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
   const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
+  const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
@@ -206,6 +207,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
       setRentTrend(null);
       setDemographics(null);
       setNeighbourhood(null);
+      setPriceHistory(null);
       return;
     }
 
@@ -224,6 +226,11 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     }).finally(() => {
       if (!cancelled) setDetailLoading(false);
     });
+
+    // Fetch price history in parallel
+    propertiesApi.getPriceHistory(property.listing.id).then((data) => {
+      if (!cancelled) setPriceHistory(data);
+    }).catch(() => {});
 
     // Fetch market data in parallel
     marketApi.summary().then((data) => {
@@ -363,6 +370,85 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               );
             })()}
           </div>
+
+          {/* Price History & Days on Market */}
+          {priceHistory && (priceHistory.changes.length > 0 || priceHistory.days_on_market != null) && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Price History
+                  {priceHistory.days_on_market != null && (
+                    <span className="ml-auto text-xs font-normal text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {priceHistory.days_on_market} days on market
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {priceHistory.total_change !== 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">Total change:</span>
+                    <span className={priceHistory.total_change < 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                      {priceHistory.total_change < 0 ? '' : '+'}{formatPrice(priceHistory.total_change)} ({priceHistory.total_change_pct > 0 ? '+' : ''}{priceHistory.total_change_pct}%)
+                    </span>
+                  </div>
+                )}
+                {priceHistory.changes.length > 0 && (
+                  <>
+                    {/* Step chart */}
+                    <div className="h-[120px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={(() => {
+                            const points: { date: string; price: number }[] = [];
+                            // Build from oldest to newest (changes are newest-first)
+                            const sorted = [...priceHistory.changes].reverse();
+                            sorted.forEach((c, i) => {
+                              if (i === 0) {
+                                points.push({ date: new Date(c.recorded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }), price: c.old_price });
+                              }
+                              points.push({ date: new Date(c.recorded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }), price: c.new_price });
+                            });
+                            return points;
+                          })()}
+                          margin={{ top: 4, right: 4, bottom: 0, left: -16 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} />
+                          <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
+                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} formatter={(value) => [formatPrice(value as number), 'Price']} />
+                          <Line type="stepAfter" dataKey="price" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3, fill: 'var(--chart-1)' }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {/* Change list */}
+                    <div className="space-y-1">
+                      {priceHistory.changes.map((c, i) => (
+                        <div key={i} className="flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">
+                            {new Date(c.recorded_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <span className="text-muted-foreground">{formatPrice(c.old_price)}</span>
+                            <span className="text-muted-foreground">&rarr;</span>
+                            <span className="font-medium">{formatPrice(c.new_price)}</span>
+                            <span className={c.change < 0 ? 'text-green-600' : 'text-red-600'}>
+                              ({c.change_pct > 0 ? '+' : ''}{c.change_pct}%)
+                            </span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                {priceHistory.changes.length === 0 && priceHistory.days_on_market != null && (
+                  <div className="text-xs text-muted-foreground">No price changes recorded since listing appeared.</div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Quick Actions */}
           <div className="flex gap-2">

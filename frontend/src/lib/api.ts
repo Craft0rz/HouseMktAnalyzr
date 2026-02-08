@@ -24,6 +24,11 @@ import type {
   RentTrendResponse,
   DemographicProfile,
   NeighbourhoodResponse,
+  PriceHistoryResponse,
+  PriceChangeMap,
+  LifecycleMap,
+  PortfolioNotification,
+  RemovedListing,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -103,6 +108,23 @@ export const propertiesApi = {
 
   getDetails: (listingId: string): Promise<PropertyListing> => {
     return fetchApi(`/api/properties/${encodeURIComponent(listingId)}`);
+  },
+
+  getPriceHistory: (listingId: string): Promise<PriceHistoryResponse> => {
+    return fetchApi(`/api/properties/${encodeURIComponent(listingId)}/price-history`);
+  },
+
+  getRecentPriceChanges: (): Promise<{ changes: PriceChangeMap }> => {
+    return fetchApi('/api/properties/price-changes');
+  },
+
+  getLifecycle: (): Promise<{ listings: LifecycleMap }> => {
+    return fetchApi('/api/properties/lifecycle');
+  },
+
+  getRecentlyRemoved: (region?: string): Promise<{ listings: RemovedListing[]; count: number }> => {
+    const params = region ? `?region=${encodeURIComponent(region)}` : '';
+    return fetchApi(`/api/properties/recently-removed${params}`);
   },
 
   getAllListings: (params: {
@@ -275,6 +297,10 @@ export const portfolioApi = {
     return fetchApi(`/api/portfolio/${encodeURIComponent(itemId)}/toggle-status`, {
       method: 'POST',
     });
+  },
+
+  getUpdates: (): Promise<{ notifications: PortfolioNotification[]; count: number }> => {
+    return fetchApi('/api/portfolio/notifications/updates');
   },
 };
 

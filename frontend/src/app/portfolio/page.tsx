@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import {
+  Bell,
   Briefcase,
   Eye,
   Home,
@@ -10,6 +11,9 @@ import {
   Trash2,
   Edit2,
   ArrowUpDown,
+  TrendingDown,
+  TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -44,8 +48,9 @@ import {
   useRemoveFromPortfolio,
   useTogglePortfolioStatus,
 } from '@/hooks/useProperties';
+import { portfolioApi } from '@/lib/api';
 import { formatPrice } from '@/lib/formatters';
-import type { PortfolioItem, PortfolioStatus, CreatePortfolioItemRequest } from '@/lib/types';
+import type { PortfolioItem, PortfolioStatus, CreatePortfolioItemRequest, PortfolioNotification } from '@/lib/types';
 
 function PortfolioSummaryCards({ summary }: { summary: {
   total_owned: number;
@@ -460,6 +465,13 @@ export default function PortfolioPage() {
   const toggleStatus = useTogglePortfolioStatus();
 
   const [editItem, setEditItem] = useState<PortfolioItem | null>(null);
+  const [notifications, setNotifications] = useState<PortfolioNotification[]>([]);
+
+  useEffect(() => {
+    portfolioApi.getUpdates()
+      .then((res) => setNotifications(res.notifications))
+      .catch(() => {});
+  }, []);
 
   const ownedItems = portfolioData?.items.filter((i) => i.status === 'owned') || [];
   const watchingItems = portfolioData?.items.filter((i) => i.status === 'watching') || [];
@@ -500,6 +512,51 @@ export default function PortfolioPage() {
         <>
           {/* Summary Cards */}
           <PortfolioSummaryCards summary={portfolioData.summary} />
+
+          {/* Notifications */}
+          {notifications.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Bell className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-lg">Updates</CardTitle>
+                  <Badge variant="secondary">{notifications.length}</Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {notifications.map((n, i) => (
+                  <div key={`${n.property_id}-${i}`} className="flex items-center gap-3 p-2 rounded-md border text-sm">
+                    {n.type === 'price_drop' && <TrendingDown className="h-4 w-4 text-green-600 shrink-0" />}
+                    {n.type === 'price_increase' && <TrendingUp className="h-4 w-4 text-red-600 shrink-0" />}
+                    {n.type === 'status_change' && <AlertTriangle className="h-4 w-4 text-yellow-600 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium truncate">{n.address}</span>
+                      {n.type === 'price_drop' && (
+                        <span className="text-green-600 ml-2">
+                          Price dropped {n.change_pct}% ({formatPrice(n.old_price ?? 0)} → {formatPrice(n.new_price ?? 0)})
+                        </span>
+                      )}
+                      {n.type === 'price_increase' && (
+                        <span className="text-red-600 ml-2">
+                          Price increased +{n.change_pct}% ({formatPrice(n.old_price ?? 0)} → {formatPrice(n.new_price ?? 0)})
+                        </span>
+                      )}
+                      {n.type === 'status_change' && (
+                        <span className="text-yellow-600 ml-2">
+                          Listing is now {n.listing_status}
+                        </span>
+                      )}
+                    </div>
+                    {n.recorded_at && (
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {new Date(n.recorded_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Tabs for Owned / Watching */}
           <Tabs defaultValue="owned" className="space-y-4">
