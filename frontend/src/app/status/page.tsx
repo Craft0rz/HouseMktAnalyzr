@@ -12,7 +12,7 @@ import { AdminGuard } from '@/components/AdminGuard';
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
-import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness } from '@/lib/types';
+import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning } from '@/lib/types';
 
 const PHASE_LABELS: Record<string, string> = {
   scraping: 'status.phaseScraping',
@@ -332,6 +332,30 @@ function StatusContent() {
               <FreshnessCard label={t('status.rentData')} data={freshness.rent_data} t={t} />
               <FreshnessCard label={t('status.demographics')} data={freshness.demographics} t={t} />
               <FreshnessCard label={t('status.neighbourhood')} data={freshness.neighbourhood} t={t} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Data Staleness Warnings */}
+      {status?.data_warnings && status.data_warnings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              {t('status.dataWarnings')}
+            </CardTitle>
+            <CardDescription>{t('status.dataWarningsDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {status.data_warnings.map((w: DataWarning, i: number) => (
+                <div key={i} className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3">
+                  <p className="text-sm font-medium">{w.source}</p>
+                  <p className="text-sm text-muted-foreground">{w.message}</p>
+                  <p className="text-xs text-muted-foreground mt-1 font-mono">{w.action}</p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

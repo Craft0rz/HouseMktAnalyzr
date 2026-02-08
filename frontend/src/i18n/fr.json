@@ -583,6 +583,8 @@
   "status.noHistoryDesc": "L'historique apparaîtra ici après le premier cycle de scraping.",
   "status.loading": "Chargement du statut du scraping...",
   "status.disabled": "Le scraper n'est pas disponible (pas de connexion à la base de données)",
+  "status.dataWarnings": "Maintenance des données requise",
+  "status.dataWarningsDesc": "Sources de données codées en dur nécessitant une mise à jour manuelle",
 
   "auth.signIn": "Se connecter",
   "auth.rememberMe": "Rester connect\u00e9",

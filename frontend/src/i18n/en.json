@@ -583,6 +583,8 @@
   "status.noHistoryDesc": "Job history will appear here after the first scrape cycle completes.",
   "status.loading": "Loading scraper status...",
   "status.disabled": "Scraper is not available (no database connection)",
+  "status.dataWarnings": "Data Maintenance Required",
+  "status.dataWarningsDesc": "Hardcoded data sources that need manual updating",
 
   "auth.signIn": "Sign In",
   "auth.rememberMe": "Stay logged in",

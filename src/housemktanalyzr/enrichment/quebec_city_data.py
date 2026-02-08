@@ -98,14 +98,44 @@ _ARROND_POP_2021: dict[str, int] = {
 }
 _TOTAL_ARROND_POP = sum(_ARROND_POP_2021.values())  # ~549,459
 
-# Uniform residential tax rate (per $100 of assessed value).
-# Source: ville.quebec.qc.ca/apropos/profil-financier/taux-taxation.aspx
-# Note: 2025 rate dropped due to new triennial assessment roll
+# Residential tax rate per $100 of assessed value, by sector.
+# Source: ville.quebec.qc.ca/apropos/profil-financier/docs/taux-combines-YYYY.pdf
+# Quebec City is an agglomeration with sector-specific surcharges on top of
+# the base city-wide rate.  Three tiers: central (La Cité-Limoilou),
+# Val-Bélair (part of La Haute-Saint-Charles), and majority (all others).
+# Note: 2025 rates dropped due to new triennial assessment roll
 # (property values increased ~23.5% on average).
-_TAX_RATES: dict[int, float] = {
-    2025: 0.7597,
-    2024: 0.9072,
+_TAX_RATES_BY_SECTOR: dict[int, dict[str, float]] = {
+    2025: {
+        "central": 0.7597,     # Quebec central borough (La Cité-Limoilou)
+        "majority": 0.7284,    # Beauport, Charlesbourg, Sainte-Foy, Sillery, etc.
+        "val_belair": 0.7299,  # Val-Bélair sector (La Haute-Saint-Charles)
+    },
+    2024: {
+        "central": 0.9485,
+        "majority": 0.9072,
+        "val_belair": 0.9093,
+    },
 }
+
+# Map canonical arrondissement → sector key for tax rate lookup.
+_ARROND_TAX_SECTOR: dict[str, str] = {
+    "La Cité-Limoilou": "central",
+    "Les Rivières": "majority",
+    "Sainte-Foy-Sillery-Cap-Rouge": "majority",
+    "Charlesbourg": "majority",
+    "Beauport": "majority",
+    "La Haute-Saint-Charles": "val_belair",
+}
+
+
+def _get_tax_rate(canonical_name: str, year: int) -> float | None:
+    """Resolve per-arrondissement residential tax rate."""
+    rates = _TAX_RATES_BY_SECTOR.get(year) or _TAX_RATES_BY_SECTOR.get(year + 1)
+    if not rates:
+        return None
+    sector = _ARROND_TAX_SECTOR.get(canonical_name, "majority")
+    return rates.get(sector, rates.get("majority"))
 
 
 class QuebecCityPermitsClient:
@@ -238,9 +268,6 @@ class QuebecCityPermitsClient:
             if target_year not in {y for _, y in agg.keys()} and available_years:
                 target_year = available_years[0]
 
-        # Resolve tax rate for the target year (uniform across arrondissements)
-        tax_rate = _TAX_RATES.get(target_year) or _TAX_RATES.get(target_year + 1)
-
         # Build output rows (permits + crime + tax for each arrondissement)
         rows: list[dict] = []
         for canonical_name in sorted(_CANONICAL_NAME.values()):
@@ -252,9 +279,10 @@ class QuebecCityPermitsClient:
                 "year": target_year,
                 "source": "quebec_city_open_data",
             }
+            tax_rate = _get_tax_rate(canonical_name, target_year)
             if tax_rate is not None:
                 row["tax_rate_residential"] = tax_rate
-                row["tax_rate_total"] = tax_rate  # uniform, no additional per-$100 levies
+                row["tax_rate_total"] = tax_rate
 
             # Permit fields
             if counts:

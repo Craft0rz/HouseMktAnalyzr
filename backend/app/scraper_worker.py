@@ -43,6 +43,7 @@ class ScraperWorker:
             "last_run_duration_sec": None,
             "total_listings_stored": 0,
             "errors": [],
+            "data_warnings": [],
             "next_run_at": None,
             "current_phase": None,
             "current_step": 0,
@@ -801,47 +802,73 @@ class ScraperWorker:
         self._check_neighbourhood_data_staleness()
 
     def _check_neighbourhood_data_staleness(self):
-        """Log warnings when hardcoded neighbourhood data needs updating."""
+        """Log warnings when hardcoded neighbourhood data needs updating.
+
+        Populates self._status["data_warnings"] for the status dashboard.
+        """
         from datetime import date as date_cls
         current_year = date_cls.today().year
+        warnings: list[dict[str, str]] = []
 
         # Quebec City: SPVQ crime data (updated manually from annual PDF report)
         try:
             from housemktanalyzr.enrichment.quebec_city_data import (
-                SPVQ_CRIME_DATA, _TAX_RATES as QC_TAX_RATES,
+                SPVQ_CRIME_DATA, _TAX_RATES_BY_SECTOR as QC_TAX_RATES,
             )
             latest_spvq = max(SPVQ_CRIME_DATA.keys()) if SPVQ_CRIME_DATA else 0
             if latest_spvq < current_year - 1:
-                logger.warning(
-                    f"STALE DATA: Quebec City SPVQ crime data latest year is {latest_spvq}, "
-                    f"expected {current_year - 1}. Update SPVQ_CRIME_DATA in quebec_city_data.py "
-                    f"from ville.quebec.qc.ca/publications/docs_ville/"
-                    f"rapport_annuel_police_{current_year - 1}.pdf"
+                msg = (
+                    f"Quebec City SPVQ crime data latest year is {latest_spvq}, "
+                    f"expected {current_year - 1}"
                 )
+                logger.warning(f"STALE DATA: {msg}")
+                warnings.append({
+                    "source": "Quebec City crime (SPVQ)",
+                    "message": msg,
+                    "action": (
+                        f"Update SPVQ_CRIME_DATA in quebec_city_data.py from "
+                        f"rapport_annuel_police_{current_year - 1}.pdf"
+                    ),
+                })
             latest_qc_tax = max(QC_TAX_RATES.keys()) if QC_TAX_RATES else 0
             if latest_qc_tax < current_year:
-                logger.warning(
-                    f"STALE DATA: Quebec City tax rate latest year is {latest_qc_tax}, "
-                    f"expected {current_year}. Update _TAX_RATES in quebec_city_data.py "
-                    f"from ville.quebec.qc.ca/apropos/profil-financier/taux-taxation.aspx"
+                msg = (
+                    f"Quebec City tax rate latest year is {latest_qc_tax}, "
+                    f"expected {current_year}"
                 )
+                logger.warning(f"STALE DATA: {msg}")
+                warnings.append({
+                    "source": "Quebec City tax rates",
+                    "message": msg,
+                    "action": "Update _TAX_RATES_BY_SECTOR in quebec_city_data.py",
+                })
         except Exception:
             logger.debug("Could not check Quebec City data staleness", exc_info=True)
 
-        # Sherbrooke: tax rates (updated manually from city website)
+        # Sherbrooke: tax rates are automated via MAMH CSV, but check
+        # fallback values in case MAMH becomes unavailable.
         try:
             from housemktanalyzr.enrichment.sherbrooke_data import (
-                _TAX_RATES as SH_TAX_RATES,
+                _TAX_RATES_FALLBACK as SH_TAX_FALLBACK,
             )
-            latest_sh_tax = max(SH_TAX_RATES.keys()) if SH_TAX_RATES else 0
+            latest_sh_tax = max(SH_TAX_FALLBACK.keys()) if SH_TAX_FALLBACK else 0
             if latest_sh_tax < current_year:
-                logger.warning(
-                    f"STALE DATA: Sherbrooke tax rate latest year is {latest_sh_tax}, "
-                    f"expected {current_year}. Update _TAX_RATES in sherbrooke_data.py "
-                    f"from sherbrooke.ca/fr/services-a-la-population/taxes-et-evaluation/"
+                msg = (
+                    f"Sherbrooke tax rate fallback latest year is {latest_sh_tax}, "
+                    f"expected {current_year} (primary source: MAMH CSV, automated)"
                 )
+                logger.info(f"STALE FALLBACK: {msg}")
+                warnings.append({
+                    "source": "Sherbrooke tax rates (fallback)",
+                    "message": msg,
+                    "action": "Update _TAX_RATES_FALLBACK in sherbrooke_data.py (low priority — MAMH is automated)",
+                })
         except Exception:
             logger.debug("Could not check Sherbrooke data staleness", exc_info=True)
+
+        self._status["data_warnings"] = warnings
+        if warnings:
+            logger.info(f"Data staleness check: {len(warnings)} warning(s) found")
 
     async def _refresh_montreal_neighbourhood(self):
         """Fetch Montreal Open Data (crime, permits, taxes)."""

@@ -13,6 +13,8 @@ Data sources:
   No per-arrondissement breakdown available.
 """
 
+import csv
+import io
 import logging
 import math
 from datetime import date
@@ -55,16 +57,27 @@ _ARROND_POP_2021: dict[str, int] = {
     "Fleurimont": 61_850,
 }
 
-# Uniform residential tax rate (per $100 of assessed value).
-# Source: sherbrooke.ca/fr/services-a-la-population/taxes-et-evaluation/
-# Note: 2025 rate dropped due to new triennial assessment roll
-# (property values increased ~60% on average).
-_TAX_RATES: dict[int, float] = {
+# Fallback residential tax rate (per $100 of assessed value).
+# Used if MAMH CSV is unavailable. Updated manually from sherbrooke.ca.
+_TAX_RATES_FALLBACK: dict[int, float] = {
     2025: 0.6746,
     2024: 1.0316,
 }
 
 _TOTAL_POP = sum(_ARROND_POP_2021.values())  # 172,950
+
+# ---------------------------------------------------------------------------
+# MAMH — Automated residential tax rate from Données Québec.
+# "Données prévisionnelles non auditées" CSV, field CPALB01726.
+# Sherbrooke cod_geo = 43027. Published annually ~January.
+# ---------------------------------------------------------------------------
+MAMH_CSV_URL_TEMPLATE = (
+    "https://mamh.gouv.qc.ca/fichiersdonneesouvertes/"
+    "Donn%C3%A9es-pr%C3%A9visionnelles-non-audit%C3%A9es-{year}"
+    "-SimpleOccurrence.csv"
+)
+_SHERBROOKE_COD_GEO = "43027"
+_MAMH_TAX_FIELD = "CPALB01726"  # residential general property tax rate
 
 # ---------------------------------------------------------------------------
 # StatCan Table 34-10-0292-01 — Building permits by CMA (monthly).
@@ -188,6 +201,37 @@ class SherbrookeCrimeClient:
         )
         return result
 
+    async def _fetch_mamh_tax_rate(self, year: int) -> float | None:
+        """Fetch residential tax rate from MAMH prévisionnelles CSV.
+
+        Returns the rate per $100 for Sherbrooke, or None on failure.
+        Falls back to hardcoded _TAX_RATES_FALLBACK.
+        """
+        url = MAMH_CSV_URL_TEMPLATE.format(year=year)
+        client = await self._get_client()
+        try:
+            resp = await client.get(url, timeout=30.0, follow_redirects=True)
+            resp.raise_for_status()
+        except Exception:
+            logger.debug(f"MAMH CSV for {year} not available, using fallback", exc_info=True)
+            return _TAX_RATES_FALLBACK.get(year)
+
+        text = resp.text.lstrip("\ufeff")  # strip BOM
+        reader = csv.DictReader(io.StringIO(text))
+        for row in reader:
+            if row.get("cod_geo", "").strip() == _SHERBROOKE_COD_GEO:
+                raw = row.get(_MAMH_TAX_FIELD, "").strip()
+                if raw:
+                    try:
+                        rate = float(raw)
+                        logger.info(f"MAMH: Sherbrooke {year} residential tax rate = {rate}")
+                        return rate
+                    except ValueError:
+                        pass
+
+        logger.info(f"MAMH: Sherbrooke not found in {year} CSV, using fallback")
+        return _TAX_RATES_FALLBACK.get(year)
+
     async def _fetch_arrondissements(self) -> list[dict]:
         """Fetch arrondissement boundary polygons from ArcGIS."""
         client = await self._get_client()
@@ -309,8 +353,8 @@ class SherbrookeCrimeClient:
 
         avg_rate = sum(rates.values()) / len(rates) if rates else 0
 
-        # Resolve tax rate for the target year (uniform across arrondissements)
-        tax_rate = _TAX_RATES.get(year) or _TAX_RATES.get(year + 1)
+        # Resolve tax rate from MAMH (falls back to hardcoded)
+        tax_rate = await self._fetch_mamh_tax_rate(year)
 
         # Fetch CMA-level building permits from StatCan
         permits_cma = await self._fetch_statcan_permits(year)

@@ -433,6 +433,12 @@ export interface StepResult {
   error: string | null;
 }
 
+export interface DataWarning {
+  source: string;
+  message: string;
+  action: string;
+}
+
 export interface ScraperStatus {
   enabled?: boolean;
   message?: string;
@@ -442,6 +448,7 @@ export interface ScraperStatus {
   last_run_duration_sec: number | null;
   total_listings_stored: number;
   errors: string[];
+  data_warnings?: DataWarning[];
   next_run_at: string | null;
   current_phase: string | null;
   current_step: number;
