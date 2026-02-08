@@ -166,21 +166,28 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const { addProperty, selectedProperties } = useComparison();
   const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
     if (!open || !property) {
       setEnrichedListing(null);
+      setDetailError(null);
       return;
     }
 
     let cancelled = false;
     setDetailLoading(true);
+    setDetailError(null);
 
     propertiesApi.getDetails(property.listing.id).then((detail) => {
-      if (!cancelled) setEnrichedListing(detail);
-    }).catch(() => {
-      // Silently fall back to search data
+      if (!cancelled) {
+        setEnrichedListing(detail);
+      }
+    }).catch((err) => {
+      if (!cancelled) {
+        setDetailError(err instanceof Error ? err.message : 'Failed to load details');
+      }
     }).finally(() => {
       if (!cancelled) setDetailLoading(false);
     });
@@ -437,6 +444,15 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   <Loader2 className="h-4 w-4 animate-spin" />
                   <span className="text-sm">Loading walkability & condition data...</span>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Error state */}
+          {detailError && (
+            <Card className="border-destructive/50">
+              <CardContent className="py-4">
+                <p className="text-sm text-destructive text-center">{detailError}</p>
               </CardContent>
             </Card>
           )}
