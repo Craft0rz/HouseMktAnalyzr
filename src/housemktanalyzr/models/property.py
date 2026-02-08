@@ -133,6 +133,12 @@ class InvestmentMetrics(BaseModel):
         default=None, description="Monthly cash flow after expenses estimate"
     )
 
+    # Rent estimation source
+    rent_source: str = Field(
+        default="cmhc_estimate",
+        description="Where rent estimate came from: 'declared' (Centris gross revenue), 'cmhc_estimate' (CMHC zone average)",
+    )
+
     # Scoring
     score: float = Field(
         ..., ge=0, le=100, description="Investment score 0-100 (Financial 70 + Location 30)"

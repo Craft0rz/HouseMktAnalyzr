@@ -309,7 +309,9 @@ class InvestmentCalculator:
     # Rent Estimation
     # =========================================================================
 
-    def estimate_rent_from_listing(self, listing: PropertyListing) -> int:
+    def estimate_rent_from_listing(
+        self, listing: PropertyListing
+    ) -> tuple[int, str]:
         """Estimate monthly rent for a property.
 
         Uses this priority:
@@ -320,25 +322,26 @@ class InvestmentCalculator:
             listing: PropertyListing to estimate rent for
 
         Returns:
-            Estimated total monthly rent in CAD
+            Tuple of (estimated total monthly rent in CAD, source label)
+            Source is "declared" for Centris gross revenue, "cmhc_estimate" for CMHC averages.
         """
         # Use listed gross revenue if available
         if listing.gross_revenue and listing.gross_revenue > 0:
-            return listing.gross_revenue // 12
+            return listing.gross_revenue // 12, "declared"
 
         # Use estimated_rent if set
         if listing.estimated_rent and listing.estimated_rent > 0:
-            return listing.estimated_rent
+            return listing.estimated_rent, "declared"
 
         # Estimate using CMHC data
         # Assume bedrooms are distributed evenly across units
         if listing.units > 0 and listing.bedrooms > 0:
             beds_per_unit = max(1, listing.bedrooms // listing.units)
             rent_per_unit = self.cmhc.get_estimated_rent(listing.city, beds_per_unit)
-            return rent_per_unit * listing.units
+            return rent_per_unit * listing.units, "cmhc_estimate"
 
         # Fallback: use total bedrooms
-        return self.cmhc.get_estimated_rent(listing.city, listing.bedrooms)
+        return self.cmhc.get_estimated_rent(listing.city, listing.bedrooms), "cmhc_estimate"
 
     # =========================================================================
     # Full Property Analysis
@@ -368,7 +371,7 @@ class InvestmentCalculator:
         price = listing.price
 
         # Estimate rent
-        monthly_rent = self.estimate_rent_from_listing(listing)
+        monthly_rent, rent_source = self.estimate_rent_from_listing(listing)
         annual_rent = monthly_rent * 12
 
         # Calculate NOI
@@ -414,6 +417,7 @@ class InvestmentCalculator:
             property_id=listing.id,
             purchase_price=price,
             estimated_monthly_rent=monthly_rent,
+            rent_source=rent_source,
             gross_rental_yield=round(gross_yield, 2),
             cap_rate=round(cap, 2) if cap > 0 else None,
             price_per_unit=price_per_unit,

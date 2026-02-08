@@ -234,7 +234,14 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
     {
       accessorKey: 'metrics.gross_rental_yield',
       header: 'Yield',
-      cell: ({ row }) => formatPercent(row.original.metrics.gross_rental_yield),
+      cell: ({ row }) => (
+        <span>
+          {formatPercent(row.original.metrics.gross_rental_yield)}
+          {row.original.metrics.rent_source === 'cmhc_estimate' && (
+            <span className="text-[9px] text-muted-foreground ml-0.5" title="Based on CMHC zone average">*</span>
+          )}
+        </span>
+      ),
     },
     {
       accessorKey: 'metrics.price_per_unit',

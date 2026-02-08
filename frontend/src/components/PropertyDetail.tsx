@@ -411,6 +411,11 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   <span className="text-sm font-medium flex items-center gap-2">
                     <ArrowUpRight className="h-4 w-4 text-green-500" />
                     Rental Income
+                    {metrics.rent_source === 'cmhc_estimate' && (
+                      <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        Est. (CMHC avg)
+                      </span>
+                    )}
                   </span>
                   <span className="font-bold text-green-600">
                     +{formatPrice(monthlyIncome)}
