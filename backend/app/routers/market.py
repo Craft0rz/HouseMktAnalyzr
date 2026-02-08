@@ -1,7 +1,7 @@
 """Market intelligence API endpoints.
 
 Serves macro-economic data (interest rates, CPI, unemployment)
-fetched from Bank of Canada and Statistics Canada.
+and rental market intelligence from CMHC.
 """
 
 import logging
@@ -234,5 +234,158 @@ async def get_market_summary():
             status_code=502,
             detail=f"Failed to fetch market summary: {str(e)}",
         )
+    finally:
+        await client.close()
+
+
+# --- Rental Market Intelligence ---
+
+
+class RentForecastResponse(BaseModel):
+    year: int
+    projected_rent: float
+    lower_bound: float
+    upper_bound: float
+
+
+class RentTrendResponse(BaseModel):
+    zone: str
+    bedroom_type: str
+    current_rent: float | None
+    years: list[int]
+    rents: list[float]
+    annual_growth_rate: float | None
+    growth_direction: str
+    forecasts: list[RentForecastResponse]
+    vacancy_rate: float | None
+    vacancy_direction: str
+
+
+class RentZonesResponse(BaseModel):
+    zones: list[str]
+
+
+@router.get("/rents/zones", response_model=RentZonesResponse)
+async def get_rent_zones():
+    """Get list of available CMHC zones with rent data."""
+    if _has_db():
+        try:
+            from ..db import get_rent_zones as db_get_zones
+            zones = await db_get_zones()
+            if zones:
+                return RentZonesResponse(zones=zones)
+        except Exception as e:
+            logger.warning(f"DB rent zones lookup failed: {e}")
+
+    # Fallback: fetch live from CMHC
+    from housemktanalyzr.enrichment.cmhc_client import CMHCClient
+    client = CMHCClient()
+    try:
+        rents = await client.get_rents_by_zone()
+        zones = sorted(set(r.zone for r in rents))
+        return RentZonesResponse(zones=zones)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch CMHC zones: {e}")
+    finally:
+        await client.close()
+
+
+@router.get("/rents", response_model=RentTrendResponse)
+async def get_rent_trend(
+    zone: str = Query(description="CMHC zone name"),
+    bedrooms: int = Query(default=2, ge=0, le=3, description="Bedroom count (0=bachelor, 1-3)"),
+):
+    """Get rent trend and forecast for a specific zone and bedroom type.
+
+    Returns historical rents, growth rate, trend direction, and 3-year forecast.
+    Data is cached in DB and refreshed annually by the background worker.
+    Falls back to live CMHC API if DB has no data.
+    """
+    from housemktanalyzr.enrichment.rent_intel import analyze_zone_rent
+
+    bed_map = {0: "bachelor", 1: "1br", 2: "2br", 3: "3br+"}
+    bedroom_type = bed_map[bedrooms]
+
+    # Try DB first
+    if _has_db():
+        try:
+            from ..db import get_rent_history
+
+            history = await get_rent_history(zone, bedroom_type, limit=20)
+            if history:
+                hist_data = [
+                    {"year": r["year"], "rent": float(r["avg_rent"])}
+                    for r in history
+                    if r.get("avg_rent") is not None
+                ]
+                vacancies = [r for r in history if r.get("vacancy_rate") is not None]
+                current_vac = float(vacancies[0]["vacancy_rate"]) if vacancies else None
+                prev_vac = float(vacancies[1]["vacancy_rate"]) if len(vacancies) >= 2 else None
+
+                trend = analyze_zone_rent(
+                    zone, bedroom_type, hist_data,
+                    current_vacancy=current_vac,
+                    previous_vacancy=prev_vac,
+                )
+                return RentTrendResponse(
+                    zone=trend.zone,
+                    bedroom_type=trend.bedroom_type,
+                    current_rent=trend.current_rent,
+                    years=trend.years,
+                    rents=trend.rents,
+                    annual_growth_rate=trend.annual_growth_rate,
+                    growth_direction=trend.growth_direction,
+                    forecasts=[
+                        RentForecastResponse(
+                            year=f.year,
+                            projected_rent=f.projected_rent,
+                            lower_bound=f.lower_bound,
+                            upper_bound=f.upper_bound,
+                        )
+                        for f in trend.forecasts
+                    ],
+                    vacancy_rate=trend.vacancy_rate,
+                    vacancy_direction=trend.vacancy_direction,
+                )
+        except Exception as e:
+            logger.warning(f"DB rent lookup failed: {e}")
+
+    # Fallback: fetch live from CMHC
+    from housemktanalyzr.enrichment.cmhc_client import CMHCClient
+    client = CMHCClient()
+    try:
+        historical = await client.get_historical_rents()
+
+        bed_attr_map = {0: "bachelor", 1: "one_br", 2: "two_br", 3: "three_br_plus"}
+        attr = bed_attr_map[bedrooms]
+        hist_data = [
+            {"year": r.year, "rent": getattr(r, attr)}
+            for r in historical
+            if getattr(r, attr) is not None
+        ]
+
+        trend = analyze_zone_rent(zone, bedroom_type, hist_data)
+        return RentTrendResponse(
+            zone=trend.zone,
+            bedroom_type=trend.bedroom_type,
+            current_rent=trend.current_rent,
+            years=trend.years,
+            rents=trend.rents,
+            annual_growth_rate=trend.annual_growth_rate,
+            growth_direction=trend.growth_direction,
+            forecasts=[
+                RentForecastResponse(
+                    year=f.year,
+                    projected_rent=f.projected_rent,
+                    lower_bound=f.lower_bound,
+                    upper_bound=f.upper_bound,
+                )
+                for f in trend.forecasts
+            ],
+            vacancy_rate=trend.vacancy_rate,
+            vacancy_direction=trend.vacancy_direction,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch CMHC rent data: {e}")
     finally:
         await client.close()

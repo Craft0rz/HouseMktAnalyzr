@@ -17,7 +17,7 @@ import {
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
 import { propertiesApi, marketApi } from '@/lib/api';
-import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse } from '@/lib/types';
+import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -195,12 +195,14 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
+  const [rentTrend, setRentTrend] = useState<RentTrendResponse | null>(null);
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
     if (!open || !property) {
       setEnrichedListing(null);
       setDetailError(null);
+      setRentTrend(null);
       return;
     }
 
@@ -223,8 +225,20 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     // Fetch market data in parallel
     marketApi.summary().then((data) => {
       if (!cancelled) setMarketData(data);
+    }).catch(() => {});
+
+    // Fetch rent trend for this property's city/zone
+    const bedrooms = Math.min(property.listing.bedrooms || 2, 3);
+    const zone = property.listing.city || 'Montreal CMA Total';
+    marketApi.rentTrend(zone, bedrooms).then((data) => {
+      if (!cancelled) setRentTrend(data);
     }).catch(() => {
-      // Market data is supplementary — don't show errors
+      // Try CMA-level fallback
+      if (zone !== 'Montreal CMA Total') {
+        marketApi.rentTrend('Montreal CMA Total', bedrooms).then((data) => {
+          if (!cancelled) setRentTrend(data);
+        }).catch(() => {});
+      }
     });
 
     return () => { cancelled = true; };
@@ -713,6 +727,125 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                         )}
                       </span>
                       {' '}(20% down, 25yr amortization)
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Rental Market Intelligence */}
+          {rentTrend && rentTrend.current_rent != null && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Home className="h-4 w-4" />
+                  Rental Market
+                  <span className="text-xs text-muted-foreground font-normal ml-auto">
+                    CMHC {rentTrend.zone}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <div className="text-xs text-muted-foreground mb-1">
+                      Avg Rent ({rentTrend.bedroom_type})
+                    </div>
+                    <div className="text-lg font-bold">
+                      {formatPrice(rentTrend.current_rent)}/mo
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-muted-foreground">Annual Growth</span>
+                      {rentTrend.growth_direction === 'accelerating' ? (
+                        <TrendingUp className="h-3 w-3 text-orange-500" />
+                      ) : rentTrend.growth_direction === 'decelerating' ? (
+                        <TrendingDown className="h-3 w-3 text-blue-500" />
+                      ) : (
+                        <Minus className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="text-lg font-bold">
+                      {rentTrend.annual_growth_rate != null
+                        ? `${rentTrend.annual_growth_rate > 0 ? '+' : ''}${rentTrend.annual_growth_rate}%`
+                        : '—'}
+                    </div>
+                  </div>
+                  {rentTrend.vacancy_rate != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-muted-foreground">Vacancy Rate</span>
+                        {rentTrend.vacancy_direction === 'up' ? (
+                          <TrendingUp className="h-3 w-3 text-red-500" />
+                        ) : rentTrend.vacancy_direction === 'down' ? (
+                          <TrendingDown className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Minus className="h-3 w-3 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="text-lg font-bold">{rentTrend.vacancy_rate.toFixed(1)}%</div>
+                    </div>
+                  )}
+                  {rentTrend.forecasts.length > 0 && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">
+                        {rentTrend.forecasts[0].year} Forecast
+                      </div>
+                      <div className="text-lg font-bold">
+                        {formatPrice(rentTrend.forecasts[0].projected_rent)}/mo
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mini rent history bar chart */}
+                {rentTrend.rents.length >= 3 && (
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-2">Rent History</div>
+                    <div className="flex items-end gap-1 h-16">
+                      {(() => {
+                        const recent = rentTrend.rents.slice(-8);
+                        const recentYears = rentTrend.years.slice(-8);
+                        const maxRent = Math.max(...recent);
+                        const minRent = Math.min(...recent);
+                        const range = maxRent - minRent || 1;
+                        return recent.map((rent, i) => (
+                          <div
+                            key={recentYears[i]}
+                            className="flex-1 flex flex-col items-center gap-1"
+                          >
+                            <div
+                              className="w-full bg-primary/70 rounded-sm"
+                              style={{
+                                height: `${Math.max(((rent - minRent) / range) * 100, 8)}%`,
+                              }}
+                              title={`${recentYears[i]}: $${Math.round(rent)}`}
+                            />
+                            <span className="text-[9px] text-muted-foreground">
+                              {String(recentYears[i]).slice(-2)}
+                            </span>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Comparison with property's estimated rent */}
+                {listing.estimated_rent && rentTrend.current_rent != null && listing.units > 0 && (
+                  <div className="rounded-lg bg-green-50 dark:bg-green-950/30 p-3 border border-green-200 dark:border-green-900">
+                    <p className="text-xs text-muted-foreground">
+                      This property&apos;s estimated rent is{' '}
+                      <span className="font-semibold text-foreground">
+                        {(() => {
+                          const perUnit = listing.estimated_rent! / listing.units;
+                          const diff = ((perUnit - rentTrend.current_rent!) / rentTrend.current_rent!) * 100;
+                          return `${diff > 0 ? '+' : ''}${diff.toFixed(0)}%`;
+                        })()}
+                      </span>
+                      {' '}vs zone average ({formatPrice(rentTrend.current_rent)}/unit)
                     </p>
                   </div>
                 )}

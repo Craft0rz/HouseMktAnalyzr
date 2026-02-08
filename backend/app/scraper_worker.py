@@ -12,6 +12,7 @@ from .db import (
     get_listings_without_photos, update_photo_urls,
     get_listings_without_condition_score, update_condition_score,
     upsert_market_data, get_market_data_age,
+    upsert_rent_data_batch, get_rent_data_age,
 )
 
 logger = logging.getLogger(__name__)
@@ -146,6 +147,9 @@ class ScraperWorker:
 
         # Refresh market data (interest rates, CPI) if stale
         await self._refresh_market_data()
+
+        # Refresh CMHC rent data if stale
+        await self._refresh_rent_data()
 
         # Run alert checker after scrape completes
         try:
@@ -377,5 +381,93 @@ class ScraperWorker:
             raise
         except Exception:
             logger.exception("Market data refresh failed")
+        finally:
+            await client.close()
+
+    async def _refresh_rent_data(self):
+        """Fetch CMHC rent and vacancy data if stale (refreshes weekly)."""
+        from housemktanalyzr.enrichment.cmhc_client import CMHCClient
+
+        refresh_hours = float(os.environ.get("RENT_DATA_REFRESH_HOURS", 168))  # weekly
+
+        try:
+            age = await get_rent_data_age()
+            if age is not None and age < refresh_hours:
+                logger.info(f"Rent data: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                return
+        except Exception:
+            logger.exception("Failed to check rent data age")
+
+        logger.info("Rent data: refreshing from CMHC")
+        client = CMHCClient("montreal")
+
+        bed_attr_map = {
+            "bachelor": "bachelor",
+            "1br": "one_br",
+            "2br": "two_br",
+            "3br+": "three_br_plus",
+        }
+
+        total_upserted = 0
+        try:
+            # Fetch current year snapshot (rents + vacancy by zone)
+            snapshot = await client.get_snapshot()
+
+            rows = []
+            for rent_data in snapshot.rents:
+                for bed_key, attr in bed_attr_map.items():
+                    val = getattr(rent_data, attr, None)
+                    if val is not None:
+                        rows.append({
+                            "zone": rent_data.zone,
+                            "bedroom_type": bed_key,
+                            "year": rent_data.year,
+                            "avg_rent": val,
+                        })
+
+            for vac_data in snapshot.vacancies:
+                for bed_key, attr in bed_attr_map.items():
+                    val = getattr(vac_data, attr, None)
+                    if val is not None:
+                        # Find matching row or create new one
+                        found = False
+                        for row in rows:
+                            if row["zone"] == vac_data.zone and row["bedroom_type"] == bed_key and row["year"] == vac_data.year:
+                                row["vacancy_rate"] = val
+                                found = True
+                                break
+                        if not found:
+                            rows.append({
+                                "zone": vac_data.zone,
+                                "bedroom_type": bed_key,
+                                "year": vac_data.year,
+                                "vacancy_rate": val,
+                            })
+
+            if rows:
+                total_upserted += await upsert_rent_data_batch(rows)
+
+            # Also fetch historical CMA-level rents for trend analysis
+            historical = await client.get_historical_rents()
+            hist_rows = []
+            for h in historical:
+                for bed_key, attr in bed_attr_map.items():
+                    val = getattr(h, attr, None)
+                    if val is not None:
+                        hist_rows.append({
+                            "zone": "Montreal CMA Total",
+                            "bedroom_type": bed_key,
+                            "year": h.year,
+                            "avg_rent": val,
+                        })
+            if hist_rows:
+                total_upserted += await upsert_rent_data_batch(hist_rows)
+
+            logger.info(f"Rent data: upserted {total_upserted} rows")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Rent data refresh failed")
         finally:
             await client.close()

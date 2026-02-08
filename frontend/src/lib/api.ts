@@ -21,6 +21,7 @@ import type {
   PortfolioStatus,
   MarketRatesResponse,
   MarketSummaryResponse,
+  RentTrendResponse,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -269,6 +270,14 @@ export const marketApi = {
 
   summary: (): Promise<MarketSummaryResponse> => {
     return fetchApi('/api/market/summary');
+  },
+
+  rentTrend: (zone: string, bedrooms = 2): Promise<RentTrendResponse> => {
+    return fetchApi(`/api/market/rents?zone=${encodeURIComponent(zone)}&bedrooms=${bedrooms}`);
+  },
+
+  rentZones: (): Promise<{ zones: string[] }> => {
+    return fetchApi('/api/market/rents/zones');
   },
 };
 

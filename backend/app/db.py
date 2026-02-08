@@ -146,6 +146,25 @@ async def _create_tables():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS rent_data (
+                id SERIAL PRIMARY KEY,
+                zone TEXT NOT NULL,
+                bedroom_type TEXT NOT NULL,
+                year INT NOT NULL,
+                avg_rent NUMERIC,
+                vacancy_rate NUMERIC,
+                universe INT,
+                source TEXT DEFAULT 'cmhc',
+                fetched_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(zone, bedroom_type, year)
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rent_data_zone_bed
+            ON rent_data(zone, bedroom_type, year DESC)
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS portfolio (
                 id TEXT PRIMARY KEY,
                 property_id TEXT NOT NULL UNIQUE,
@@ -623,6 +642,118 @@ async def get_market_data_age(series_id: str) -> Optional[float]:
             series_id,
         )
 
+    if row and row["latest"]:
+        age = datetime.now(timezone.utc) - row["latest"]
+        return age.total_seconds() / 3600
+    return None
+
+
+# --- Rent data helpers ---
+
+async def upsert_rent_data(
+    zone: str,
+    bedroom_type: str,
+    year: int,
+    avg_rent: float | None = None,
+    vacancy_rate: float | None = None,
+    universe: int | None = None,
+    source: str = "cmhc",
+) -> bool:
+    """Upsert a single rent data point. Returns True if inserted/updated."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO rent_data (zone, bedroom_type, year, avg_rent, vacancy_rate, universe, source, fetched_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            ON CONFLICT (zone, bedroom_type, year)
+            DO UPDATE SET avg_rent = COALESCE($4, rent_data.avg_rent),
+                         vacancy_rate = COALESCE($5, rent_data.vacancy_rate),
+                         universe = COALESCE($6, rent_data.universe),
+                         fetched_at = NOW()
+            """,
+            zone, bedroom_type, year, avg_rent, vacancy_rate, universe, source,
+        )
+    return True
+
+
+async def upsert_rent_data_batch(rows: list[dict], source: str = "cmhc") -> int:
+    """Bulk upsert rent data rows. Each row needs zone, bedroom_type, year, and optional avg_rent/vacancy_rate."""
+    pool = get_pool()
+    count = 0
+    async with pool.acquire() as conn:
+        for row in rows:
+            await conn.execute(
+                """
+                INSERT INTO rent_data (zone, bedroom_type, year, avg_rent, vacancy_rate, universe, source, fetched_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                ON CONFLICT (zone, bedroom_type, year)
+                DO UPDATE SET avg_rent = COALESCE($4, rent_data.avg_rent),
+                             vacancy_rate = COALESCE($5, rent_data.vacancy_rate),
+                             universe = COALESCE($6, rent_data.universe),
+                             fetched_at = NOW()
+                """,
+                row["zone"], row["bedroom_type"], row["year"],
+                row.get("avg_rent"), row.get("vacancy_rate"),
+                row.get("universe"), source,
+            )
+            count += 1
+    return count
+
+
+async def get_rent_history(
+    zone: str, bedroom_type: str, limit: int = 20
+) -> list[dict]:
+    """Get historical rent data for a zone and bedroom type."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT year, avg_rent, vacancy_rate, universe
+            FROM rent_data
+            WHERE zone = $1 AND bedroom_type = $2
+            ORDER BY year DESC
+            LIMIT $3
+            """,
+            zone, bedroom_type, limit,
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_rent_zones() -> list[str]:
+    """Get all available CMHC zones with rent data."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT DISTINCT zone FROM rent_data ORDER BY zone"
+        )
+    return [r["zone"] for r in rows]
+
+
+async def get_latest_rent(zone: str, bedroom_type: str) -> dict | None:
+    """Get the most recent rent data for a zone/bedroom combo."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT year, avg_rent, vacancy_rate, universe
+            FROM rent_data
+            WHERE zone = $1 AND bedroom_type = $2
+            ORDER BY year DESC
+            LIMIT 1
+            """,
+            zone, bedroom_type,
+        )
+    return dict(row) if row else None
+
+
+async def get_rent_data_age() -> Optional[float]:
+    """Get age in hours of the most recent rent data fetch."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT MAX(fetched_at) as latest FROM rent_data"
+        )
     if row and row["latest"]:
         age = datetime.now(timezone.utc) - row["latest"]
         return age.total_seconds() / 3600

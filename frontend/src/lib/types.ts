@@ -266,3 +266,23 @@ export interface MarketSummaryResponse {
   mortgage_direction: 'up' | 'down' | 'stable';
   policy_direction: 'up' | 'down' | 'stable';
 }
+
+export interface RentForecast {
+  year: number;
+  projected_rent: number;
+  lower_bound: number;
+  upper_bound: number;
+}
+
+export interface RentTrendResponse {
+  zone: string;
+  bedroom_type: string;
+  current_rent: number | null;
+  years: number[];
+  rents: number[];
+  annual_growth_rate: number | null;
+  growth_direction: 'accelerating' | 'decelerating' | 'stable';
+  forecasts: RentForecast[];
+  vacancy_rate: number | null;
+  vacancy_direction: 'up' | 'down' | 'stable';
+}
