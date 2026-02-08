@@ -18,7 +18,7 @@ export default function SearchPage() {
   const [results, setResults] = useState<BatchAnalysisResponse | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [centrisId, setCentrisId] = useState('');
+  const [mlsNumber, setMlsNumber] = useState('');
 
   const idLookupMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -33,10 +33,10 @@ export default function SearchPage() {
   });
 
   const handleIdLookup = useCallback(() => {
-    const id = centrisId.trim();
+    const id = mlsNumber.trim();
     if (!id) return;
     idLookupMutation.mutate(id);
-  }, [centrisId, idLookupMutation]);
+  }, [mlsNumber, idLookupMutation]);
 
   const searchMutation = useMutation({
     mutationFn: async (filters: SearchFiltersType) => {
@@ -78,21 +78,21 @@ export default function SearchPage() {
         </p>
       </div>
 
-      {/* Centris ID Lookup */}
+      {/* MLS # Lookup */}
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Look up by Centris ID (e.g. 28574831)"
-            value={centrisId}
-            onChange={(e) => setCentrisId(e.target.value)}
+            placeholder="Look up by MLS # (e.g. 28574831)"
+            value={mlsNumber}
+            onChange={(e) => setMlsNumber(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleIdLookup()}
             className="pl-9"
           />
         </div>
         <Button
           onClick={handleIdLookup}
-          disabled={!centrisId.trim() || idLookupMutation.isPending}
+          disabled={!mlsNumber.trim() || idLookupMutation.isPending}
           size="default"
         >
           {idLookupMutation.isPending ? (

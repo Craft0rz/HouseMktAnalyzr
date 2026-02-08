@@ -220,13 +220,22 @@ async def get_property_details(
     force_walkscore: bool = Query(default=False, description="Force re-fetch Walk Score"),
     force_condition: bool = Query(default=False, description="Force re-score condition via AI"),
 ) -> PropertyListing:
-    """Get full details for a specific listing. Checks DB first, enriches with Walk Score."""
+    """Get full details for a specific listing by MLS # or centris-{id}.
+
+    Accepts raw MLS numbers (e.g. 28574831) or prefixed IDs (centris-28574831).
+    Checks DB first, then falls back to live Centris scrape.
+    """
+    # Normalize: raw digits → centris-{digits}
+    normalized_id = listing_id.strip()
+    if normalized_id.isdigit():
+        normalized_id = f"centris-{normalized_id}"
+
     listing = None
 
     if _has_db():
         try:
             from ..db import get_cached_listing
-            cached = await get_cached_listing(listing_id)
+            cached = await get_cached_listing(normalized_id)
             if cached:
                 listing = PropertyListing(**cached)
         except Exception as e:
@@ -235,7 +244,7 @@ async def get_property_details(
     if listing is None:
         try:
             async with CentrisScraper() as scraper:
-                listing = await scraper.get_listing_details(listing_id)
+                listing = await scraper.get_listing_details(normalized_id)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get details: {str(e)}")
 
