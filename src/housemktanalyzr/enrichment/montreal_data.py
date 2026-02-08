@@ -12,6 +12,7 @@ Data sources:
 import csv
 import io
 import logging
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -111,9 +112,20 @@ PROPERTY_CRIMES = {
 }
 
 
+def _strip_accents(s: str) -> str:
+    """Remove diacritical marks (accents) from a string."""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s)
+        if unicodedata.category(c) != "Mn"
+    )
+
+
 def normalize_borough(name: str) -> str | None:
     """Normalize a city/borough name to the canonical borough name."""
-    key = name.lower().strip().replace(" ", "-").replace("'", "'")
+    # Normalize dashes (en-dash, em-dash → hyphen) and strip accents
+    key = name.lower().strip().replace("\u2013", "-").replace("\u2014", "-")
+    key = key.replace(" ", "-").replace("'", "'")
+    key = _strip_accents(key)
     if key in BOROUGH_ALIASES:
         return BOROUGH_ALIASES[key]
     # Try partial matching
@@ -291,7 +303,7 @@ class MontrealOpenDataClient:
             SELECT "annee", "arrondissement", "code_type_base_demande",
                    "nombre_permis_emis", "cout_permis_emis", "cout_travaux_estimes"
             FROM "{RESOURCE_IDS['permits_stats']}"
-            WHERE "annee" >= {min_year}
+            WHERE "annee" >= '{min_year}'
             ORDER BY "annee", "arrondissement"
         """
 
@@ -338,16 +350,25 @@ class MontrealOpenDataClient:
         """Get residential property tax rates by borough.
 
         Returns the general residential tax rate (taxe fonciere)
-        for each borough in the given year.
+        for each borough in the most recent available year.
+        The dataset may lag behind the current year.
         """
+        # Query the most recent year available (dataset may only have older data)
         if year is None:
-            year = date.today().year
+            latest_sql = f"""
+                SELECT DISTINCT "Année"
+                FROM "{RESOURCE_IDS['tax_rates']}"
+                ORDER BY "Année" DESC
+                LIMIT 1
+            """
+            latest = await self._datastore_sql(latest_sql)
+            year = int(latest[0]["Année"]) if latest else date.today().year
 
         sql = f"""
-            SELECT "Annee", "Arrondissement", "Categorie", "Taux",
-                   "Categorie d'immeubles"
+            SELECT "Année", "Arrondissement", "Catégorie", "Taux",
+                   "Catégorie d'immeubles"
             FROM "{RESOURCE_IDS['tax_rates']}"
-            WHERE "Annee" = {year}
+            WHERE "Année" = {year}
             ORDER BY "Arrondissement"
         """
 
@@ -360,7 +381,7 @@ class MontrealOpenDataClient:
             if not borough:
                 continue
 
-            prop_category = str(rec.get("Categorie d'immeubles", "")).strip().lower()
+            prop_category = str(rec.get("Catégorie d'immeubles", "")).strip().lower()
             rate = float(rec.get("Taux", 0) or 0)
 
             # Only include residential rates (not commercial/industrial)
@@ -376,7 +397,7 @@ class MontrealOpenDataClient:
                 }
 
             # The general property tax is the main "residential_rate"
-            category = str(rec.get("Categorie", "")).strip().lower()
+            category = str(rec.get("Catégorie", "")).strip().lower()
             if "fonciere generale" in category or "foncière générale" in category:
                 borough_rates[borough]["residential_rate"] = rate
 
@@ -401,20 +422,47 @@ class MontrealOpenDataClient:
 
         Fetches crime (2 years), permits (3 years), and tax rates,
         then computes safety scores and gentrification signals.
+        Each source is fetched independently so one failure doesn't
+        block the others.
         """
         current_year = date.today().year - 1  # most recent complete year
 
-        crime_current, crime_previous = await self.get_crime_stats_two_years(current_year)
-        permits = await self.get_permit_stats(current_year - 2)
-        taxes = await self.get_tax_rates()
+        crime_current: list[CrimeStats] = []
+        crime_previous: list[CrimeStats] = []
+        permits: list[PermitStats] = []
+        taxes: list[TaxRate] = []
 
-        # Index by borough
-        crime_cur_map = {s.borough: s for s in crime_current}
-        crime_prev_map = {s.borough: s for s in crime_previous}
+        try:
+            crime_current, crime_previous = await self.get_crime_stats_two_years(current_year)
+        except Exception:
+            logger.warning("Failed to fetch crime stats, continuing without", exc_info=True)
+
+        try:
+            permits = await self.get_permit_stats(current_year - 2)
+        except Exception:
+            logger.warning("Failed to fetch permit stats, continuing without", exc_info=True)
+
+        try:
+            taxes = await self.get_tax_rates()
+        except Exception:
+            logger.warning("Failed to fetch tax rates, continuing without", exc_info=True)
+
+        # Normalize borough names and index by canonical name
+        def _norm(name: str) -> str:
+            return normalize_borough(name) or name
+
+        crime_cur_map: dict[str, CrimeStats] = {}
+        for s in crime_current:
+            crime_cur_map[_norm(s.borough)] = s
+        crime_prev_map: dict[str, CrimeStats] = {}
+        for s in crime_previous:
+            crime_prev_map[_norm(s.borough)] = s
         permits_map: dict[str, list[PermitStats]] = {}
         for p in permits:
-            permits_map.setdefault(p.borough, []).append(p)
-        tax_map = {t.borough: t for t in taxes}
+            permits_map.setdefault(_norm(p.borough), []).append(p)
+        tax_map: dict[str, TaxRate] = {}
+        for t in taxes:
+            tax_map[_norm(t.borough)] = t
 
         # Compute YoY crime change
         for borough_name, stats in crime_cur_map.items():
