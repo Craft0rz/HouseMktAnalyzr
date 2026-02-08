@@ -10,6 +10,22 @@ and building type for the Greater Montreal Census Metropolitan Area (CMA).
 
 from typing import Optional
 
+# French accent → ASCII translation table
+_ACCENT_TABLE = str.maketrans({
+    "é": "e", "è": "e", "ê": "e", "ë": "e",
+    "à": "a", "â": "a", "ä": "a",
+    "ô": "o",
+    "ù": "u", "û": "u", "ü": "u",
+    "ç": "c",
+    "î": "i", "ï": "i",
+})
+
+
+def _strip_accents(text: str) -> str:
+    """Remove common French accents for fuzzy matching."""
+    return text.translate(_ACCENT_TABLE)
+
+
 # CMHC Rental Market Survey Data - Fall 2024
 # Montreal CMA average rents by zone and bedroom count
 # All values in CAD/month
@@ -462,15 +478,23 @@ class CMHCRentalData:
         return sorted(self.rental_data.keys())
 
     def _normalize_city(self, city: str) -> str:
-        """Normalize city name for lookup.
+        """Normalize city name for CMHC zone lookup.
 
-        Handles common variations and partial matches.
+        Handles accented characters, borough extraction from
+        "City (Borough)" format, and common abbreviations.
         """
-        city = city.lower().strip()
+        city = _strip_accents(city.lower().strip())
 
         # Remove common suffixes
         city = city.replace(", qc", "").replace(", quebec", "")
         city = city.replace(" (island)", "").replace("-island", "")
+
+        # Extract borough from "City (Borough)" format
+        # e.g. "montreal (mercier/hochelaga-maisonneuve)"
+        borough = None
+        if "(" in city and ")" in city:
+            borough = city.split("(")[1].split(")")[0].strip()
+            city = city.split("(")[0].strip()
 
         # Common mappings
         mappings = {
@@ -487,12 +511,40 @@ class CMHCRentalData:
             "st-lambert": "saint-lambert",
             "st-jerome": "saint-jerome",
             "st-jean": "saint-jean-sur-richelieu",
+            "mercier/hochelaga-maisonneuve": "hochelaga-maisonneuve",
+            "villeray/saint-michel/parc-extension": "villeray",
+            "rosemont/la petite-patrie": "rosemont",
+            "rosemont-la petite-patrie": "rosemont",
+            "ahuntsic/cartierville": "ahuntsic",
+            "ahuntsic-cartierville": "ahuntsic",
+            "cote-des-neiges/notre-dame-de-grace": "cote-des-neiges",
+            "cote-des-neiges-notre-dame-de-grace": "cote-des-neiges",
+            "riviere-des-prairies/pointe-aux-trembles": "riviere-des-prairies",
+            "saint-leonard": "saint-leonard",
+            "lasalle": "lasalle",
+            "lachine": "lasalle",
+            "verdun": "verdun",
+            "le sud-ouest": "verdun",
+            "le plateau-mont-royal": "plateau-mont-royal",
         }
 
-        if city in mappings:
-            return mappings[city]
+        # Try borough first (more specific), then city
+        for candidate in (borough, city):
+            if candidate and candidate in mappings:
+                return mappings[candidate]
+            if candidate:
+                # Try slash-separated parts (e.g. "mercier/hochelaga-maisonneuve")
+                if "/" in candidate:
+                    for part in candidate.split("/"):
+                        part = part.strip().replace(" ", "-")
+                        if part in self.rental_data:
+                            return part
+                        if part in mappings:
+                            return mappings[part]
 
-        # Replace spaces with hyphens
-        city = city.replace(" ", "-")
+                normalized = candidate.replace(" ", "-")
+                if normalized in self.rental_data:
+                    return normalized
 
-        return city
+        # Final fallback: hyphenate city
+        return city.replace(" ", "-")
