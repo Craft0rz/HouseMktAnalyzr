@@ -1340,13 +1340,54 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
                 {/* Tax rate info */}
                 {neighbourhood.tax && (
-                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-900">
-                    <p className="text-xs text-muted-foreground">
-                      {t('detail.taxRate', { rate: neighbourhood.tax.residential_rate.toFixed(4) })}
-                      {neighbourhood.tax.annual_tax_estimate != null && (
-                        <> | {t('detail.estAnnualTax', { amount: formatPrice(neighbourhood.tax.annual_tax_estimate, locale) })}</>
+                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-900 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-muted-foreground">{t('detail.taxRate_label')}</span>
+                      {neighbourhood.tax.yoy_change_pct != null && (
+                        <Badge variant={neighbourhood.tax.yoy_change_pct <= 0 ? 'default' : 'destructive'} className="text-[10px] h-5">
+                          {neighbourhood.tax.yoy_change_pct > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+                          {neighbourhood.tax.yoy_change_pct > 0 ? '+' : ''}{neighbourhood.tax.yoy_change_pct.toFixed(1)}% YOY
+                        </Badge>
                       )}
-                    </p>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-lg font-bold">{neighbourhood.tax.residential_rate.toFixed(4)}</span>
+                      <span className="text-xs text-muted-foreground">/$100</span>
+                      {neighbourhood.tax.annual_tax_estimate != null && (
+                        <span className="text-xs text-muted-foreground ml-auto">
+                          {t('detail.estAnnualTax', { amount: formatPrice(neighbourhood.tax.annual_tax_estimate, locale) })}
+                        </span>
+                      )}
+                    </div>
+                    {neighbourhood.tax.rank != null && neighbourhood.tax.total_boroughs != null && (
+                      <p className="text-[10px] text-muted-foreground">
+                        {t('detail.taxRank', { rank: neighbourhood.tax.rank, total: neighbourhood.tax.total_boroughs })}
+                        {neighbourhood.tax.city_avg_rate != null && (
+                          <> ({t('detail.cityAvg', { rate: neighbourhood.tax.city_avg_rate.toFixed(4) })})</>
+                        )}
+                      </p>
+                    )}
+                    {neighbourhood.tax.cagr_5yr != null && (
+                      <p className="text-[10px] text-muted-foreground">
+                        {t('detail.taxCagr', { pct: `${neighbourhood.tax.cagr_5yr > 0 ? '+' : ''}${neighbourhood.tax.cagr_5yr.toFixed(1)}` })}
+                      </p>
+                    )}
+                    {neighbourhood.tax.history && neighbourhood.tax.history.length >= 2 && (
+                      <div className="h-12">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={neighbourhood.tax.history}>
+                            <Line type="monotone" dataKey="residential_rate" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
+                            <XAxis dataKey="year" hide />
+                            <YAxis domain={['dataMin', 'dataMax']} hide />
+                            <Tooltip
+                              formatter={(val) => [`${Number(val).toFixed(4)}/$100`, 'Rate']}
+                              labelFormatter={(label) => `${label}`}
+                              contentStyle={{ fontSize: '10px', padding: '4px 8px' }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
                 )}
               </CardContent>

@@ -448,6 +448,32 @@ class MontrealOpenDataClient:
             ))
         return results
 
+    async def get_tax_rates_multi_year(
+        self, start_year: int, end_year: int
+    ) -> list[TaxRate]:
+        """Fetch tax rates for multiple years concurrently.
+
+        Returns a flat list of TaxRate objects across all requested years.
+        Years where data is unavailable are silently skipped.
+        """
+        import asyncio
+
+        async def _fetch_year(year: int) -> list[TaxRate]:
+            try:
+                return await self.get_tax_rates(year=year)
+            except Exception:
+                logger.debug(f"No tax data for year {year}, skipping")
+                return []
+
+        tasks = [_fetch_year(y) for y in range(start_year, end_year + 1)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_rates: list[TaxRate] = []
+        for result in results:
+            if isinstance(result, list):
+                all_rates.extend(result)
+        return all_rates
+
     # --- Combined Neighbourhood Analysis ---
 
     async def get_neighbourhood_stats(

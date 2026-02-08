@@ -18,6 +18,7 @@ from .db import (
     upsert_rent_data_batch, get_rent_data_age,
     upsert_demographics_batch, get_demographics_age,
     upsert_neighbourhood_stats_batch, get_neighbourhood_stats_age,
+    upsert_tax_rate_history_batch,
     mark_stale_listings, mark_delisted,
     insert_scrape_job,
 )
@@ -788,6 +789,27 @@ class ScraperWorker:
                 logger.info(f"Neighbourhood data: upserted {count} borough stats")
             else:
                 logger.warning("Neighbourhood data: no results from Montreal Open Data")
+
+            # Fetch multi-year tax history for trend analysis
+            try:
+                multi_year_taxes = await client.get_tax_rates_multi_year(
+                    current_year - 4, current_year
+                )
+                if multi_year_taxes:
+                    tax_rows = [
+                        {
+                            "borough": t.borough,
+                            "year": t.year,
+                            "residential_rate": t.residential_rate,
+                            "total_tax_rate": t.total_tax_rate,
+                            "source": "montreal_open_data",
+                        }
+                        for t in multi_year_taxes
+                    ]
+                    tax_count = await upsert_tax_rate_history_batch(tax_rows)
+                    logger.info(f"Tax rate history: upserted {tax_count} borough/year records")
+            except Exception:
+                logger.exception("Tax rate history fetch failed (non-blocking)")
 
             self._status["refresh_progress"]["neighbourhood"]["status"] = "done"
 

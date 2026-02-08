@@ -467,7 +467,11 @@
   "detail.reno": "{count} reno",
   "detail.newConstruction": "{count} new",
   "detail.taxRate": "Tax rate: {rate}/$100 (residential)",
+  "detail.taxRate_label": "Residential Tax Rate",
   "detail.estAnnualTax": "Est. annual tax: {amount}",
+  "detail.taxRank": "Rank #{rank} of {total} boroughs",
+  "detail.cityAvg": "city avg: {rate}/$100",
+  "detail.taxCagr": "5yr avg growth: {pct}%/yr",
   "detail.propertyDetails": "Property Details",
   "detail.linearGrowth": "Linear: {rate}%/yr",
 

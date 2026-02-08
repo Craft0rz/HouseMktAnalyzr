@@ -229,6 +229,23 @@ async def _create_tables():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS tax_rate_history (
+                id SERIAL PRIMARY KEY,
+                borough TEXT NOT NULL,
+                year INT NOT NULL,
+                residential_rate NUMERIC,
+                total_tax_rate NUMERIC,
+                source TEXT DEFAULT 'montreal_open_data',
+                fetched_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(borough, year)
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_tax_rate_history_borough
+            ON tax_rate_history(borough, year DESC)
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS portfolio (
                 id TEXT PRIMARY KEY,
                 property_id TEXT NOT NULL UNIQUE,
@@ -1260,6 +1277,87 @@ async def get_neighbourhood_stats_age() -> Optional[float]:
         age = datetime.now(timezone.utc) - row["latest"]
         return age.total_seconds() / 3600
     return None
+
+
+async def upsert_tax_rate_history_batch(rows: list[dict]) -> int:
+    """Bulk upsert tax rate history rows. Each row needs borough, year, residential_rate, total_tax_rate."""
+    pool = get_pool()
+    count = 0
+    async with pool.acquire() as conn:
+        for row in rows:
+            await conn.execute(
+                """
+                INSERT INTO tax_rate_history (borough, year, residential_rate, total_tax_rate, source, fetched_at)
+                VALUES ($1, $2, $3, $4, $5, NOW())
+                ON CONFLICT (borough, year) DO UPDATE SET
+                    residential_rate = COALESCE(EXCLUDED.residential_rate, tax_rate_history.residential_rate),
+                    total_tax_rate = COALESCE(EXCLUDED.total_tax_rate, tax_rate_history.total_tax_rate),
+                    fetched_at = NOW()
+                """,
+                row["borough"], row["year"],
+                row.get("residential_rate"), row.get("total_tax_rate"),
+                row.get("source", "montreal_open_data"),
+            )
+            count += 1
+    return count
+
+
+async def get_tax_history_for_borough(borough: str, years: int = 5) -> list[dict]:
+    """Get tax rate history for a borough (case-insensitive), most recent first."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT year, residential_rate, total_tax_rate
+            FROM tax_rate_history
+            WHERE LOWER(borough) = LOWER($1)
+            ORDER BY year DESC
+            LIMIT $2
+            """,
+            borough, years,
+        )
+        if not rows:
+            # Partial match
+            rows = await conn.fetch(
+                """
+                SELECT year, residential_rate, total_tax_rate
+                FROM tax_rate_history
+                WHERE LOWER(borough) LIKE '%' || LOWER($1) || '%'
+                ORDER BY year DESC
+                LIMIT $2
+                """,
+                borough, years,
+            )
+    return [
+        {
+            "year": r["year"],
+            "residential_rate": float(r["residential_rate"]) if r["residential_rate"] else None,
+            "total_tax_rate": float(r["total_tax_rate"]) if r["total_tax_rate"] else None,
+        }
+        for r in rows
+    ]
+
+
+async def get_all_boroughs_latest_tax_rate() -> list[dict]:
+    """Get the latest tax rate for all boroughs (for ranking/comparison)."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT DISTINCT ON (borough) borough, year, residential_rate, total_tax_rate
+            FROM tax_rate_history
+            ORDER BY borough, year DESC
+            """
+        )
+    return [
+        {
+            "borough": r["borough"],
+            "year": r["year"],
+            "residential_rate": float(r["residential_rate"]) if r["residential_rate"] else None,
+            "total_tax_rate": float(r["total_tax_rate"]) if r["total_tax_rate"] else None,
+        }
+        for r in rows
+    ]
 
 
 async def get_scraper_stats() -> dict:

@@ -573,10 +573,22 @@ class PermitStatsResponse(BaseModel):
     total_cost: float
 
 
+class TaxRateHistoryPoint(BaseModel):
+    year: int
+    residential_rate: float
+
+
 class TaxRateResponse(BaseModel):
     residential_rate: float
     total_tax_rate: float
     annual_tax_estimate: float | None
+    year: int | None = None
+    yoy_change_pct: float | None = None
+    cagr_5yr: float | None = None
+    history: list[TaxRateHistoryPoint] = []
+    city_avg_rate: float | None = None
+    rank: int | None = None
+    total_boroughs: int | None = None
 
 
 class NeighbourhoodResponse(BaseModel):
@@ -604,7 +616,11 @@ async def get_neighbourhood(
     # Try DB first
     if _has_db():
         try:
-            from ..db import get_neighbourhood_stats_for_borough
+            from ..db import (
+                get_neighbourhood_stats_for_borough,
+                get_tax_history_for_borough,
+                get_all_boroughs_latest_tax_rate,
+            )
             stats = await get_neighbourhood_stats_for_borough(borough)
             if stats:
                 tax_estimate = None
@@ -638,7 +654,55 @@ async def get_neighbourhood(
                         residential_rate=res_rate or 0,
                         total_tax_rate=total_rate or 0,
                         annual_tax_estimate=tax_estimate,
+                        year=stats["year"],
                     )
+
+                    # Enrich with history, YOY, CAGR, rank
+                    try:
+                        history = await get_tax_history_for_borough(stats["borough"], years=6)
+                        if history:
+                            tax_resp.history = [
+                                TaxRateHistoryPoint(year=h["year"], residential_rate=h["residential_rate"])
+                                for h in sorted(history, key=lambda x: x["year"])
+                                if h.get("residential_rate") is not None
+                            ]
+
+                            # YOY: compare two most recent years
+                            sorted_desc = sorted(history, key=lambda x: x["year"], reverse=True)
+                            if len(sorted_desc) >= 2 and sorted_desc[1].get("residential_rate"):
+                                prev = sorted_desc[1]["residential_rate"]
+                                curr = sorted_desc[0]["residential_rate"]
+                                if prev and prev > 0:
+                                    tax_resp.yoy_change_pct = round((curr - prev) / prev * 100, 2)
+
+                            # CAGR: oldest vs newest
+                            valid = [h for h in sorted_desc if h.get("residential_rate") and h["residential_rate"] > 0]
+                            if len(valid) >= 2:
+                                newest = valid[0]
+                                oldest = valid[-1]
+                                n = newest["year"] - oldest["year"]
+                                if n > 0:
+                                    tax_resp.cagr_5yr = round(
+                                        ((newest["residential_rate"] / oldest["residential_rate"]) ** (1 / n) - 1) * 100, 2
+                                    )
+
+                        # Borough ranking
+                        all_boroughs = await get_all_boroughs_latest_tax_rate()
+                        if all_boroughs:
+                            ranked = sorted(
+                                [b for b in all_boroughs if b.get("residential_rate")],
+                                key=lambda b: b["residential_rate"],
+                            )
+                            tax_resp.total_boroughs = len(ranked)
+                            for i, b in enumerate(ranked, 1):
+                                if b["borough"].lower() == stats["borough"].lower():
+                                    tax_resp.rank = i
+                                    break
+                            rates = [b["residential_rate"] for b in ranked if b["residential_rate"]]
+                            if rates:
+                                tax_resp.city_avg_rate = round(sum(rates) / len(rates), 4)
+                    except Exception as e:
+                        logger.debug(f"Tax history enrichment failed (non-blocking): {e}")
 
                 return NeighbourhoodResponse(
                     borough=stats["borough"],

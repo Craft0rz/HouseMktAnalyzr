@@ -320,10 +320,22 @@ export interface PermitStats {
   total_cost: number;
 }
 
+export interface TaxRateHistoryPoint {
+  year: number;
+  residential_rate: number;
+}
+
 export interface TaxRate {
   residential_rate: number;
   total_tax_rate: number;
   annual_tax_estimate: number | null;
+  year: number | null;
+  yoy_change_pct: number | null;
+  cagr_5yr: number | null;
+  history: TaxRateHistoryPoint[];
+  city_avg_rate: number | null;
+  rank: number | null;
+  total_boroughs: number | null;
 }
 
 export interface NeighbourhoodResponse {
