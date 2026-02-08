@@ -102,7 +102,7 @@ allowed_origins = [
 # Add production frontend URL from env var
 frontend_url = os.environ.get("FRONTEND_URL")
 if frontend_url:
-    allowed_origins.append(frontend_url)
+    allowed_origins.append(frontend_url.rstrip("/"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -121,11 +121,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response: Response = await call_next(request)
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         if os.environ.get("FRONTEND_URL", "").startswith("https"):
             response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
+                "max-age=31536000; includeSubDomains; preload"
             )
         return response
 

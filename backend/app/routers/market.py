@@ -9,7 +9,7 @@ import os
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -268,8 +268,9 @@ class RentZonesResponse(BaseModel):
 
 
 @router.get("/rents/zones", response_model=RentZonesResponse)
-async def get_rent_zones():
+async def get_rent_zones(response: Response):
     """Get list of available CMHC zones with rent data."""
+    response.headers["Cache-Control"] = "public, s-maxage=3600, max-age=300"
     if _has_db():
         try:
             from ..db import get_rent_zones as db_get_zones
@@ -430,6 +431,7 @@ def _decimal_to_num(val):
 
 @router.get("/demographics", response_model=DemographicProfileResponse)
 async def get_demographics(
+    response: Response,
     city: str = Query(description="City or municipality name"),
     monthly_rent: int | None = Query(default=None, description="Optional monthly rent for rent-to-income ratio"),
 ):
@@ -439,6 +441,7 @@ async def get_demographics(
     Data is cached in DB and refreshed monthly by the background worker.
     Falls back to live StatCan API if DB has no data.
     """
+    response.headers["Cache-Control"] = "public, s-maxage=3600, max-age=300"
     # Try DB first
     if _has_db():
         try:
@@ -500,8 +503,9 @@ async def get_demographics(
 
 
 @router.get("/demographics/all", response_model=DemographicsListResponse)
-async def get_all_demographics():
-    """Get all cached demographics profiles for Greater Montreal."""
+async def get_all_demographics(response: Response):
+    """Get all cached demographics profiles."""
+    response.headers["Cache-Control"] = "public, s-maxage=3600, max-age=300"
     if _has_db():
         try:
             from ..db import get_all_demographics as db_get_all
@@ -603,6 +607,7 @@ class NeighbourhoodResponse(BaseModel):
 
 @router.get("/neighbourhood", response_model=NeighbourhoodResponse)
 async def get_neighbourhood(
+    response: Response,
     borough: str = Query(description="Borough or neighbourhood name"),
     assessment: int | None = Query(default=None, description="Property assessment for tax estimate"),
 ):
@@ -611,6 +616,7 @@ async def get_neighbourhood(
     Returns crime stats, building permits, tax rates, safety score,
     and gentrification signal from municipal open data.
     """
+    response.headers["Cache-Control"] = "public, s-maxage=3600, max-age=300"
     current_year = date.today().year - 1
 
     # Try DB first
