@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import {
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
 import { propertiesApi, marketApi } from '@/lib/api';
-import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse } from '@/lib/types';
+import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse, DemographicProfile } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -196,6 +196,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [detailError, setDetailError] = useState<string | null>(null);
   const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
   const [rentTrend, setRentTrend] = useState<RentTrendResponse | null>(null);
+  const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
@@ -203,6 +204,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
       setEnrichedListing(null);
       setDetailError(null);
       setRentTrend(null);
+      setDemographics(null);
       return;
     }
 
@@ -225,6 +227,13 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     // Fetch market data in parallel
     marketApi.summary().then((data) => {
       if (!cancelled) setMarketData(data);
+    }).catch(() => {});
+
+    // Fetch demographics for this property's city
+    const cityName = property.listing.city || 'Montreal';
+    const estRent = property.listing.estimated_rent || undefined;
+    marketApi.demographics(cityName, estRent ? Math.round(estRent / (property.listing.units || 1)) : undefined).then((data) => {
+      if (!cancelled) setDemographics(data);
     }).catch(() => {});
 
     // Fetch rent trend for this property's city/zone
@@ -846,6 +855,131 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                         })()}
                       </span>
                       {' '}vs zone average ({formatPrice(rentTrend.current_rent)}/unit)
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Neighbourhood Profile (Demographics) */}
+          {demographics && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Neighbourhood Profile
+                  <span className="text-xs text-muted-foreground font-normal ml-auto">
+                    Census 2021 — {demographics.municipality}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {demographics.median_household_income != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Median Income</div>
+                      <div className="text-lg font-bold">{formatPrice(demographics.median_household_income)}</div>
+                      <div className="text-[10px] text-muted-foreground">per household/yr</div>
+                    </div>
+                  )}
+                  {demographics.population != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Population</div>
+                      <div className="text-lg font-bold">
+                        {demographics.population >= 1000000
+                          ? `${(demographics.population / 1000000).toFixed(1)}M`
+                          : demographics.population >= 1000
+                            ? `${(demographics.population / 1000).toFixed(0)}K`
+                            : demographics.population.toLocaleString()}
+                      </div>
+                      {demographics.pop_change_pct != null && (
+                        <div className="flex items-center gap-1 text-[10px]">
+                          {demographics.pop_change_pct > 0 ? (
+                            <TrendingUp className="h-2.5 w-2.5 text-green-500" />
+                          ) : demographics.pop_change_pct < 0 ? (
+                            <TrendingDown className="h-2.5 w-2.5 text-red-500" />
+                          ) : (
+                            <Minus className="h-2.5 w-2.5 text-muted-foreground" />
+                          )}
+                          <span className={demographics.pop_change_pct > 0 ? 'text-green-600' : demographics.pop_change_pct < 0 ? 'text-red-600' : 'text-muted-foreground'}>
+                            {demographics.pop_change_pct > 0 ? '+' : ''}{demographics.pop_change_pct.toFixed(1)}% since 2016
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {demographics.avg_household_size != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Avg Household Size</div>
+                      <div className="text-lg font-bold">{demographics.avg_household_size.toFixed(1)}</div>
+                      <div className="text-[10px] text-muted-foreground">persons</div>
+                    </div>
+                  )}
+                  {demographics.total_households != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Total Households</div>
+                      <div className="text-lg font-bold">
+                        {demographics.total_households >= 1000
+                          ? `${(demographics.total_households / 1000).toFixed(0)}K`
+                          : demographics.total_households.toLocaleString()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rent-to-Income Ratio gauge */}
+                {demographics.rent_to_income_ratio != null && (
+                  <div className="rounded-lg p-3 border bg-muted/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-muted-foreground">Rent-to-Income Ratio</span>
+                      <span className={`text-sm font-bold ${
+                        demographics.rent_to_income_ratio < 25 ? 'text-green-600' :
+                        demographics.rent_to_income_ratio <= 30 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {demographics.rent_to_income_ratio.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`absolute inset-y-0 left-0 rounded-full transition-all ${
+                          demographics.rent_to_income_ratio < 25 ? 'bg-green-500' :
+                          demographics.rent_to_income_ratio <= 30 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${Math.min(demographics.rent_to_income_ratio / 50 * 100, 100)}%` }}
+                      />
+                      {/* 30% threshold marker */}
+                      <div
+                        className="absolute top-0 w-0.5 h-2 bg-foreground/50"
+                        style={{ left: '60%' }}
+                        title="30% affordability threshold"
+                      />
+                    </div>
+                    <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                      <span>Affordable</span>
+                      <span>30% threshold</span>
+                      <span>Strained</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Income comparison with CMA average */}
+                {demographics.median_household_income != null && (
+                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-900">
+                    <p className="text-xs text-muted-foreground">
+                      Median after-tax income:{' '}
+                      <span className="font-semibold text-foreground">
+                        {demographics.median_after_tax_income != null
+                          ? formatPrice(demographics.median_after_tax_income)
+                          : 'N/A'}
+                      </span>
+                      {demographics.avg_household_income != null && (
+                        <> | Avg household income:{' '}
+                          <span className="font-semibold text-foreground">
+                            {formatPrice(demographics.avg_household_income)}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
                 )}

@@ -13,6 +13,7 @@ from .db import (
     get_listings_without_condition_score, update_condition_score,
     upsert_market_data, get_market_data_age,
     upsert_rent_data_batch, get_rent_data_age,
+    upsert_demographics_batch, get_demographics_age,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,9 @@ class ScraperWorker:
 
         # Refresh CMHC rent data if stale
         await self._refresh_rent_data()
+
+        # Refresh demographics data if stale
+        await self._refresh_demographics()
 
         # Run alert checker after scrape completes
         try:
@@ -469,5 +473,52 @@ class ScraperWorker:
             raise
         except Exception:
             logger.exception("Rent data refresh failed")
+        finally:
+            await client.close()
+
+    async def _refresh_demographics(self):
+        """Fetch StatCan census demographics if stale (refreshes monthly)."""
+        from housemktanalyzr.enrichment.demographics import StatCanCensusClient
+
+        refresh_hours = float(os.environ.get("DEMOGRAPHICS_REFRESH_HOURS", 720))  # ~30 days
+
+        try:
+            age = await get_demographics_age()
+            if age is not None and age < refresh_hours:
+                logger.info(f"Demographics: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                return
+        except Exception:
+            logger.exception("Failed to check demographics age")
+
+        logger.info("Demographics: refreshing from StatCan Census")
+        client = StatCanCensusClient()
+
+        try:
+            profiles = await client.get_demographics()
+
+            rows = [
+                {
+                    "csd_code": p.csd_code,
+                    "municipality": p.municipality,
+                    "population": p.population,
+                    "population_2016": p.population_2016,
+                    "pop_change_pct": p.pop_change_pct,
+                    "avg_household_size": p.avg_household_size,
+                    "total_households": p.total_households,
+                    "median_household_income": p.median_household_income,
+                    "median_after_tax_income": p.median_after_tax_income,
+                    "avg_household_income": p.avg_household_income,
+                    "source": "statcan_2021",
+                }
+                for p in profiles
+            ]
+
+            count = await upsert_demographics_batch(rows)
+            logger.info(f"Demographics: upserted {count} municipality profiles")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Demographics refresh failed")
         finally:
             await client.close()

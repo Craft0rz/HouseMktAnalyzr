@@ -165,6 +165,25 @@ async def _create_tables():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS demographics (
+                id SERIAL PRIMARY KEY,
+                csd_code TEXT NOT NULL,
+                municipality TEXT NOT NULL,
+                population INT,
+                population_2016 INT,
+                pop_change_pct NUMERIC,
+                avg_household_size NUMERIC,
+                total_households INT,
+                median_household_income INT,
+                median_after_tax_income INT,
+                avg_household_income INT,
+                source TEXT DEFAULT 'statcan_2021',
+                fetched_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(csd_code)
+            )
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS portfolio (
                 id TEXT PRIMARY KEY,
                 property_id TEXT NOT NULL UNIQUE,
@@ -753,6 +772,103 @@ async def get_rent_data_age() -> Optional[float]:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT MAX(fetched_at) as latest FROM rent_data"
+        )
+    if row and row["latest"]:
+        age = datetime.now(timezone.utc) - row["latest"]
+        return age.total_seconds() / 3600
+    return None
+
+
+# --- Demographics helpers ---
+
+async def upsert_demographics(profile: dict) -> bool:
+    """Upsert a demographics profile by CSD code. Returns True on success."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO demographics (
+                csd_code, municipality, population, population_2016,
+                pop_change_pct, avg_household_size, total_households,
+                median_household_income, median_after_tax_income,
+                avg_household_income, source, fetched_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+            ON CONFLICT (csd_code) DO UPDATE SET
+                municipality = EXCLUDED.municipality,
+                population = COALESCE(EXCLUDED.population, demographics.population),
+                population_2016 = COALESCE(EXCLUDED.population_2016, demographics.population_2016),
+                pop_change_pct = COALESCE(EXCLUDED.pop_change_pct, demographics.pop_change_pct),
+                avg_household_size = COALESCE(EXCLUDED.avg_household_size, demographics.avg_household_size),
+                total_households = COALESCE(EXCLUDED.total_households, demographics.total_households),
+                median_household_income = COALESCE(EXCLUDED.median_household_income, demographics.median_household_income),
+                median_after_tax_income = COALESCE(EXCLUDED.median_after_tax_income, demographics.median_after_tax_income),
+                avg_household_income = COALESCE(EXCLUDED.avg_household_income, demographics.avg_household_income),
+                fetched_at = NOW()
+            """,
+            profile["csd_code"], profile["municipality"],
+            profile.get("population"), profile.get("population_2016"),
+            profile.get("pop_change_pct"), profile.get("avg_household_size"),
+            profile.get("total_households"), profile.get("median_household_income"),
+            profile.get("median_after_tax_income"), profile.get("avg_household_income"),
+            profile.get("source", "statcan_2021"),
+        )
+    return True
+
+
+async def upsert_demographics_batch(profiles: list[dict]) -> int:
+    """Bulk upsert demographics profiles. Returns count upserted."""
+    count = 0
+    for profile in profiles:
+        await upsert_demographics(profile)
+        count += 1
+    return count
+
+
+async def get_demographics_for_city(city: str) -> Optional[dict]:
+    """Look up demographics by municipality name (case-insensitive partial match)."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        # Try exact match first
+        row = await conn.fetchrow(
+            "SELECT * FROM demographics WHERE LOWER(municipality) = LOWER($1)",
+            city,
+        )
+        if not row:
+            # Partial match
+            row = await conn.fetchrow(
+                "SELECT * FROM demographics WHERE LOWER(municipality) LIKE '%' || LOWER($1) || '%'",
+                city,
+            )
+    return dict(row) if row else None
+
+
+async def get_demographics_by_csd(csd_code: str) -> Optional[dict]:
+    """Get demographics by CSD code."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM demographics WHERE csd_code = $1",
+            csd_code,
+        )
+    return dict(row) if row else None
+
+
+async def get_all_demographics() -> list[dict]:
+    """Get all cached demographics profiles."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM demographics ORDER BY municipality"
+        )
+    return [dict(r) for r in rows]
+
+
+async def get_demographics_age() -> Optional[float]:
+    """Get age in hours of the most recent demographics fetch."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT MAX(fetched_at) as latest FROM demographics"
         )
     if row and row["latest"]:
         age = datetime.now(timezone.utc) - row["latest"]

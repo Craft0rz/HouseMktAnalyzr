@@ -286,3 +286,17 @@ export interface RentTrendResponse {
   vacancy_rate: number | null;
   vacancy_direction: 'up' | 'down' | 'stable';
 }
+
+export interface DemographicProfile {
+  municipality: string;
+  csd_code: string;
+  population: number | null;
+  population_2016: number | null;
+  pop_change_pct: number | null;
+  avg_household_size: number | null;
+  total_households: number | null;
+  median_household_income: number | null;
+  median_after_tax_income: number | null;
+  avg_household_income: number | null;
+  rent_to_income_ratio: number | null;
+}

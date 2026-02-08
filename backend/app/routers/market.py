@@ -1,12 +1,13 @@
 """Market intelligence API endpoints.
 
-Serves macro-economic data (interest rates, CPI, unemployment)
-and rental market intelligence from CMHC.
+Serves macro-economic data (interest rates, CPI, unemployment),
+rental market intelligence from CMHC, and census demographics.
 """
 
 import logging
 import os
 from datetime import date, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -387,5 +388,165 @@ async def get_rent_trend(
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Failed to fetch CMHC rent data: {e}")
+    finally:
+        await client.close()
+
+
+# --- Demographics ---
+
+
+class DemographicProfileResponse(BaseModel):
+    municipality: str
+    csd_code: str
+    population: int | None
+    population_2016: int | None
+    pop_change_pct: float | None
+    avg_household_size: float | None
+    total_households: int | None
+    median_household_income: int | None
+    median_after_tax_income: int | None
+    avg_household_income: int | None
+    rent_to_income_ratio: float | None
+
+
+class DemographicsListResponse(BaseModel):
+    profiles: list[DemographicProfileResponse]
+    count: int
+
+
+def _decimal_to_num(val):
+    """Convert Decimal values to int/float for JSON serialization."""
+    if val is None:
+        return None
+    if isinstance(val, Decimal):
+        if val == int(val):
+            return int(val)
+        return float(val)
+    return val
+
+
+@router.get("/demographics", response_model=DemographicProfileResponse)
+async def get_demographics(
+    city: str = Query(description="City or municipality name"),
+    monthly_rent: int | None = Query(default=None, description="Optional monthly rent for rent-to-income ratio"),
+):
+    """Get census demographics for a city/municipality.
+
+    Returns population, income, household data from StatCan 2021 Census.
+    Data is cached in DB and refreshed monthly by the background worker.
+    Falls back to live StatCan API if DB has no data.
+    """
+    # Try DB first
+    if _has_db():
+        try:
+            from ..db import get_demographics_for_city
+            profile = await get_demographics_for_city(city)
+            if profile:
+                income = _decimal_to_num(profile.get("median_household_income"))
+                ratio = None
+                if income and monthly_rent:
+                    ratio = round((monthly_rent * 12) / income * 100, 1)
+
+                return DemographicProfileResponse(
+                    municipality=profile["municipality"],
+                    csd_code=profile["csd_code"],
+                    population=_decimal_to_num(profile.get("population")),
+                    population_2016=_decimal_to_num(profile.get("population_2016")),
+                    pop_change_pct=_decimal_to_num(profile.get("pop_change_pct")),
+                    avg_household_size=_decimal_to_num(profile.get("avg_household_size")),
+                    total_households=_decimal_to_num(profile.get("total_households")),
+                    median_household_income=income,
+                    median_after_tax_income=_decimal_to_num(profile.get("median_after_tax_income")),
+                    avg_household_income=_decimal_to_num(profile.get("avg_household_income")),
+                    rent_to_income_ratio=ratio,
+                )
+        except Exception as e:
+            logger.warning(f"DB demographics lookup failed: {e}")
+
+    # Fallback: live StatCan API
+    from housemktanalyzr.enrichment.demographics import StatCanCensusClient
+    client = StatCanCensusClient()
+    try:
+        profile = await client.get_demographics_for_city(city)
+        if not profile:
+            raise HTTPException(status_code=404, detail=f"No demographics found for: {city}")
+
+        ratio = None
+        if profile.median_household_income and monthly_rent:
+            ratio = round((monthly_rent * 12) / profile.median_household_income * 100, 1)
+
+        return DemographicProfileResponse(
+            municipality=profile.municipality,
+            csd_code=profile.csd_code,
+            population=profile.population,
+            population_2016=profile.population_2016,
+            pop_change_pct=profile.pop_change_pct,
+            avg_household_size=profile.avg_household_size,
+            total_households=profile.total_households,
+            median_household_income=profile.median_household_income,
+            median_after_tax_income=profile.median_after_tax_income,
+            avg_household_income=profile.avg_household_income,
+            rent_to_income_ratio=ratio,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch demographics: {e}")
+    finally:
+        await client.close()
+
+
+@router.get("/demographics/all", response_model=DemographicsListResponse)
+async def get_all_demographics():
+    """Get all cached demographics profiles for Greater Montreal."""
+    if _has_db():
+        try:
+            from ..db import get_all_demographics as db_get_all
+            profiles = await db_get_all()
+            if profiles:
+                items = [
+                    DemographicProfileResponse(
+                        municipality=p["municipality"],
+                        csd_code=p["csd_code"],
+                        population=_decimal_to_num(p.get("population")),
+                        population_2016=_decimal_to_num(p.get("population_2016")),
+                        pop_change_pct=_decimal_to_num(p.get("pop_change_pct")),
+                        avg_household_size=_decimal_to_num(p.get("avg_household_size")),
+                        total_households=_decimal_to_num(p.get("total_households")),
+                        median_household_income=_decimal_to_num(p.get("median_household_income")),
+                        median_after_tax_income=_decimal_to_num(p.get("median_after_tax_income")),
+                        avg_household_income=_decimal_to_num(p.get("avg_household_income")),
+                        rent_to_income_ratio=None,
+                    )
+                    for p in profiles
+                ]
+                return DemographicsListResponse(profiles=items, count=len(items))
+        except Exception as e:
+            logger.warning(f"DB demographics list failed: {e}")
+
+    # Fallback: fetch all from StatCan
+    from housemktanalyzr.enrichment.demographics import StatCanCensusClient
+    client = StatCanCensusClient()
+    try:
+        profiles = await client.get_demographics()
+        items = [
+            DemographicProfileResponse(
+                municipality=p.municipality,
+                csd_code=p.csd_code,
+                population=p.population,
+                population_2016=p.population_2016,
+                pop_change_pct=p.pop_change_pct,
+                avg_household_size=p.avg_household_size,
+                total_households=p.total_households,
+                median_household_income=p.median_household_income,
+                median_after_tax_income=p.median_after_tax_income,
+                avg_household_income=p.avg_household_income,
+                rent_to_income_ratio=None,
+            )
+            for p in profiles
+        ]
+        return DemographicsListResponse(profiles=items, count=len(items))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch demographics: {e}")
     finally:
         await client.close()
