@@ -1,6 +1,7 @@
 'use client';
 
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,7 +16,8 @@ import {
 } from '@/components/ui/sheet';
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
-import type { PropertyWithMetrics } from '@/lib/types';
+import { propertiesApi } from '@/lib/api';
+import type { PropertyWithMetrics, PropertyListing } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -162,10 +164,35 @@ function MetricBar({
 
 export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailProps) {
   const { addProperty, selectedProperties } = useComparison();
+  const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // Fetch enriched detail data (walk score, condition score) when sheet opens
+  useEffect(() => {
+    if (!open || !property) {
+      setEnrichedListing(null);
+      return;
+    }
+
+    let cancelled = false;
+    setDetailLoading(true);
+
+    propertiesApi.getDetails(property.listing.id).then((detail) => {
+      if (!cancelled) setEnrichedListing(detail);
+    }).catch(() => {
+      // Silently fall back to search data
+    }).finally(() => {
+      if (!cancelled) setDetailLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [open, property?.listing.id]);
 
   if (!property) return null;
 
-  const { listing, metrics } = property;
+  const { metrics } = property;
+  // Use enriched listing if available, otherwise fall back to search data
+  const listing = enrichedListing || property.listing;
 
   // Calculate mortgage estimates (20% down, 5% rate, 25 years)
   const downPaymentPct = 0.20;
@@ -402,8 +429,20 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </CardContent>
           </Card>
 
+          {/* Walk Score / Condition — loading state */}
+          {detailLoading && (
+            <Card>
+              <CardContent className="py-6">
+                <div className="flex items-center gap-3 justify-center text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">Loading walkability & condition data...</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Walk Score */}
-          {(listing.walk_score != null || listing.transit_score != null || listing.bike_score != null) && (
+          {!detailLoading && (listing.walk_score != null || listing.transit_score != null || listing.bike_score != null) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -441,7 +480,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           )}
 
           {/* AI Condition Score */}
-          {listing.condition_score != null && listing.condition_details && (
+          {!detailLoading && listing.condition_score != null && listing.condition_details && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
