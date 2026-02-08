@@ -2,13 +2,15 @@
 
 import { useState, useCallback } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Search } from 'lucide-react';
 import { SearchFilters, type SearchFilters as SearchFiltersType } from '@/components/SearchFilters';
 import { PropertyTable } from '@/components/PropertyTable';
 import { PropertyDetail } from '@/components/PropertyDetail';
 import { ComparisonBar } from '@/components/ComparisonBar';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { analysisApi, propertiesApi } from '@/lib/api';
 import type { PropertyWithMetrics, BatchAnalysisResponse } from '@/lib/types';
 
@@ -16,6 +18,25 @@ export default function SearchPage() {
   const [results, setResults] = useState<BatchAnalysisResponse | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [centrisId, setCentrisId] = useState('');
+
+  const idLookupMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const listing = await propertiesApi.getDetails(id.trim());
+      const metrics = await analysisApi.analyze(listing);
+      return { listing, metrics } as PropertyWithMetrics;
+    },
+    onSuccess: (property) => {
+      setSelectedProperty(property);
+      setDetailOpen(true);
+    },
+  });
+
+  const handleIdLookup = useCallback(() => {
+    const id = centrisId.trim();
+    if (!id) return;
+    idLookupMutation.mutate(id);
+  }, [centrisId, idLookupMutation]);
 
   const searchMutation = useMutation({
     mutationFn: async (filters: SearchFiltersType) => {
@@ -55,6 +76,37 @@ export default function SearchPage() {
         <p className="text-muted-foreground">
           Search for investment properties across Greater Montreal
         </p>
+      </div>
+
+      {/* Centris ID Lookup */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Look up by Centris ID (e.g. 28574831)"
+            value={centrisId}
+            onChange={(e) => setCentrisId(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleIdLookup()}
+            className="pl-9"
+          />
+        </div>
+        <Button
+          onClick={handleIdLookup}
+          disabled={!centrisId.trim() || idLookupMutation.isPending}
+          size="default"
+        >
+          {idLookupMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          ) : null}
+          Look Up
+        </Button>
+        {idLookupMutation.isError && (
+          <span className="text-sm text-destructive">
+            {idLookupMutation.error instanceof Error
+              ? idLookupMutation.error.message
+              : 'Property not found'}
+          </span>
+        )}
       </div>
 
       <SearchFilters onSearch={handleSearch} isLoading={searchMutation.isPending} />
