@@ -615,13 +615,15 @@ class CentrisScraper(DataSource):
         seen: set[str] = set()
 
         def _add(url: str) -> None:
-            # Normalize: strip size params, ensure absolute URL
-            clean = re.sub(r"[&?]w=\d+", "", url)
-            clean = re.sub(r"[&?]h=\d+", "", clean)
+            # Unescape HTML entities (e.g. &amp; -> &)
+            clean = url.replace("&amp;", "&")
             if not clean.startswith("http"):
                 clean = f"{self.BASE_URL}{clean}"
-            if clean not in seen:
-                seen.add(clean)
+            # Deduplicate by media ID (the 'id' param)
+            id_match = re.search(r"[?&]id=([^&]+)", clean)
+            dedup_key = id_match.group(1) if id_match else clean
+            if dedup_key not in seen:
+                seen.add(dedup_key)
                 photo_urls.append(clean)
 
         # Strategy 1: Gallery/carousel container images
