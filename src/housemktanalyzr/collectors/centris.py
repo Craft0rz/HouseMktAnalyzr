@@ -32,7 +32,6 @@ logger = logging.getLogger(__name__)
 REGION_MAPPING = {
     "montreal": "Montreal (Island)",
     "laval": "Laval",
-    "longueuil": "Longueuil",
     "south-shore": "South Shore",
     "north-shore": "North Shore",
     "laurentides": "Laurentides",
@@ -62,8 +61,7 @@ PROPERTY_TYPE_URLS = {
 REGION_URL_MAPPING = {
     "montreal": "montreal-island",
     "laval": "laval",
-    "longueuil": "longueuil",
-    "south-shore": "montreal-south-shore",  # Rive-Sud
+    "south-shore": "montreal-south-shore",  # Rive-Sud (includes Longueuil)
     "rive-sud": "montreal-south-shore",
     "monteregie": "monteregie",
     "north-shore": "north-shore",

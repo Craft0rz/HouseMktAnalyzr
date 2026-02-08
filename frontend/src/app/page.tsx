@@ -24,7 +24,6 @@ import type { MarketSummaryResponse } from '@/lib/types';
 const REGIONS = [
   { value: 'montreal', label: 'Montreal Island' },
   { value: 'laval', label: 'Laval' },
-  { value: 'longueuil', label: 'Longueuil' },
   { value: 'south-shore', label: 'South Shore' },
   { value: 'north-shore', label: 'North Shore' },
   { value: 'laurentides', label: 'Laurentides' },

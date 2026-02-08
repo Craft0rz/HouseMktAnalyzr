@@ -39,7 +39,6 @@ REGIONS = {
     "Montreal Island": "montreal-island",
     "Laval": "laval",
     "North Shore": "montreal-north-shore",
-    "Longueuil": "longueuil",
 }
 
 # Property type options

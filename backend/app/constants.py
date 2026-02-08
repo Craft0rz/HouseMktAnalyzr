@@ -11,7 +11,6 @@ PROPERTY_TYPE_URLS = {
 REGION_URL_MAPPING = {
     "montreal": "montreal-island",
     "laval": "laval",
-    "longueuil": "longueuil-le-vieux-longueuil",
     "south-shore": "montreal-south-shore",
     "rive-sud": "montreal-south-shore",
     "monteregie": "monteregie",
@@ -22,11 +21,6 @@ REGION_URL_MAPPING = {
 
 # Regions that need multiple Centris slugs to cover their full area
 _REGION_SCRAPE_SLUGS: dict[str, list[str]] = {
-    "longueuil": [
-        "longueuil-le-vieux-longueuil",
-        "longueuil-greenfield-park",
-        "longueuil-saint-hubert",
-    ],
 }
 
 # Build scrape matrix: (region_key, type_key, full_url) for all combinations
