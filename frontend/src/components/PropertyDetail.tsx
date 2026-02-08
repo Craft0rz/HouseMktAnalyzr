@@ -504,6 +504,27 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                     +{formatPrice(monthlyIncome, locale)}
                   </span>
                 </div>
+                {metrics.rent_source === 'declared' && metrics.rent_vs_market_pct != null && (
+                  <div className={`text-[11px] mt-1 px-2 py-1 rounded ${
+                    metrics.rent_vs_market_pct < -5
+                      ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                      : metrics.rent_vs_market_pct > 5
+                        ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400'
+                        : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {metrics.rent_vs_market_pct < -5
+                      ? t('detail.rentBelowMarket', { pct: Math.abs(metrics.rent_vs_market_pct).toFixed(0) })
+                      : metrics.rent_vs_market_pct > 5
+                        ? t('detail.rentAboveMarket', { pct: metrics.rent_vs_market_pct.toFixed(0) })
+                        : t('detail.rentAtMarket')
+                    }
+                    {metrics.cmhc_estimated_rent != null && (
+                      <span className="text-muted-foreground ml-1">
+                        ({t('detail.cmhcAvg')}: {formatPrice(metrics.cmhc_estimated_rent, locale)}{t('detail.perMonth')})
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               <Separator />

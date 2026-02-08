@@ -49,6 +49,8 @@ export interface InvestmentMetrics {
   purchase_price: number;
   estimated_monthly_rent: number;
   rent_source: 'declared' | 'cmhc_estimate';
+  cmhc_estimated_rent: number | null;
+  rent_vs_market_pct: number | null;
   gross_rental_yield: number;
   cap_rate: number | null;
   price_per_unit: number;

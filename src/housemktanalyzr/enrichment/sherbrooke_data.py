@@ -1,4 +1,4 @@
-"""Sherbrooke neighbourhood data client (crime/safety + tax rates).
+"""Sherbrooke neighbourhood data client (crime/safety + permits + tax rates).
 
 Data sources:
 - Crime incidents: ArcGIS IncidentSecuritePublique FeatureServer/0
@@ -8,8 +8,9 @@ Data sources:
   Coverage: Rolling 3-year window (currently 2022-2024)
   ~11,400 incident records across 4 arrondissements
 - Tax rates: sherbrooke.ca (uniform city-wide rate, hardcoded constants)
-- Permits: Not available as open data. StatCan Table 34-10-0292-01
-  has CMA-level monthly aggregates but no per-arrondissement breakdown.
+- Permits: StatCan Table 34-10-0292-01 (building permits by CMA, monthly).
+  WDS vector API. CMA-level totals distributed proportionally by population.
+  No per-arrondissement breakdown available.
 """
 
 import logging
@@ -63,6 +64,26 @@ _TAX_RATES: dict[int, float] = {
     2024: 1.0316,
 }
 
+_TOTAL_POP = sum(_ARROND_POP_2021.values())  # 172,950
+
+# ---------------------------------------------------------------------------
+# StatCan Table 34-10-0292-01 — Building permits by CMA (monthly).
+# WDS vector API: getDataFromVectorsAndLatestNPeriods
+# Sherbrooke CMA = GEO member ID 28.
+# scalarFactorCode: 0 = units, 3 = thousands.
+# ---------------------------------------------------------------------------
+STATCAN_WDS_URL = (
+    "https://www150.statcan.gc.ca/t1/wds/rest"
+    "/getDataFromVectorsAndLatestNPeriods"
+)
+# Vectors for Sherbrooke CMA residential building permits.
+_STATCAN_VECTORS = {
+    "total_count": 1675291698,       # coord 28.4.1.5.1 — all work types, count
+    "construction_count": 1675291701, # coord 28.4.6.5.1 — new construction, count
+    "transform_count": 1675291707,    # coord 28.4.12.5.1 — improvements, count
+    "total_value": 1675101961,        # coord 28.4.1.1.1 — all work types, value ($000s)
+}
+
 
 def _point_in_polygon(x: float, y: float, rings: list) -> bool:
     """Ray-casting point-in-polygon test using outer ring only."""
@@ -94,6 +115,78 @@ class SherbrookeCrimeClient:
         if self._client:
             await self._client.aclose()
             self._client = None
+
+    async def _fetch_statcan_permits(self, year: int) -> dict[str, int | float] | None:
+        """Fetch CMA-level building permit aggregates from StatCan WDS API.
+
+        Returns dict with total_count, construction_count, transform_count,
+        total_value (dollars) for the requested year, or None on failure.
+        """
+        client = await self._get_client()
+        payload = [
+            {"vectorId": vid, "latestN": 36}
+            for vid in _STATCAN_VECTORS.values()
+        ]
+        try:
+            resp = await client.post(STATCAN_WDS_URL, json=payload, timeout=30.0)
+            resp.raise_for_status()
+        except Exception:
+            logger.warning("StatCan WDS API request failed", exc_info=True)
+            return None
+
+        data = resp.json()
+        if not isinstance(data, list):
+            logger.warning("StatCan WDS: unexpected response format")
+            return None
+
+        # Build vectorId → annual aggregate for target year
+        vector_totals: dict[int, float] = {}
+        vector_months: dict[int, int] = {}
+        for item in data:
+            if item.get("status") != "SUCCESS":
+                continue
+            obj = item["object"]
+            vid = obj["vectorId"]
+            for pt in obj.get("vectorDataPoint", []):
+                pt_year = int(pt["refPer"][:4])
+                if pt_year != year:
+                    continue
+                val = pt.get("value")
+                if val is None:
+                    continue
+                scalar = pt.get("scalarFactorCode", 0)
+                actual = val * (10 ** scalar) if scalar else val
+                vector_totals[vid] = vector_totals.get(vid, 0) + actual
+                vector_months[vid] = vector_months.get(vid, 0) + 1
+
+        total_vid = _STATCAN_VECTORS["total_count"]
+        if total_vid not in vector_totals:
+            logger.info(f"StatCan: no permit data for Sherbrooke CMA in {year}")
+            return None
+
+        months = vector_months.get(total_vid, 0)
+        if months < 12:
+            logger.info(
+                f"StatCan: Sherbrooke {year} has only {months}/12 months, "
+                "extrapolating to full year"
+            )
+            scale = 12 / months if months > 0 else 1
+            for vid in vector_totals:
+                vector_totals[vid] *= scale
+
+        result = {
+            "total_count": round(vector_totals.get(_STATCAN_VECTORS["total_count"], 0)),
+            "construction_count": round(vector_totals.get(_STATCAN_VECTORS["construction_count"], 0)),
+            "transform_count": round(vector_totals.get(_STATCAN_VECTORS["transform_count"], 0)),
+            "total_value": round(vector_totals.get(_STATCAN_VECTORS["total_value"], 0)),
+        }
+        logger.info(
+            f"StatCan: Sherbrooke CMA {year} — "
+            f"{result['total_count']} permits, "
+            f"${result['total_value']:,} value "
+            f"({months} months{'*' if months < 12 else ''})"
+        )
+        return result
 
     async def _fetch_arrondissements(self) -> list[dict]:
         """Fetch arrondissement boundary polygons from ArcGIS."""
@@ -219,6 +312,9 @@ class SherbrookeCrimeClient:
         # Resolve tax rate for the target year (uniform across arrondissements)
         tax_rate = _TAX_RATES.get(year) or _TAX_RATES.get(year + 1)
 
+        # Fetch CMA-level building permits from StatCan
+        permits_cma = await self._fetch_statcan_permits(year)
+
         # Build output rows
         rows: list[dict] = []
         for short_name, _rings in polygons:
@@ -255,11 +351,30 @@ class SherbrookeCrimeClient:
             if tax_rate is not None:
                 row["tax_rate_residential"] = tax_rate
                 row["tax_rate_total"] = tax_rate  # uniform, no additional per-$100 levies
+
+            # Distribute CMA-level permit data proportionally by population
+            if permits_cma and _TOTAL_POP:
+                pop = _ARROND_POP_2021.get(short_name, 0)
+                fraction = pop / _TOTAL_POP
+                row["permit_count"] = round(permits_cma["total_count"] * fraction)
+                row["permit_construction_count"] = round(
+                    permits_cma["construction_count"] * fraction
+                )
+                row["permit_transform_count"] = round(
+                    permits_cma["transform_count"] * fraction
+                )
+                row["permit_total_cost"] = round(
+                    permits_cma["total_value"] * fraction
+                )
+
             rows.append(row)
 
+        permit_total = sum(r.get("permit_count", 0) for r in rows)
         logger.info(
             f"Sherbrooke: {len(rows)} arrondissements, "
-            f"{sum(r['crime_count'] for r in rows)} incidents for {year}"
+            f"{sum(r['crime_count'] for r in rows)} incidents"
+            + (f" + {permit_total} permits" if permits_cma else "")
+            + f" for {year}"
             + (f", tax rate {tax_rate}/100$" if tax_rate else "")
         )
         return rows

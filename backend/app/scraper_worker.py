@@ -797,6 +797,52 @@ class ScraperWorker:
 
         self._status["refresh_progress"]["neighbourhood"]["status"] = "done"
 
+        # Check for stale hardcoded data that needs manual update.
+        self._check_neighbourhood_data_staleness()
+
+    def _check_neighbourhood_data_staleness(self):
+        """Log warnings when hardcoded neighbourhood data needs updating."""
+        from datetime import date as date_cls
+        current_year = date_cls.today().year
+
+        # Quebec City: SPVQ crime data (updated manually from annual PDF report)
+        try:
+            from housemktanalyzr.enrichment.quebec_city_data import (
+                SPVQ_CRIME_DATA, _TAX_RATES as QC_TAX_RATES,
+            )
+            latest_spvq = max(SPVQ_CRIME_DATA.keys()) if SPVQ_CRIME_DATA else 0
+            if latest_spvq < current_year - 1:
+                logger.warning(
+                    f"STALE DATA: Quebec City SPVQ crime data latest year is {latest_spvq}, "
+                    f"expected {current_year - 1}. Update SPVQ_CRIME_DATA in quebec_city_data.py "
+                    f"from ville.quebec.qc.ca/publications/docs_ville/"
+                    f"rapport_annuel_police_{current_year - 1}.pdf"
+                )
+            latest_qc_tax = max(QC_TAX_RATES.keys()) if QC_TAX_RATES else 0
+            if latest_qc_tax < current_year:
+                logger.warning(
+                    f"STALE DATA: Quebec City tax rate latest year is {latest_qc_tax}, "
+                    f"expected {current_year}. Update _TAX_RATES in quebec_city_data.py "
+                    f"from ville.quebec.qc.ca/apropos/profil-financier/taux-taxation.aspx"
+                )
+        except Exception:
+            logger.debug("Could not check Quebec City data staleness", exc_info=True)
+
+        # Sherbrooke: tax rates (updated manually from city website)
+        try:
+            from housemktanalyzr.enrichment.sherbrooke_data import (
+                _TAX_RATES as SH_TAX_RATES,
+            )
+            latest_sh_tax = max(SH_TAX_RATES.keys()) if SH_TAX_RATES else 0
+            if latest_sh_tax < current_year:
+                logger.warning(
+                    f"STALE DATA: Sherbrooke tax rate latest year is {latest_sh_tax}, "
+                    f"expected {current_year}. Update _TAX_RATES in sherbrooke_data.py "
+                    f"from sherbrooke.ca/fr/services-a-la-population/taxes-et-evaluation/"
+                )
+        except Exception:
+            logger.debug("Could not check Sherbrooke data staleness", exc_info=True)
+
     async def _refresh_montreal_neighbourhood(self):
         """Fetch Montreal Open Data (crime, permits, taxes)."""
         from housemktanalyzr.enrichment.montreal_data import MontrealOpenDataClient

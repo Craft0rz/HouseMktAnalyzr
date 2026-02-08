@@ -425,6 +425,27 @@ class InvestmentCalculator:
         annual_cash_flow = monthly_cash_flow * 12
         coc_return = self.cash_on_cash_return(annual_cash_flow, total_cash)
 
+        # Rent vs market comparison: always compute CMHC estimate so we
+        # can show how declared revenue compares to market averages.
+        cmhc_estimated_rent = None
+        rent_vs_market_pct = None
+        if rent_source == "declared":
+            if listing.units > 0 and listing.bedrooms > 0:
+                beds_per_unit = max(1, listing.bedrooms // listing.units)
+                cmhc_estimated_rent = (
+                    self.cmhc.get_estimated_rent(listing.city, beds_per_unit)
+                    * listing.units
+                )
+            else:
+                cmhc_estimated_rent = self.cmhc.get_estimated_rent(
+                    listing.city, listing.bedrooms
+                )
+            if cmhc_estimated_rent and cmhc_estimated_rent > 0:
+                rent_vs_market_pct = round(
+                    ((monthly_rent - cmhc_estimated_rent) / cmhc_estimated_rent) * 100,
+                    1,
+                )
+
         # Price per unit
         price_per_unit = price // listing.units if listing.units > 0 else price
 
@@ -445,6 +466,8 @@ class InvestmentCalculator:
             purchase_price=price,
             estimated_monthly_rent=monthly_rent,
             rent_source=rent_source,
+            cmhc_estimated_rent=cmhc_estimated_rent,
+            rent_vs_market_pct=rent_vs_market_pct,
             gross_rental_yield=round(gross_yield, 2),
             cap_rate=round(cap, 2) if cap > 0 else None,
             price_per_unit=price_per_unit,

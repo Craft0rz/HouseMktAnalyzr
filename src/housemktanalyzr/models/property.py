@@ -145,6 +145,14 @@ class InvestmentMetrics(BaseModel):
         description="Where rent estimate came from: 'declared' (Centris gross revenue), 'cmhc_estimate' (CMHC zone average)",
     )
 
+    # Rent vs market comparison
+    cmhc_estimated_rent: int | None = Field(
+        default=None, ge=0, description="CMHC average monthly rent for this zone/unit mix"
+    )
+    rent_vs_market_pct: float | None = Field(
+        default=None, description="Actual vs CMHC rent: negative = below market (upside), positive = above"
+    )
+
     # Scoring
     score: float = Field(
         ..., ge=0, le=100, description="Investment score 0-100 (Financial 70 + Location 30)"
