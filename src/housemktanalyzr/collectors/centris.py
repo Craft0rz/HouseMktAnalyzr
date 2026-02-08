@@ -606,10 +606,12 @@ class CentrisScraper(DataSource):
     def _extract_photo_urls(self, soup: BeautifulSoup) -> list[str]:
         """Extract photo gallery URLs from a Centris detail page.
 
-        Tries multiple strategies since Centris HTML varies:
-        1. Gallery/carousel container images
-        2. Centris media URL pattern matching
+        Combines multiple strategies to find all listing photos:
+        1. Gallery/carousel container images (CSS selectors)
+        2. All img tags with Centris media URLs
         3. JSON data embedded in script tags
+
+        Filters to only keep actual photos (t=pi param), not thumbnails.
         """
         photo_urls: list[str] = []
         seen: set[str] = set()
@@ -640,27 +642,27 @@ class CentrisScraper(DataSource):
                 if url and ("centris.ca" in url or "media.ashx" in url):
                     _add(url)
 
-        # Strategy 2: All images with Centris media URLs
-        if not photo_urls:
-            media_re = re.compile(r"centris\.ca/media|media\.ashx", re.I)
-            for img in soup.find_all("img"):
-                for attr in ("src", "data-src"):
-                    url = img.get(attr, "")
-                    if url and media_re.search(url):
-                        _add(url)
-
-        # Strategy 3: JSON/JS embedded photo arrays
-        if not photo_urls:
-            for script in soup.find_all("script"):
-                text = script.string or ""
-                urls = re.findall(
-                    r'"(https?://[^"]*centris\.ca/media\.ashx[^"]*)"',
-                    text,
-                )
-                for url in urls:
+        # Strategy 2: All images with Centris media URLs (always run)
+        media_re = re.compile(r"centris\.ca/media|media\.ashx", re.I)
+        for img in soup.find_all("img"):
+            for attr in ("src", "data-src"):
+                url = img.get(attr, "")
+                if url and media_re.search(url):
                     _add(url)
 
-        return photo_urls
+        # Strategy 3: JSON/JS embedded photo arrays (always run)
+        for script in soup.find_all("script"):
+            text = script.string or ""
+            urls = re.findall(
+                r'"(https?://[^"]*centris\.ca/media\.ashx[^"]*)"',
+                text,
+            )
+            for url in urls:
+                _add(url)
+
+        # Filter: keep only actual photos (t=pi), not thumbnails (t=b, t=c)
+        photos_only = [u for u in photo_urls if "t=pi" in u]
+        return photos_only if photos_only else photo_urls
 
     def _parse_characteristics(self, soup: BeautifulSoup) -> dict[str, str]:
         """Parse all carac-container sections into a dict.
