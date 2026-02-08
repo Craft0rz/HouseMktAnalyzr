@@ -1,7 +1,11 @@
 'use client';
 
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { BarChart3, X, ExternalLink, ArrowLeft } from 'lucide-react';
+import {
+  BarChart3, X, ExternalLink, ArrowLeft, Loader2,
+  Shield, TrendingUp, TrendingDown, Minus,
+} from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +14,14 @@ import { useComparison } from '@/lib/comparison-context';
 import { ScoreBreakdown } from '@/components/charts';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice as formatPriceUtil } from '@/lib/formatters';
-import type { PropertyWithMetrics } from '@/lib/types';
+import { marketApi } from '@/lib/api';
+import type {
+  PropertyWithMetrics,
+  MarketSummaryResponse,
+  RentTrendResponse,
+  DemographicProfile,
+  NeighbourhoodResponse,
+} from '@/lib/types';
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null) return '-';
@@ -28,6 +39,18 @@ const getCashFlowColor = (cf: number | null | undefined) => {
   return cf >= 0 ? 'text-green-600' : 'text-red-600';
 };
 
+const getSafetyColor = (v: unknown) => {
+  if (v == null) return '';
+  const n = v as number;
+  return n >= 7 ? 'text-green-600' : n >= 4 ? 'text-yellow-600' : 'text-red-600';
+};
+
+const getRtiColor = (v: unknown) => {
+  if (v == null) return '';
+  const n = v as number;
+  return n < 25 ? 'text-green-600' : n <= 30 ? 'text-yellow-600' : 'text-red-600';
+};
+
 // Helper to find best/worst values for highlighting
 function getBestValue(
   properties: PropertyWithMetrics[],
@@ -37,6 +60,24 @@ function getBestValue(
   const values = properties.map(getValue).filter((v) => v != null) as number[];
   if (values.length === 0) return null;
   return higherIsBetter ? Math.max(...values) : Math.min(...values);
+}
+
+// Score breakdown key → i18n key mapping
+const SCORE_LABEL_MAP: Record<string, string> = {
+  cap_rate: 'score.capRate',
+  cash_flow: 'score.cashFlow',
+  price_per_unit: 'score.pricePerUnit',
+  neighbourhood_safety: 'score.safety',
+  neighbourhood_vacancy: 'score.lowVacancy',
+  neighbourhood_rent_growth: 'score.rentGrowth',
+  neighbourhood_affordability: 'score.affordability',
+  condition: 'score.condition',
+};
+
+interface PropertyMarketData {
+  rentTrend: RentTrendResponse | null;
+  demographics: DemographicProfile | null;
+  neighbourhood: NeighbourhoodResponse | null;
 }
 
 interface CompareRowProps {
@@ -90,6 +131,62 @@ export default function ComparePage() {
   const { t, locale } = useTranslation();
   const formatPrice = (price: number) => formatPriceUtil(price, locale);
 
+  // Market data state
+  const [marketDataMap, setMarketDataMap] = useState<Record<string, PropertyMarketData>>({});
+  const [marketSummary, setMarketSummary] = useState<MarketSummaryResponse | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+
+  // Stable dependency for useEffect
+  const propertyIds = useMemo(
+    () => selectedProperties.map((p) => p.listing.id).sort().join(','),
+    [selectedProperties]
+  );
+
+  // Fetch market data for all selected properties
+  useEffect(() => {
+    if (selectedProperties.length === 0) {
+      setMarketDataMap({});
+      setMarketSummary(null);
+      return;
+    }
+
+    setMarketLoading(true);
+
+    // Shared market rates (same for all properties)
+    marketApi.summary().then(setMarketSummary).catch(() => {});
+
+    // Per-property location data
+    Promise.all(
+      selectedProperties.map(async (p) => {
+        const city = p.listing.city || 'Montreal';
+        const bedrooms = Math.min(p.listing.bedrooms || 2, 3);
+        const estRent = p.listing.estimated_rent || p.metrics.estimated_monthly_rent;
+        const perUnitRent = Math.round(estRent / (p.listing.units || 1));
+        const assessment = p.listing.municipal_assessment || undefined;
+
+        const [rentTrend, demographics, neighbourhood] = await Promise.all([
+          marketApi.rentTrend(city, bedrooms).catch(() =>
+            city !== 'Montreal CMA Total'
+              ? marketApi.rentTrend('Montreal CMA Total', bedrooms).catch(() => null)
+              : null
+          ),
+          marketApi.demographics(city, perUnitRent).catch(() => null),
+          marketApi.neighbourhood(city, assessment).catch(() => null),
+        ]);
+
+        return [p.listing.id, { rentTrend, demographics, neighbourhood }] as const;
+      })
+    ).then((results) => {
+      const map: Record<string, PropertyMarketData> = {};
+      for (const [id, data] of results) {
+        map[id] = data;
+      }
+      setMarketDataMap(map);
+      setMarketLoading(false);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyIds]);
+
   if (selectedProperties.length === 0) {
     return (
       <div className="space-y-6">
@@ -120,6 +217,32 @@ export default function ComparePage() {
       </div>
     );
   }
+
+  // Helper: check if any property has a given market data field
+  const anyHas = (fn: (d: PropertyMarketData) => unknown) =>
+    selectedProperties.some((p) => {
+      const d = marketDataMap[p.listing.id];
+      return d != null && fn(d) != null;
+    });
+
+  const hasRentalRows =
+    anyHas((d) => d.rentTrend?.current_rent) ||
+    anyHas((d) => d.rentTrend?.vacancy_rate) ||
+    anyHas((d) => d.rentTrend?.cagr_5yr ?? d.rentTrend?.annual_growth_rate);
+
+  const hasNeighbourhoodRows =
+    anyHas((d) => d.neighbourhood?.safety_score) ||
+    anyHas((d) => d.demographics?.median_household_income) ||
+    anyHas((d) => d.demographics?.rent_to_income_ratio) ||
+    anyHas((d) => d.neighbourhood?.tax?.annual_tax_estimate);
+
+  const hasGentrification = selectedProperties.some((p) => {
+    const sig = marketDataMap[p.listing.id]?.neighbourhood?.gentrification_signal;
+    return sig != null && sig !== 'none';
+  });
+
+  const hasLocationData = !marketLoading && Object.keys(marketDataMap).length > 0 &&
+    (hasRentalRows || hasNeighbourhoodRows || hasGentrification);
 
   return (
     <div className="space-y-6">
@@ -282,6 +405,148 @@ export default function ComparePage() {
         </CardContent>
       </Card>
 
+      {/* Location Intelligence */}
+      {marketLoading && (
+        <Card>
+          <CardContent className="py-6">
+            <div className="flex items-center gap-3 justify-center text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">{t('compare.loadingMarketData')}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasLocationData && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              {t('compare.locationIntelligence')}
+            </CardTitle>
+            <CardDescription>{t('compare.locationIntelligenceDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1">
+            {/* --- Rental Market --- */}
+            {anyHas((d) => d.rentTrend?.current_rent) && (
+              <CompareRow
+                label={t('compare.marketRent')}
+                properties={selectedProperties}
+                getValue={(p) => marketDataMap[p.listing.id]?.rentTrend?.current_rent}
+                format={(v) => v != null ? `${formatPrice(v as number)}/${t('common.perMonth')}` : '-'}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {anyHas((d) => d.rentTrend?.vacancy_rate) && (
+              <CompareRow
+                label={t('compare.vacancyRate')}
+                properties={selectedProperties}
+                getValue={(p) => marketDataMap[p.listing.id]?.rentTrend?.vacancy_rate}
+                format={(v) => v != null ? `${(v as number).toFixed(1)}%` : '-'}
+                getBest={(props) => getBestValue(props, (p) => marketDataMap[p.listing.id]?.rentTrend?.vacancy_rate, false)}
+                getNumericValue={(p) => marketDataMap[p.listing.id]?.rentTrend?.vacancy_rate}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {anyHas((d) => d.rentTrend?.cagr_5yr ?? d.rentTrend?.annual_growth_rate) && (
+              <CompareRow
+                label={t('compare.rentGrowth')}
+                properties={selectedProperties}
+                getValue={(p) => {
+                  const rt = marketDataMap[p.listing.id]?.rentTrend;
+                  return rt?.cagr_5yr ?? rt?.annual_growth_rate;
+                }}
+                format={(v) => v != null ? `${(v as number) > 0 ? '+' : ''}${(v as number).toFixed(1)}%` : '-'}
+                getBest={(props) => getBestValue(props, (p) => {
+                  const rt = marketDataMap[p.listing.id]?.rentTrend;
+                  return rt?.cagr_5yr ?? rt?.annual_growth_rate;
+                }, true)}
+                getNumericValue={(p) => {
+                  const rt = marketDataMap[p.listing.id]?.rentTrend;
+                  return rt?.cagr_5yr ?? rt?.annual_growth_rate;
+                }}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {/* Separator between rental & neighbourhood groups */}
+            {hasRentalRows && hasNeighbourhoodRows && <Separator className="my-2" />}
+
+            {/* --- Neighbourhood & Demographics --- */}
+            {anyHas((d) => d.neighbourhood?.safety_score) && (
+              <CompareRow
+                label={t('compare.safetyScore')}
+                properties={selectedProperties}
+                getValue={(p) => marketDataMap[p.listing.id]?.neighbourhood?.safety_score}
+                format={(v) => v != null ? `${(v as number).toFixed(1)}/10` : '-'}
+                getBest={(props) => getBestValue(props, (p) => marketDataMap[p.listing.id]?.neighbourhood?.safety_score, true)}
+                getNumericValue={(p) => marketDataMap[p.listing.id]?.neighbourhood?.safety_score}
+                colorFn={getSafetyColor}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {anyHas((d) => d.demographics?.median_household_income) && (
+              <CompareRow
+                label={t('compare.medianIncome')}
+                properties={selectedProperties}
+                getValue={(p) => marketDataMap[p.listing.id]?.demographics?.median_household_income}
+                format={(v) => v != null ? formatPrice(v as number) : '-'}
+                getBest={(props) => getBestValue(props, (p) => marketDataMap[p.listing.id]?.demographics?.median_household_income, true)}
+                getNumericValue={(p) => marketDataMap[p.listing.id]?.demographics?.median_household_income}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {anyHas((d) => d.demographics?.rent_to_income_ratio) && (
+              <CompareRow
+                label={t('compare.rentToIncome')}
+                properties={selectedProperties}
+                getValue={(p) => marketDataMap[p.listing.id]?.demographics?.rent_to_income_ratio}
+                format={(v) => v != null ? `${(v as number).toFixed(1)}%` : '-'}
+                getBest={(props) => getBestValue(props, (p) => marketDataMap[p.listing.id]?.demographics?.rent_to_income_ratio, false)}
+                getNumericValue={(p) => marketDataMap[p.listing.id]?.demographics?.rent_to_income_ratio}
+                colorFn={getRtiColor}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {anyHas((d) => d.neighbourhood?.tax?.annual_tax_estimate) && (
+              <CompareRow
+                label={t('compare.estAnnualTax')}
+                properties={selectedProperties}
+                getValue={(p) => marketDataMap[p.listing.id]?.neighbourhood?.tax?.annual_tax_estimate}
+                format={(v) => v != null ? formatPrice(v as number) : '-'}
+                getBest={(props) => getBestValue(props, (p) => marketDataMap[p.listing.id]?.neighbourhood?.tax?.annual_tax_estimate, false)}
+                getNumericValue={(p) => marketDataMap[p.listing.id]?.neighbourhood?.tax?.annual_tax_estimate}
+                bestLabel={t('common.best')}
+              />
+            )}
+
+            {/* Gentrification signal */}
+            {hasGentrification && (
+              <>
+                <Separator className="my-2" />
+                <CompareRow
+                  label={t('compare.gentrification')}
+                  properties={selectedProperties}
+                  getValue={(p) => marketDataMap[p.listing.id]?.neighbourhood?.gentrification_signal}
+                  format={(v) => {
+                    if (v === 'early') return t('compare.earlyStage');
+                    if (v === 'mid') return t('compare.midStage');
+                    if (v === 'mature') return t('compare.mature');
+                    return '-';
+                  }}
+                  bestLabel={t('common.best')}
+                />
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Score Breakdown - Visual */}
       <Card>
         <CardHeader>
@@ -309,7 +574,7 @@ export default function ComparePage() {
           {Object.keys(selectedProperties[0]?.metrics.score_breakdown || {}).map((key) => (
             <CompareRow
               key={key}
-              label={key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              label={t(SCORE_LABEL_MAP[key] || key)}
               properties={selectedProperties}
               getValue={(p) => p.metrics.score_breakdown[key]}
               format={(v) => t('compare.pts', { value: (v as number).toFixed(1) })}
@@ -331,6 +596,41 @@ export default function ComparePage() {
           />
         </CardContent>
       </Card>
+
+      {/* Market Context - shared rates banner */}
+      {marketSummary && (marketSummary.mortgage_rate != null || marketSummary.policy_rate != null) && (
+        <div className="rounded-lg border bg-muted/30 p-4">
+          <div className="flex items-center gap-6 flex-wrap text-sm">
+            <span className="font-medium text-muted-foreground">{t('compare.marketContext')}</span>
+            {marketSummary.mortgage_rate != null && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">{t('compare.mortgageRate5yr')}</span>
+                <span className="font-bold">{marketSummary.mortgage_rate.toFixed(2)}%</span>
+                {marketSummary.mortgage_direction === 'up' ? (
+                  <TrendingUp className="h-3 w-3 text-red-500" />
+                ) : marketSummary.mortgage_direction === 'down' ? (
+                  <TrendingDown className="h-3 w-3 text-green-500" />
+                ) : (
+                  <Minus className="h-3 w-3 text-muted-foreground" />
+                )}
+              </div>
+            )}
+            {marketSummary.policy_rate != null && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-muted-foreground">{t('compare.policyRate')}</span>
+                <span className="font-bold">{marketSummary.policy_rate.toFixed(2)}%</span>
+                {marketSummary.policy_direction === 'up' ? (
+                  <TrendingUp className="h-3 w-3 text-red-500" />
+                ) : marketSummary.policy_direction === 'down' ? (
+                  <TrendingDown className="h-3 w-3 text-green-500" />
+                ) : (
+                  <Minus className="h-3 w-3 text-muted-foreground" />
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Links */}
       <div className="grid gap-4" style={{ gridTemplateColumns: `200px repeat(${selectedProperties.length}, 1fr)` }}>

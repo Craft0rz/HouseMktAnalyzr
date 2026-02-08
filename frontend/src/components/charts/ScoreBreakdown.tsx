@@ -1,22 +1,24 @@
 'use client';
 
+import { useTranslation } from '@/i18n/LanguageContext';
+
 interface ScoreBreakdownProps {
   scoreBreakdown: Record<string, number>;
   className?: string;
 }
 
-const FINANCIAL_CATEGORIES: { key: string; label: string; max: number }[] = [
-  { key: 'cap_rate', label: 'Cap Rate', max: 25 },
-  { key: 'cash_flow', label: 'Cash Flow', max: 25 },
-  { key: 'price_per_unit', label: 'Price/Unit', max: 20 },
+const FINANCIAL_KEYS = [
+  { key: 'cap_rate', labelKey: 'score.capRate', max: 25 },
+  { key: 'cash_flow', labelKey: 'score.cashFlow', max: 25 },
+  { key: 'price_per_unit', labelKey: 'score.pricePerUnit', max: 20 },
 ];
 
-const LOCATION_CATEGORIES: { key: string; label: string; max: number }[] = [
-  { key: 'neighbourhood_safety', label: 'Safety', max: 8 },
-  { key: 'neighbourhood_vacancy', label: 'Low Vacancy', max: 7 },
-  { key: 'neighbourhood_rent_growth', label: 'Rent Growth', max: 7 },
-  { key: 'neighbourhood_affordability', label: 'Affordability', max: 4 },
-  { key: 'condition', label: 'Condition', max: 4 },
+const LOCATION_KEYS = [
+  { key: 'neighbourhood_safety', labelKey: 'score.safety', max: 8 },
+  { key: 'neighbourhood_vacancy', labelKey: 'score.lowVacancy', max: 7 },
+  { key: 'neighbourhood_rent_growth', labelKey: 'score.rentGrowth', max: 7 },
+  { key: 'neighbourhood_affordability', labelKey: 'score.affordability', max: 4 },
+  { key: 'condition', labelKey: 'score.condition', max: 4 },
 ];
 
 function getBarColor(percentage: number): string {
@@ -27,17 +29,19 @@ function getBarColor(percentage: number): string {
 }
 
 export function ScoreBreakdown({ scoreBreakdown, className }: ScoreBreakdownProps) {
+  const { t } = useTranslation();
+
   if (!scoreBreakdown || Object.keys(scoreBreakdown).length === 0) return null;
 
-  const hasLocation = LOCATION_CATEGORIES.some(
+  const hasLocation = LOCATION_KEYS.some(
     ({ key }) => scoreBreakdown[key] != null
   );
 
-  const financialTotal = FINANCIAL_CATEGORIES.reduce(
+  const financialTotal = FINANCIAL_KEYS.reduce(
     (sum, { key }) => sum + (scoreBreakdown[key] ?? 0), 0
   );
   const locationTotal = hasLocation
-    ? LOCATION_CATEGORIES.reduce(
+    ? LOCATION_KEYS.reduce(
         (sum, { key }) => sum + (scoreBreakdown[key] ?? 0), 0
       )
     : 0;
@@ -45,17 +49,17 @@ export function ScoreBreakdown({ scoreBreakdown, className }: ScoreBreakdownProp
   return (
     <div className={`space-y-3 ${className || ''}`}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span className="font-medium">Financial</span>
+        <span className="font-medium">{t('score.financial')}</span>
         <span className="tabular-nums">{financialTotal.toFixed(0)}/70</span>
       </div>
-      {FINANCIAL_CATEGORIES.map(({ key, label, max }) => {
+      {FINANCIAL_KEYS.map(({ key, labelKey, max }) => {
         const value = scoreBreakdown[key] ?? 0;
         const percentage = (value / max) * 100;
 
         return (
           <div key={key} className="space-y-1">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{label}</span>
+              <span className="font-medium">{t(labelKey)}</span>
               <span className="text-muted-foreground tabular-nums">
                 {value.toFixed(0)}/{max}
               </span>
@@ -73,17 +77,17 @@ export function ScoreBreakdown({ scoreBreakdown, className }: ScoreBreakdownProp
       {hasLocation && (
         <>
           <div className="pt-1 border-t flex items-center justify-between text-xs text-muted-foreground">
-            <span className="font-medium">Location & Quality</span>
+            <span className="font-medium">{t('score.locationQuality')}</span>
             <span className="tabular-nums">{locationTotal.toFixed(0)}/30</span>
           </div>
-          {LOCATION_CATEGORIES.filter(({ key }) => scoreBreakdown[key] != null).map(({ key, label, max }) => {
+          {LOCATION_KEYS.filter(({ key }) => scoreBreakdown[key] != null).map(({ key, labelKey, max }) => {
             const value = scoreBreakdown[key] ?? 0;
             const percentage = (value / max) * 100;
 
             return (
               <div key={key} className="space-y-1">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium">{label}</span>
+                  <span className="font-medium">{t(labelKey)}</span>
                   <span className="text-muted-foreground tabular-nums">
                     {value.toFixed(0)}/{max}
                   </span>

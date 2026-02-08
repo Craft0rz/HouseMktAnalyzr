@@ -162,7 +162,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
             {bd && Object.keys(bd).length > 0 && (
               <div className="invisible group-hover:visible absolute left-0 top-full mt-1 z-50 w-44 rounded-md border bg-popover p-2 text-xs shadow-md">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Financial</span>
+                  <span className="text-muted-foreground">{t('score.financial')}</span>
                   <span className="font-medium tabular-nums">{fin.toFixed(0)}/70</span>
                 </div>
                 <div className="mt-1 h-1 w-full rounded-full bg-muted overflow-hidden">
@@ -171,7 +171,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
                 {loc > 0 && (
                   <>
                     <div className="flex justify-between mt-1.5">
-                      <span className="text-muted-foreground">Location</span>
+                      <span className="text-muted-foreground">{t('score.location')}</span>
                       <span className="font-medium tabular-nums">{loc.toFixed(0)}/30</span>
                     </div>
                     <div className="mt-1 h-1 w-full rounded-full bg-muted overflow-hidden">
