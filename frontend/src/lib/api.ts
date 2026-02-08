@@ -23,6 +23,7 @@ import type {
   MarketSummaryResponse,
   RentTrendResponse,
   DemographicProfile,
+  NeighbourhoodResponse,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -285,6 +286,12 @@ export const marketApi = {
     const params = new URLSearchParams({ city });
     if (monthlyRent) params.set('monthly_rent', String(monthlyRent));
     return fetchApi(`/api/market/demographics?${params}`);
+  },
+
+  neighbourhood: (borough: string, assessment?: number): Promise<NeighbourhoodResponse> => {
+    const params = new URLSearchParams({ borough });
+    if (assessment) params.set('assessment', String(assessment));
+    return fetchApi(`/api/market/neighbourhood?${params}`);
   },
 };
 

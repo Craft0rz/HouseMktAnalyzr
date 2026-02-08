@@ -10,6 +10,7 @@ from .cmhc_client import CMHCClient
 from .condition_scorer import ConditionScoreResult, score_property_condition
 from .demographics import DemographicProfile, StatCanCensusClient
 from .market_data import BankOfCanadaClient, Observation, RateHistory
+from .montreal_data import MontrealOpenDataClient, NeighbourhoodStats
 from .rent_intel import RentForecast, RentTrend, analyze_zone_rent
 from .walkscore import WalkScoreResult, enrich_with_walk_score
 
@@ -19,6 +20,8 @@ __all__ = [
     "CMHCRentalData",
     "ConditionScoreResult",
     "DemographicProfile",
+    "MontrealOpenDataClient",
+    "NeighbourhoodStats",
     "Observation",
     "QuebecAssessmentData",
     "RateHistory",

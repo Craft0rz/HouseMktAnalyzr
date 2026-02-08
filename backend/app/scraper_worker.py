@@ -14,6 +14,7 @@ from .db import (
     upsert_market_data, get_market_data_age,
     upsert_rent_data_batch, get_rent_data_age,
     upsert_demographics_batch, get_demographics_age,
+    upsert_neighbourhood_stats_batch, get_neighbourhood_stats_age,
 )
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,9 @@ class ScraperWorker:
 
         # Refresh demographics data if stale
         await self._refresh_demographics()
+
+        # Refresh Montreal neighbourhood data (crime, permits, taxes)
+        await self._refresh_neighbourhood_data()
 
         # Run alert checker after scrape completes
         try:
@@ -520,5 +524,72 @@ class ScraperWorker:
             raise
         except Exception:
             logger.exception("Demographics refresh failed")
+        finally:
+            await client.close()
+
+    async def _refresh_neighbourhood_data(self):
+        """Fetch Montreal Open Data (crime, permits, taxes) if stale (refreshes weekly)."""
+        from housemktanalyzr.enrichment.montreal_data import MontrealOpenDataClient
+
+        refresh_hours = float(os.environ.get("NEIGHBOURHOOD_REFRESH_HOURS", 168))  # weekly
+
+        try:
+            age = await get_neighbourhood_stats_age()
+            if age is not None and age < refresh_hours:
+                logger.info(f"Neighbourhood data: fresh ({age:.1f}h old, threshold {refresh_hours}h)")
+                return
+        except Exception:
+            logger.exception("Failed to check neighbourhood data age")
+
+        logger.info("Neighbourhood data: refreshing from Montreal Open Data")
+        client = MontrealOpenDataClient()
+
+        try:
+            from datetime import date as date_cls
+            current_year = date_cls.today().year - 1
+
+            stats_list = await client.get_neighbourhood_stats()
+
+            rows = []
+            for stats in stats_list:
+                row = {
+                    "borough": stats.borough,
+                    "year": current_year,
+                    "source": "montreal_open_data",
+                    "safety_score": stats.safety_score,
+                    "gentrification_signal": stats.gentrification_signal,
+                }
+                if stats.crime:
+                    row.update({
+                        "crime_count": stats.crime.total_crimes,
+                        "violent_crimes": stats.crime.violent_crimes,
+                        "property_crimes": stats.crime.property_crimes,
+                        "crime_change_pct": stats.crime.year_over_year_change_pct,
+                    })
+                if stats.permits:
+                    row.update({
+                        "permit_count": stats.permits.total_permits,
+                        "permit_transform_count": stats.permits.transform_permits,
+                        "permit_construction_count": stats.permits.construction_permits,
+                        "permit_demolition_count": stats.permits.demolition_permits,
+                        "permit_total_cost": stats.permits.total_cost,
+                    })
+                if stats.tax:
+                    row.update({
+                        "tax_rate_residential": stats.tax.residential_rate,
+                        "tax_rate_total": stats.tax.total_tax_rate,
+                    })
+                rows.append(row)
+
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Neighbourhood data: upserted {count} borough stats")
+            else:
+                logger.warning("Neighbourhood data: no results from Montreal Open Data")
+
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Neighbourhood data refresh failed")
         finally:
             await client.close()

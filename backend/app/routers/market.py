@@ -550,3 +550,146 @@ async def get_all_demographics():
         raise HTTPException(status_code=502, detail=f"Failed to fetch demographics: {e}")
     finally:
         await client.close()
+
+
+# --- Neighbourhood Safety & Development ---
+
+
+class CrimeStatsResponse(BaseModel):
+    total_crimes: int
+    violent_crimes: int
+    property_crimes: int
+    year_over_year_change_pct: float | None
+
+
+class PermitStatsResponse(BaseModel):
+    total_permits: int
+    construction_permits: int
+    transform_permits: int
+    demolition_permits: int
+    total_cost: float
+
+
+class TaxRateResponse(BaseModel):
+    residential_rate: float
+    total_tax_rate: float
+    annual_tax_estimate: float | None
+
+
+class NeighbourhoodResponse(BaseModel):
+    borough: str
+    year: int
+    crime: CrimeStatsResponse | None
+    permits: PermitStatsResponse | None
+    tax: TaxRateResponse | None
+    safety_score: float | None
+    gentrification_signal: str | None
+
+
+@router.get("/neighbourhood", response_model=NeighbourhoodResponse)
+async def get_neighbourhood(
+    borough: str = Query(description="Borough or neighbourhood name"),
+    assessment: int | None = Query(default=None, description="Property assessment for tax estimate"),
+):
+    """Get safety, permit activity, and tax data for a Montreal borough.
+
+    Returns crime stats, building permits, tax rates, safety score,
+    and gentrification signal from Montreal Open Data.
+    """
+    current_year = date.today().year - 1
+
+    # Try DB first
+    if _has_db():
+        try:
+            from ..db import get_neighbourhood_stats_for_borough
+            stats = await get_neighbourhood_stats_for_borough(borough)
+            if stats:
+                tax_estimate = None
+                res_rate = _decimal_to_num(stats.get("tax_rate_residential"))
+                total_rate = _decimal_to_num(stats.get("tax_rate_total"))
+                if total_rate and assessment:
+                    tax_estimate = round(total_rate * assessment / 100, 0)
+
+                crime_resp = None
+                if stats.get("crime_count") is not None:
+                    crime_resp = CrimeStatsResponse(
+                        total_crimes=_decimal_to_num(stats["crime_count"]) or 0,
+                        violent_crimes=_decimal_to_num(stats.get("violent_crimes")) or 0,
+                        property_crimes=_decimal_to_num(stats.get("property_crimes")) or 0,
+                        year_over_year_change_pct=_decimal_to_num(stats.get("crime_change_pct")),
+                    )
+
+                permit_resp = None
+                if stats.get("permit_count") is not None:
+                    permit_resp = PermitStatsResponse(
+                        total_permits=_decimal_to_num(stats["permit_count"]) or 0,
+                        construction_permits=_decimal_to_num(stats.get("permit_construction_count")) or 0,
+                        transform_permits=_decimal_to_num(stats.get("permit_transform_count")) or 0,
+                        demolition_permits=_decimal_to_num(stats.get("permit_demolition_count")) or 0,
+                        total_cost=_decimal_to_num(stats.get("permit_total_cost")) or 0,
+                    )
+
+                tax_resp = None
+                if res_rate is not None:
+                    tax_resp = TaxRateResponse(
+                        residential_rate=res_rate or 0,
+                        total_tax_rate=total_rate or 0,
+                        annual_tax_estimate=tax_estimate,
+                    )
+
+                return NeighbourhoodResponse(
+                    borough=stats["borough"],
+                    year=stats["year"],
+                    crime=crime_resp,
+                    permits=permit_resp,
+                    tax=tax_resp,
+                    safety_score=_decimal_to_num(stats.get("safety_score")),
+                    gentrification_signal=stats.get("gentrification_signal"),
+                )
+        except Exception as e:
+            logger.warning(f"DB neighbourhood lookup failed: {e}")
+
+    # Fallback: live Montreal Open Data
+    from housemktanalyzr.enrichment.montreal_data import MontrealOpenDataClient
+    client = MontrealOpenDataClient()
+    try:
+        results = await client.get_neighbourhood_stats(borough)
+        if not results:
+            raise HTTPException(status_code=404, detail=f"No data found for borough: {borough}")
+
+        stats = results[0]
+
+        tax_estimate = None
+        if stats.tax and assessment:
+            tax_estimate = round(stats.tax.total_tax_rate * assessment / 100, 0)
+
+        return NeighbourhoodResponse(
+            borough=stats.borough,
+            year=current_year,
+            crime=CrimeStatsResponse(
+                total_crimes=stats.crime.total_crimes,
+                violent_crimes=stats.crime.violent_crimes,
+                property_crimes=stats.crime.property_crimes,
+                year_over_year_change_pct=stats.crime.year_over_year_change_pct,
+            ) if stats.crime else None,
+            permits=PermitStatsResponse(
+                total_permits=stats.permits.total_permits,
+                construction_permits=stats.permits.construction_permits,
+                transform_permits=stats.permits.transform_permits,
+                demolition_permits=stats.permits.demolition_permits,
+                total_cost=stats.permits.total_cost,
+            ) if stats.permits else None,
+            tax=TaxRateResponse(
+                residential_rate=stats.tax.residential_rate,
+                total_tax_rate=stats.tax.total_tax_rate,
+                annual_tax_estimate=tax_estimate,
+            ) if stats.tax else None,
+            safety_score=stats.safety_score,
+            gentrification_signal=stats.gentrification_signal,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch neighbourhood data: {e}")
+    finally:
+        await client.close()

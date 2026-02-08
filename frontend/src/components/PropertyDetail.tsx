@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +17,7 @@ import {
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
 import { propertiesApi, marketApi } from '@/lib/api';
-import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse, DemographicProfile } from '@/lib/types';
+import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse, DemographicProfile, NeighbourhoodResponse } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -197,6 +197,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
   const [rentTrend, setRentTrend] = useState<RentTrendResponse | null>(null);
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
+  const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
@@ -205,6 +206,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
       setDetailError(null);
       setRentTrend(null);
       setDemographics(null);
+      setNeighbourhood(null);
       return;
     }
 
@@ -227,6 +229,13 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     // Fetch market data in parallel
     marketApi.summary().then((data) => {
       if (!cancelled) setMarketData(data);
+    }).catch(() => {});
+
+    // Fetch neighbourhood safety/development data
+    const boroughName = property.listing.city || 'Montreal';
+    const assessmentVal = property.listing.municipal_assessment || undefined;
+    marketApi.neighbourhood(boroughName, assessmentVal).then((data) => {
+      if (!cancelled) setNeighbourhood(data);
     }).catch(() => {});
 
     // Fetch demographics for this property's city
@@ -979,6 +988,117 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                             {formatPrice(demographics.avg_household_income)}
                           </span>
                         </>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Safety & Development */}
+          {neighbourhood && (neighbourhood.crime || neighbourhood.permits || neighbourhood.tax) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Shield className="h-4 w-4" />
+                  Safety & Development
+                  <span className="text-xs text-muted-foreground font-normal ml-auto">
+                    {neighbourhood.borough} ({neighbourhood.year})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Safety Score */}
+                  {neighbourhood.safety_score != null && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Safety Score</div>
+                      <div className="flex items-center gap-2">
+                        <div className={`text-lg font-bold ${
+                          neighbourhood.safety_score >= 7 ? 'text-green-600' :
+                          neighbourhood.safety_score >= 4 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {neighbourhood.safety_score.toFixed(1)}<span className="text-muted-foreground font-normal text-xs">/10</span>
+                        </div>
+                      </div>
+                      <div className="relative h-1.5 rounded-full bg-muted overflow-hidden mt-1">
+                        <div
+                          className={`absolute inset-y-0 left-0 rounded-full transition-all ${
+                            neighbourhood.safety_score >= 7 ? 'bg-green-500' :
+                            neighbourhood.safety_score >= 4 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${neighbourhood.safety_score * 10}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gentrification Signal */}
+                  {neighbourhood.gentrification_signal && neighbourhood.gentrification_signal !== 'none' && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">Gentrification</div>
+                      <Badge variant="outline" className={`text-xs ${
+                        neighbourhood.gentrification_signal === 'early' ? 'border-blue-300 text-blue-600' :
+                        neighbourhood.gentrification_signal === 'mid' ? 'border-orange-300 text-orange-600' :
+                        'border-purple-300 text-purple-600'
+                      }`}>
+                        {neighbourhood.gentrification_signal === 'early' ? 'Early Stage' :
+                         neighbourhood.gentrification_signal === 'mid' ? 'Mid Stage' : 'Mature'}
+                      </Badge>
+                      <div className="text-[10px] text-muted-foreground mt-1">Based on permit activity</div>
+                    </div>
+                  )}
+
+                  {/* Crime stats */}
+                  {neighbourhood.crime && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-muted-foreground">Crime Incidents</span>
+                        {neighbourhood.crime.year_over_year_change_pct != null && (
+                          neighbourhood.crime.year_over_year_change_pct < -2 ? (
+                            <TrendingDown className="h-3 w-3 text-green-500" />
+                          ) : neighbourhood.crime.year_over_year_change_pct > 2 ? (
+                            <TrendingUp className="h-3 w-3 text-red-500" />
+                          ) : (
+                            <Minus className="h-3 w-3 text-muted-foreground" />
+                          )
+                        )}
+                      </div>
+                      <div className="text-lg font-bold">{neighbourhood.crime.total_crimes.toLocaleString()}</div>
+                      {neighbourhood.crime.year_over_year_change_pct != null && (
+                        <div className={`text-[10px] ${
+                          neighbourhood.crime.year_over_year_change_pct < 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {neighbourhood.crime.year_over_year_change_pct > 0 ? '+' : ''}
+                          {neighbourhood.crime.year_over_year_change_pct.toFixed(1)}% YoY
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Permit activity */}
+                  {neighbourhood.permits && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">
+                        <Hammer className="h-3 w-3 inline mr-1" />
+                        Permits
+                      </div>
+                      <div className="text-lg font-bold">{neighbourhood.permits.total_permits.toLocaleString()}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {neighbourhood.permits.transform_permits} reno | {neighbourhood.permits.construction_permits} new
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Tax rate info */}
+                {neighbourhood.tax && (
+                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-900">
+                    <p className="text-xs text-muted-foreground">
+                      Tax rate: <span className="font-semibold text-foreground">${neighbourhood.tax.residential_rate.toFixed(4)}/$100</span> (residential)
+                      {neighbourhood.tax.annual_tax_estimate != null && (
+                        <> | Est. annual tax: <span className="font-semibold text-foreground">{formatPrice(neighbourhood.tax.annual_tax_estimate)}</span></>
                       )}
                     </p>
                   </div>

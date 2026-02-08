@@ -300,3 +300,34 @@ export interface DemographicProfile {
   avg_household_income: number | null;
   rent_to_income_ratio: number | null;
 }
+
+export interface CrimeStats {
+  total_crimes: number;
+  violent_crimes: number;
+  property_crimes: number;
+  year_over_year_change_pct: number | null;
+}
+
+export interface PermitStats {
+  total_permits: number;
+  construction_permits: number;
+  transform_permits: number;
+  demolition_permits: number;
+  total_cost: number;
+}
+
+export interface TaxRate {
+  residential_rate: number;
+  total_tax_rate: number;
+  annual_tax_estimate: number | null;
+}
+
+export interface NeighbourhoodResponse {
+  borough: string;
+  year: number;
+  crime: CrimeStats | null;
+  permits: PermitStats | null;
+  tax: TaxRate | null;
+  safety_score: number | null;
+  gentrification_signal: string | null;
+}

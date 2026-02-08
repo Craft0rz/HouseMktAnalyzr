@@ -184,6 +184,31 @@ async def _create_tables():
         """)
 
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS neighbourhood_stats (
+                id SERIAL PRIMARY KEY,
+                borough TEXT NOT NULL,
+                year INT NOT NULL,
+                crime_count INT,
+                violent_crimes INT,
+                property_crimes INT,
+                crime_rate_per_1000 NUMERIC,
+                crime_change_pct NUMERIC,
+                permit_count INT,
+                permit_transform_count INT,
+                permit_construction_count INT,
+                permit_demolition_count INT,
+                permit_total_cost NUMERIC,
+                tax_rate_residential NUMERIC,
+                tax_rate_total NUMERIC,
+                safety_score NUMERIC,
+                gentrification_signal TEXT,
+                source TEXT DEFAULT 'montreal_open_data',
+                fetched_at TIMESTAMPTZ DEFAULT NOW(),
+                UNIQUE(borough, year)
+            )
+        """)
+
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS portfolio (
                 id TEXT PRIMARY KEY,
                 property_id TEXT NOT NULL UNIQUE,
@@ -869,6 +894,123 @@ async def get_demographics_age() -> Optional[float]:
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             "SELECT MAX(fetched_at) as latest FROM demographics"
+        )
+    if row and row["latest"]:
+        age = datetime.now(timezone.utc) - row["latest"]
+        return age.total_seconds() / 3600
+    return None
+
+
+# --- Neighbourhood stats helpers ---
+
+async def upsert_neighbourhood_stats(stats: dict) -> bool:
+    """Upsert neighbourhood stats by borough + year. Returns True on success."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO neighbourhood_stats (
+                borough, year, crime_count, violent_crimes, property_crimes,
+                crime_rate_per_1000, crime_change_pct,
+                permit_count, permit_transform_count, permit_construction_count,
+                permit_demolition_count, permit_total_cost,
+                tax_rate_residential, tax_rate_total,
+                safety_score, gentrification_signal, source, fetched_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
+            ON CONFLICT (borough, year) DO UPDATE SET
+                crime_count = COALESCE($3, neighbourhood_stats.crime_count),
+                violent_crimes = COALESCE($4, neighbourhood_stats.violent_crimes),
+                property_crimes = COALESCE($5, neighbourhood_stats.property_crimes),
+                crime_rate_per_1000 = COALESCE($6, neighbourhood_stats.crime_rate_per_1000),
+                crime_change_pct = COALESCE($7, neighbourhood_stats.crime_change_pct),
+                permit_count = COALESCE($8, neighbourhood_stats.permit_count),
+                permit_transform_count = COALESCE($9, neighbourhood_stats.permit_transform_count),
+                permit_construction_count = COALESCE($10, neighbourhood_stats.permit_construction_count),
+                permit_demolition_count = COALESCE($11, neighbourhood_stats.permit_demolition_count),
+                permit_total_cost = COALESCE($12, neighbourhood_stats.permit_total_cost),
+                tax_rate_residential = COALESCE($13, neighbourhood_stats.tax_rate_residential),
+                tax_rate_total = COALESCE($14, neighbourhood_stats.tax_rate_total),
+                safety_score = COALESCE($15, neighbourhood_stats.safety_score),
+                gentrification_signal = COALESCE($16, neighbourhood_stats.gentrification_signal),
+                fetched_at = NOW()
+            """,
+            stats["borough"], stats["year"],
+            stats.get("crime_count"), stats.get("violent_crimes"),
+            stats.get("property_crimes"), stats.get("crime_rate_per_1000"),
+            stats.get("crime_change_pct"),
+            stats.get("permit_count"), stats.get("permit_transform_count"),
+            stats.get("permit_construction_count"), stats.get("permit_demolition_count"),
+            stats.get("permit_total_cost"),
+            stats.get("tax_rate_residential"), stats.get("tax_rate_total"),
+            stats.get("safety_score"), stats.get("gentrification_signal"),
+            stats.get("source", "montreal_open_data"),
+        )
+    return True
+
+
+async def upsert_neighbourhood_stats_batch(rows: list[dict]) -> int:
+    """Bulk upsert neighbourhood stats. Returns count upserted."""
+    count = 0
+    for row in rows:
+        await upsert_neighbourhood_stats(row)
+        count += 1
+    return count
+
+
+async def get_neighbourhood_stats_for_borough(borough: str) -> Optional[dict]:
+    """Get the most recent neighbourhood stats for a borough (case-insensitive)."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT * FROM neighbourhood_stats
+            WHERE LOWER(borough) = LOWER($1)
+            ORDER BY year DESC
+            LIMIT 1
+            """,
+            borough,
+        )
+        if not row:
+            # Partial match
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM neighbourhood_stats
+                WHERE LOWER(borough) LIKE '%' || LOWER($1) || '%'
+                ORDER BY year DESC
+                LIMIT 1
+                """,
+                borough,
+            )
+    return dict(row) if row else None
+
+
+async def get_all_neighbourhood_stats(year: int | None = None) -> list[dict]:
+    """Get all neighbourhood stats, optionally filtered by year."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        if year:
+            rows = await conn.fetch(
+                "SELECT * FROM neighbourhood_stats WHERE year = $1 ORDER BY borough",
+                year,
+            )
+        else:
+            # Get most recent year for each borough
+            rows = await conn.fetch(
+                """
+                SELECT DISTINCT ON (borough) *
+                FROM neighbourhood_stats
+                ORDER BY borough, year DESC
+                """
+            )
+    return [dict(r) for r in rows]
+
+
+async def get_neighbourhood_stats_age() -> Optional[float]:
+    """Get age in hours of the most recent neighbourhood stats fetch."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT MAX(fetched_at) as latest FROM neighbourhood_stats"
         )
     if row and row["latest"]:
         age = datetime.now(timezone.utc) - row["latest"]
