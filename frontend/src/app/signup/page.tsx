@@ -166,25 +166,29 @@ export default function SignupPage() {
             </Button>
           </form>
 
-          <div className="my-6 flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">{t('auth.orContinueWith')}</span>
-            <Separator className="flex-1" />
-          </div>
+          {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && (
+            <>
+              <div className="my-6 flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-xs text-muted-foreground">{t('auth.orContinueWith')}</span>
+                <Separator className="flex-1" />
+              </div>
 
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={(response) => {
-                if (response.credential) {
-                  handleGoogleSuccess(response.credential);
-                }
-              }}
-              onError={() => toast.error(t('auth.googleError'))}
-              text="continue_with"
-              shape="rectangular"
-              width="100%"
-            />
-          </div>
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={(response) => {
+                    if (response.credential) {
+                      handleGoogleSuccess(response.credential);
+                    }
+                  }}
+                  onError={() => toast.error(t('auth.googleError'))}
+                  text="continue_with"
+                  shape="rectangular"
+                  width="100%"
+                />
+              </div>
+            </>
+          )}
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
             {t('auth.hasAccount')}{' '}
