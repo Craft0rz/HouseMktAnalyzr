@@ -98,6 +98,8 @@
   "home.priceDistribution": "Distribution des prix",
   "home.priceDistributionDesc": "Nombre de propriétés par gamme de prix",
   "home.capRateComparison": "Comparaison des taux de capitalisation",
+  "home.cashFlowComparison": "Comparaison des flux de trésorerie",
+  "home.fullSearch": "Recherche complète",
   "home.topOpportunities": "Meilleures opportunités d'investissement",
   "home.units": "{count} logements",
   "home.cap": "{rate}% cap",

@@ -79,7 +79,9 @@ export function PriceCapScatter({ properties, className }: PriceCapScatterProps)
               backgroundColor: 'hsl(var(--popover))',
               border: '1px solid hsl(var(--border))',
               borderRadius: '6px',
+              color: 'hsl(var(--popover-foreground))',
             }}
+            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
             formatter={(value, name) => {
               const v = value as number;
               if (name === 'Price') return [formatPrice(v), name];

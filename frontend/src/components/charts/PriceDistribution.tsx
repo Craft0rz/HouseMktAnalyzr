@@ -72,7 +72,9 @@ export function PriceDistribution({ properties, className }: PriceDistributionPr
               backgroundColor: 'hsl(var(--popover))',
               border: '1px solid hsl(var(--border))',
               borderRadius: '6px',
+              color: 'hsl(var(--popover-foreground))',
             }}
+            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
             formatter={(value, name) => {
               if (name === 'count') return [value, 'Properties'];
               if (name === 'avgScore') return [value, 'Avg Score'];

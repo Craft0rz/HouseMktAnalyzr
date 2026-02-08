@@ -77,7 +77,9 @@ export function MetricsBar({ properties, metric, className }: MetricsBarProps) {
               backgroundColor: 'hsl(var(--popover))',
               border: '1px solid hsl(var(--border))',
               borderRadius: '6px',
+              color: 'hsl(var(--popover-foreground))',
             }}
+            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
             formatter={(value) => [config.format(value as number), config.label]}
             labelFormatter={(_, payload) => payload?.[0]?.payload?.fullAddress || ''}
           />

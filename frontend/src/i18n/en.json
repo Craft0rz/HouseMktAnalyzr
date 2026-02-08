@@ -98,6 +98,8 @@
   "home.priceDistribution": "Price Distribution",
   "home.priceDistributionDesc": "Number of properties by price range",
   "home.capRateComparison": "Cap Rate Comparison",
+  "home.cashFlowComparison": "Cash Flow Comparison",
+  "home.fullSearch": "Full Search",
   "home.topOpportunities": "Top Investment Opportunities",
   "home.units": "{count} units",
   "home.cap": "{rate}% cap",
