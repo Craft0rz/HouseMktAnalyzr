@@ -215,7 +215,11 @@ async def get_all_listings(
 
 
 @router.get("/{listing_id}", response_model=PropertyListing)
-async def get_property_details(listing_id: str) -> PropertyListing:
+async def get_property_details(
+    listing_id: str,
+    force_walkscore: bool = Query(default=False, description="Force re-fetch Walk Score"),
+    force_condition: bool = Query(default=False, description="Force re-score condition via AI"),
+) -> PropertyListing:
     """Get full details for a specific listing. Checks DB first, enriches with Walk Score."""
     listing = None
 
@@ -238,8 +242,8 @@ async def get_property_details(listing_id: str) -> PropertyListing:
         if not listing:
             raise HTTPException(status_code=404, detail="Listing not found")
 
-    # Enrich with Walk Score if not already populated
-    if listing.walk_score is None:
+    # Enrich with Walk Score if not already populated (or forced)
+    if listing.walk_score is None or force_walkscore:
         try:
             from housemktanalyzr.enrichment.walkscore import enrich_with_walk_score
 
@@ -268,8 +272,8 @@ async def get_property_details(listing_id: str) -> PropertyListing:
         except Exception as e:
             logger.warning(f"Photo extraction failed: {e}")
 
-    # Enrich with AI condition score if not already populated
-    if listing.condition_score is None and listing.photo_urls:
+    # Enrich with AI condition score if not already populated (or forced)
+    if (listing.condition_score is None or force_condition) and listing.photo_urls:
         try:
             from housemktanalyzr.enrichment.condition_scorer import score_property_condition
 
