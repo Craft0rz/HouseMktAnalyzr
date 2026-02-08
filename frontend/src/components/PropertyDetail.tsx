@@ -363,19 +363,13 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             })()}
           </div>
 
-          {/* Price History & Days on Market */}
-          {priceHistory && (priceHistory.changes.length > 0 || priceHistory.days_on_market != null) && (
+          {/* Price History */}
+          {priceHistory && priceHistory.changes.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
                   {t('detail.priceHistory')}
-                  {priceHistory.days_on_market != null && (
-                    <span className="ml-auto text-xs font-normal text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {t('detail.daysOnMarket', { days: priceHistory.days_on_market })}
-                    </span>
-                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -387,57 +381,49 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                     </span>
                   </div>
                 )}
-                {priceHistory.changes.length > 0 && (
-                  <>
-                    {/* Step chart */}
-                    <div className="h-[120px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart
-                          data={(() => {
-                            const points: { date: string; price: number }[] = [];
-                            // Build from oldest to newest (changes are newest-first)
-                            const sorted = [...priceHistory.changes].reverse();
-                            sorted.forEach((c, i) => {
-                              if (i === 0) {
-                                points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.old_price });
-                              }
-                              points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.new_price });
-                            });
-                            return points;
-                          })()}
-                          margin={{ top: 4, right: 4, bottom: 0, left: -16 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} />
-                          <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
-                          <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} formatter={(value) => [formatPrice(value as number, locale), t('detail.askingPrice')]} />
-                          <Line type="stepAfter" dataKey="price" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3, fill: 'var(--chart-1)' }} />
-                        </LineChart>
-                      </ResponsiveContainer>
+                {/* Step chart */}
+                <div className="h-[120px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={(() => {
+                        const points: { date: string; price: number }[] = [];
+                        const sorted = [...priceHistory.changes].reverse();
+                        sorted.forEach((c, i) => {
+                          if (i === 0) {
+                            points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.old_price });
+                          }
+                          points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.new_price });
+                        });
+                        return points;
+                      })()}
+                      margin={{ top: 4, right: 4, bottom: 0, left: -16 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} formatter={(value) => [formatPrice(value as number, locale), t('detail.askingPrice')]} />
+                      <Line type="stepAfter" dataKey="price" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3, fill: 'var(--chart-1)' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Change list */}
+                <div className="space-y-1">
+                  {priceHistory.changes.map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">
+                        {new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-muted-foreground">{formatPrice(c.old_price, locale)}</span>
+                        <span className="text-muted-foreground">&rarr;</span>
+                        <span className="font-medium">{formatPrice(c.new_price, locale)}</span>
+                        <span className={c.change < 0 ? 'text-green-600' : 'text-red-600'}>
+                          ({c.change_pct > 0 ? '+' : ''}{c.change_pct}%)
+                        </span>
+                      </span>
                     </div>
-                    {/* Change list */}
-                    <div className="space-y-1">
-                      {priceHistory.changes.map((c, i) => (
-                        <div key={i} className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">
-                            {new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <span className="text-muted-foreground">{formatPrice(c.old_price, locale)}</span>
-                            <span className="text-muted-foreground">&rarr;</span>
-                            <span className="font-medium">{formatPrice(c.new_price, locale)}</span>
-                            <span className={c.change < 0 ? 'text-green-600' : 'text-red-600'}>
-                              ({c.change_pct > 0 ? '+' : ''}{c.change_pct}%)
-                            </span>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-                {priceHistory.changes.length === 0 && priceHistory.days_on_market != null && (
-                  <div className="text-xs text-muted-foreground">{t('detail.noPriceChanges')}</div>
-                )}
+                  ))}
+                </div>
               </CardContent>
             </Card>
           )}
@@ -1381,6 +1367,15 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                 <div className="text-center p-2 rounded bg-muted/50">
                   <div className="text-lg font-bold">{listing.year_built}</div>
                   <div className="text-xs text-muted-foreground">{t('common.built')}</div>
+                </div>
+              )}
+              {priceHistory?.days_on_market != null && (
+                <div className="text-center p-2 rounded bg-muted/50">
+                  <div className="text-lg font-bold flex items-center justify-center gap-1">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    {priceHistory.days_on_market}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{t('common.daysOnMarket')}</div>
                 </div>
               )}
               <div className="text-center p-2 rounded bg-muted/50">
