@@ -10,7 +10,7 @@ import {
   SortingState,
   useReactTable,
 } from '@tanstack/react-table';
-import { ArrowUpDown, ExternalLink, Plus, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, TrendingDown, TrendingUp, Clock } from 'lucide-react';
+import { ArrowUpDown, ExternalLink, Plus, Check, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, TrendingDown, TrendingUp, Clock, Heart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -29,6 +29,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useComparison } from '@/lib/comparison-context';
+import { usePortfolioContext } from '@/lib/portfolio-context';
 import { propertiesApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice } from '@/lib/formatters';
@@ -73,6 +74,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
   const [priceChanges, setPriceChanges] = useState<PriceChangeMap>({});
   const [lifecycle, setLifecycle] = useState<LifecycleMap>({});
   const { addProperty, removeProperty, isSelected, canAdd } = useComparison();
+  const { isInPortfolio, addToWatchList, removeFromWatchList } = usePortfolioContext();
 
   // Fetch recent price changes and lifecycle data when data loads
   useEffect(() => {
@@ -114,6 +116,15 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
       removeProperty(property.listing.id);
     } else if (canAdd) {
       addProperty(property);
+    }
+  };
+
+  const handlePortfolioToggle = (e: React.MouseEvent, property: PropertyWithMetrics) => {
+    e.stopPropagation();
+    if (isInPortfolio(property.listing.id)) {
+      removeFromWatchList(property.listing.id, property.listing.address);
+    } else {
+      addToWatchList(property);
     }
   };
 
@@ -338,6 +349,24 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
         </Button>
       ),
       cell: ({ row }) => formatPrice(row.original.metrics.price_per_unit, locale),
+    },
+    {
+      id: 'watchlist',
+      header: () => <span className="sr-only">{t('table.watchList')}</span>,
+      cell: ({ row }: { row: { original: PropertyWithMetrics } }) => {
+        const saved = isInPortfolio(row.original.listing.id);
+        return (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={(e) => handlePortfolioToggle(e, row.original)}
+            title={saved ? t('detail.removeFromWatchList') : t('detail.addToWatchList')}
+          >
+            <Heart className={`h-4 w-4 ${saved ? 'fill-current text-red-500' : 'text-muted-foreground'}`} />
+          </Button>
+        );
+      },
     },
     {
       id: 'actions',

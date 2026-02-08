@@ -156,6 +156,7 @@
   "table.removeFromComparison": "Remove from comparison",
   "table.page": "Page {current} of {total}",
   "table.rowsPerPage": "Rows per page",
+  "table.watchList": "Watch List",
 
   "comparison.compareCount": "Compare ({count}/4):",
   "comparison.removeFromComparison": "Remove {address} from comparison",
@@ -363,6 +364,8 @@
   "detail.viewOnCentris": "View on Centris",
   "detail.inCompare": "In Compare",
   "detail.compare": "Compare",
+  "detail.addToWatchList": "Add to watch list",
+  "detail.removeFromWatchList": "Remove from watch list",
   "detail.scoreBreakdown": "Score Breakdown",
   "detail.monthlyCashFlow": "Monthly Cash Flow",
   "detail.rentalIncome": "Rental Income",

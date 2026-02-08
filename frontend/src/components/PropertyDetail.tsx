@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock, Heart } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/sheet';
 import { ScoreBreakdown } from '@/components/charts';
 import { useComparison } from '@/lib/comparison-context';
+import { usePortfolioContext } from '@/lib/portfolio-context';
 import { propertiesApi, marketApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice, formatPercent } from '@/lib/formatters';
@@ -156,6 +157,7 @@ function MetricBar({
 export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailProps) {
   const { t, locale } = useTranslation();
   const { addProperty, selectedProperties } = useComparison();
+  const { isInPortfolio, addToWatchList, removeFromWatchList } = usePortfolioContext();
   const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -455,6 +457,18 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             >
               <Plus className="mr-2 h-4 w-4" />
               {isInComparison ? t('detail.inCompare') : t('detail.compare')}
+            </Button>
+            <Button
+              variant={isInPortfolio(listing.id) ? 'secondary' : 'outline'}
+              size="icon"
+              onClick={() =>
+                isInPortfolio(listing.id)
+                  ? removeFromWatchList(listing.id, listing.address)
+                  : addToWatchList(property)
+              }
+              title={isInPortfolio(listing.id) ? t('detail.removeFromWatchList') : t('detail.addToWatchList')}
+            >
+              <Heart className={`h-4 w-4 ${isInPortfolio(listing.id) ? 'fill-current text-red-500' : ''}`} />
             </Button>
           </div>
 
