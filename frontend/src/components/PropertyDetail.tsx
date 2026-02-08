@@ -915,21 +915,29 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
                           return (
                             <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -16 }}>
-                              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                               <XAxis
                                 dataKey="year"
-                                tick={{ fontSize: 10 }}
-                                tickFormatter={(v) => String(v).slice(-2)}
-                                className="text-muted-foreground"
+                                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                                tickFormatter={(v) => `'${String(v).slice(-2)}`}
+                                stroke="var(--border)"
+                                tickLine={false}
                               />
                               <YAxis
-                                tick={{ fontSize: 10 }}
+                                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                                 tickFormatter={(v) => `$${v}`}
-                                className="text-muted-foreground"
+                                stroke="var(--border)"
+                                tickLine={false}
                                 domain={['auto', 'auto']}
                               />
                               <Tooltip
-                                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'hsl(var(--popover))' }}
+                                contentStyle={{
+                                  fontSize: 12,
+                                  borderRadius: 8,
+                                  border: '1px solid var(--border)',
+                                  background: 'var(--popover)',
+                                  color: 'var(--popover-foreground)',
+                                }}
                                 formatter={(value, name) => {
                                   const label = name === 'rent' ? 'Avg Rent' : name === 'forecast' ? 'Forecast' : String(name);
                                   return [`$${value}/mo`, label];
@@ -941,15 +949,15 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                                 type="monotone"
                                 dataKey="forecastUpper"
                                 stroke="none"
-                                fill="hsl(var(--primary))"
-                                fillOpacity={0.08}
+                                fill="var(--chart-1)"
+                                fillOpacity={0.1}
                                 connectNulls={false}
                               />
                               <Area
                                 type="monotone"
                                 dataKey="forecastLower"
                                 stroke="none"
-                                fill="hsl(var(--background))"
+                                fill="var(--background)"
                                 fillOpacity={1}
                                 connectNulls={false}
                               />
@@ -957,31 +965,31 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                               <Area
                                 type="monotone"
                                 dataKey="rent"
-                                stroke="hsl(var(--primary))"
-                                fill="hsl(var(--primary))"
+                                stroke="var(--chart-1)"
+                                fill="var(--chart-1)"
                                 fillOpacity={0.15}
                                 strokeWidth={2}
-                                dot={{ r: 3, fill: 'hsl(var(--primary))' }}
+                                dot={{ r: 3, fill: 'var(--chart-1)' }}
                                 connectNulls={false}
                               />
                               {/* Forecast line */}
                               <Area
                                 type="monotone"
                                 dataKey="forecast"
-                                stroke="hsl(var(--primary))"
+                                stroke="var(--chart-1)"
                                 fill="none"
                                 strokeWidth={2}
                                 strokeDasharray="5 3"
-                                dot={{ r: 3, fill: 'hsl(var(--primary))', strokeDasharray: '' }}
+                                dot={{ r: 3, fill: 'var(--chart-1)', strokeDasharray: '' }}
                                 connectNulls={false}
                               />
                               {/* Property's rent reference line */}
                               {perUnitRent && (
                                 <ReferenceLine
                                   y={perUnitRent}
-                                  stroke="hsl(var(--chart-2))"
+                                  stroke="var(--chart-2)"
                                   strokeDasharray="3 3"
-                                  label={{ value: `Your rent: $${perUnitRent}`, position: 'insideTopRight', fontSize: 10, fill: 'hsl(var(--chart-2))' }}
+                                  label={{ value: `Your rent: $${perUnitRent}`, position: 'insideTopRight', fontSize: 10, fill: 'var(--chart-2)' }}
                                 />
                               )}
                             </AreaChart>
