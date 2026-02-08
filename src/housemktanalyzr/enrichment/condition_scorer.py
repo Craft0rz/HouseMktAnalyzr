@@ -15,6 +15,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+import httpx
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -130,20 +131,30 @@ async def score_property_condition(
         year_built=year_str,
     )
 
-    # Build content: text prompt + image URLs
+    # Download images and build content parts
     parts = [types.Part.from_text(text=prompt)]
-    for url in selected_urls:
-        try:
-            parts.append(types.Part.from_uri(file_uri=url, mime_type="image/jpeg"))
-        except Exception as e:
-            logger.debug(f"Skipping photo URL {url}: {e}")
+    async with httpx.AsyncClient(timeout=15.0) as http:
+        for url in selected_urls:
+            try:
+                resp = await http.get(url)
+                resp.raise_for_status()
+                content_type = resp.headers.get("content-type", "image/jpeg")
+                mime = content_type.split(";")[0].strip()
+                if not mime.startswith("image/"):
+                    mime = "image/jpeg"
+                parts.append(types.Part.from_bytes(
+                    data=resp.content,
+                    mime_type=mime,
+                ))
+            except Exception as e:
+                logger.debug(f"Skipping photo URL {url}: {e}")
 
     if len(parts) < 2:
         logger.warning("No valid photo parts could be created")
         return None
 
     try:
-        response = client.models.generate_content(
+        response = await client.aio.models.generate_content(
             model="gemini-2.5-flash",
             contents=[types.Content(role="user", parts=parts)],
             config=types.GenerateContentConfig(
