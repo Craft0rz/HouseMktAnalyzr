@@ -157,7 +157,7 @@ class InvestmentCalculator:
     def estimate_noi(
         self,
         annual_rent: int,
-        expense_ratio: float = 0.40,
+        expense_ratio: float = 0.45,
     ) -> int:
         """Estimate Net Operating Income using expense ratio.
 
@@ -380,7 +380,7 @@ class InvestmentCalculator:
         listing: PropertyListing,
         down_payment_pct: float = 0.20,
         interest_rate: float = 0.05,
-        expense_ratio: float = 0.40,
+        expense_ratio: float = 0.45,
     ) -> InvestmentMetrics:
         """Perform full investment analysis on a property.
 

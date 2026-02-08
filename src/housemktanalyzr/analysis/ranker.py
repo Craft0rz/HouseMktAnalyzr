@@ -54,7 +54,7 @@ class PropertyRanker:
         listings: list[PropertyListing],
         down_payment_pct: float = 0.20,
         interest_rate: float = 0.05,
-        expense_ratio: float = 0.35,
+        expense_ratio: float = 0.45,
     ) -> list[tuple[PropertyListing, InvestmentMetrics]]:
         """Analyze multiple properties and return with metrics.
 

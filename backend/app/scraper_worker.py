@@ -301,64 +301,84 @@ class ScraperWorker:
         Search cards don't include revenue, postal code, lot size, year built,
         assessment, or taxes. This step fetches the full listing page and merges
         all available fields into the cached JSONB data.
+
+        Processes batches in a loop until all listings are enriched (capped at
+        max_batches to prevent runaway cycles after schema changes).
         """
         from housemktanalyzr.collectors.centris import CentrisScraper
 
         batch_size = int(os.environ.get("DETAIL_ENRICH_BATCH_SIZE", 50))
+        max_batches = int(os.environ.get("DETAIL_ENRICH_MAX_BATCHES", 20))
         delay = float(os.environ.get("DETAIL_ENRICH_DELAY", 1.5))
 
-        try:
-            listings = await get_listings_without_details(limit=batch_size)
-        except Exception:
-            logger.exception("Failed to query listings for detail enrichment")
-            return
-
-        if not listings:
-            logger.info("Detail enrichment: all listings already have details")
-            self._status["enrichment_progress"]["details"]["phase"] = "done"
-            return
-
-        self._status["enrichment_progress"]["details"]["total"] = len(listings)
-        logger.info(f"Detail enrichment: fetching {len(listings)} detail pages (delay={delay}s)")
-        enriched = 0
-        failed = 0
+        total_enriched = 0
+        total_failed = 0
+        batch_num = 0
 
         async with CentrisScraper(request_interval=delay) as scraper:
-            for item in listings:
+            while batch_num < max_batches:
+                batch_num += 1
                 try:
-                    detailed = await scraper.get_listing_details(
-                        item["id"], url=item.get("url") or None
-                    )
-                    if detailed:
-                        fields = {
-                            "gross_revenue": detailed.gross_revenue,
-                            "total_expenses": detailed.total_expenses,
-                            "net_income": detailed.net_income,
-                            "postal_code": detailed.postal_code,
-                            "lot_sqft": detailed.lot_sqft,
-                            "year_built": detailed.year_built,
-                            "municipal_assessment": detailed.municipal_assessment,
-                            "annual_taxes": detailed.annual_taxes,
-                            "sqft": detailed.sqft,
-                        }
-                        # Also grab photos if available
-                        if detailed.photo_urls:
-                            fields["photo_urls"] = detailed.photo_urls
+                    listings = await get_listings_without_details(limit=batch_size)
+                except Exception:
+                    logger.exception("Failed to query listings for detail enrichment")
+                    break
 
-                        await update_listing_details(item["id"], fields)
-                        enriched += 1
-                    else:
-                        failed += 1
-                except asyncio.CancelledError:
-                    raise
-                except Exception as e:
-                    logger.warning(f"Detail enrichment failed for {item['id']}: {e}")
-                    failed += 1
-                self._status["enrichment_progress"]["details"]["done"] = enriched
-                self._status["enrichment_progress"]["details"]["failed"] = failed
+                if not listings:
+                    if batch_num == 1:
+                        logger.info("Detail enrichment: all listings already have details")
+                    break
+
+                logger.info(
+                    f"Detail enrichment batch {batch_num}: "
+                    f"{len(listings)} listings (delay={delay}s)"
+                )
+                self._status["enrichment_progress"]["details"]["total"] = (
+                    total_enriched + total_failed + len(listings)
+                )
+
+                for item in listings:
+                    try:
+                        detailed = await scraper.get_listing_details(
+                            item["id"], url=item.get("url") or None
+                        )
+                        if detailed:
+                            fields = {
+                                "gross_revenue": detailed.gross_revenue,
+                                "total_expenses": detailed.total_expenses,
+                                "net_income": detailed.net_income,
+                                "postal_code": detailed.postal_code,
+                                "lot_sqft": detailed.lot_sqft,
+                                "year_built": detailed.year_built,
+                                "municipal_assessment": detailed.municipal_assessment,
+                                "annual_taxes": detailed.annual_taxes,
+                                "sqft": detailed.sqft,
+                            }
+                            # Also grab photos if available
+                            if detailed.photo_urls:
+                                fields["photo_urls"] = detailed.photo_urls
+
+                            await update_listing_details(item["id"], fields)
+                            total_enriched += 1
+                        else:
+                            total_failed += 1
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as e:
+                        logger.warning(f"Detail enrichment failed for {item['id']}: {e}")
+                        total_failed += 1
+                    self._status["enrichment_progress"]["details"]["done"] = total_enriched
+                    self._status["enrichment_progress"]["details"]["failed"] = total_failed
+
+                # If we got fewer than batch_size, we've processed everything
+                if len(listings) < batch_size:
+                    break
 
         self._status["enrichment_progress"]["details"]["phase"] = "done"
-        logger.info(f"Detail enrichment done: {enriched} enriched, {failed} failed")
+        logger.info(
+            f"Detail enrichment done: {total_enriched} enriched, "
+            f"{total_failed} failed across {batch_num} batch(es)"
+        )
 
     async def _enrich_walk_scores(self):
         """Fetch walk/transit/bike scores for listings that don't have them."""

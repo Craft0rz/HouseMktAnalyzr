@@ -34,18 +34,19 @@ def _to_float(val) -> float | None:
 
 
 async def _fetch_comparable_ppu(
-    region: str, property_type: str, units: int,
+    city: str, property_type: str, units: int,
 ) -> dict | None:
     """Fetch comparable price-per-unit stats from cached listings.
 
     Returns median, avg, and count for similar property types in the same region.
     """
-    if not os.environ.get("DATABASE_URL"):
+    if not os.environ.get("DATABASE_URL") or units < 2:
         return None
     try:
         from ..db import get_pool
-        pool = get_pool()
-        if pool is None:
+        try:
+            pool = get_pool()
+        except RuntimeError:
             return None
 
         # Match property types: if plex, compare against all plex types
@@ -68,17 +69,45 @@ async def _fetch_comparable_ppu(
               AND status = 'active'
               {type_filter}
         """
-        async with pool.acquire() as conn:
-            row = await asyncio.wait_for(
-                conn.fetchrow(query, region),
-                timeout=_DB_QUERY_TIMEOUT,
-            )
+        # Try to map city to region for the query
+        from ..constants import REGION_URL_MAPPING
+        region_key = None
+        city_lower = city.lower().replace("é", "e").replace("è", "e")
+        for key in REGION_URL_MAPPING:
+            if key in city_lower or city_lower in key:
+                region_key = key
+                break
+        # Fallback: search across all regions
+        if not region_key:
+            query = f"""
+                SELECT
+                    percentile_cont(0.5) WITHIN GROUP (
+                        ORDER BY (data->>'price')::int / GREATEST((data->>'units')::int, 1)
+                    ) AS median_ppu,
+                    avg((data->>'price')::int / GREATEST((data->>'units')::int, 1))::int AS avg_ppu,
+                    count(*) AS cnt
+                FROM listings
+                WHERE (data->>'units')::int >= 2
+                  AND status = 'active'
+                  {type_filter}
+            """
+            async with pool.acquire() as conn:
+                row = await asyncio.wait_for(
+                    conn.fetchrow(query),
+                    timeout=_DB_QUERY_TIMEOUT,
+                )
+        else:
+            async with pool.acquire() as conn:
+                row = await asyncio.wait_for(
+                    conn.fetchrow(query, region_key),
+                    timeout=_DB_QUERY_TIMEOUT,
+                )
         if row and row["cnt"] and row["cnt"] >= 3:
             return {
                 "median": int(row["median_ppu"]),
                 "avg": int(row["avg_ppu"]),
                 "count": int(row["cnt"]),
-                "region": region,
+                "region": region_key or "all",
                 "property_type": property_type,
             }
     except Exception as e:
@@ -248,7 +277,7 @@ class AnalyzeRequest(BaseModel):
     listing: PropertyListing
     down_payment_pct: float = Field(default=0.20, ge=0.05, le=1.0)
     interest_rate: float = Field(default=0.05, ge=0.01, le=0.15)
-    expense_ratio: float = Field(default=0.40, ge=0.10, le=0.60)
+    expense_ratio: float = Field(default=0.45, ge=0.10, le=0.60)
 
 
 class AnalyzeBatchRequest(BaseModel):
@@ -257,7 +286,7 @@ class AnalyzeBatchRequest(BaseModel):
     listings: list[PropertyListing]
     down_payment_pct: float = Field(default=0.20, ge=0.05, le=1.0)
     interest_rate: float = Field(default=0.05, ge=0.01, le=0.15)
-    expense_ratio: float = Field(default=0.40, ge=0.10, le=0.60)
+    expense_ratio: float = Field(default=0.45, ge=0.10, le=0.60)
 
 
 class PropertyWithMetrics(BaseModel):
@@ -283,7 +312,7 @@ class QuickMetricsRequest(BaseModel):
     units: int = Field(default=1, ge=1, description="Number of units")
     down_payment_pct: float = Field(default=0.20, ge=0.05, le=1.0)
     interest_rate: float = Field(default=0.05, ge=0.01, le=0.15)
-    expense_ratio: float = Field(default=0.40, ge=0.10, le=0.60)
+    expense_ratio: float = Field(default=0.45, ge=0.10, le=0.60)
 
 
 class QuickMetricsResponse(BaseModel):
@@ -320,7 +349,7 @@ async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
                 request.listing.city, request.listing.postal_code
             ),
             _fetch_comparable_ppu(
-                region=request.listing.city.lower(),
+                city=request.listing.city,
                 property_type=request.listing.property_type.value,
                 units=request.listing.units,
             ),

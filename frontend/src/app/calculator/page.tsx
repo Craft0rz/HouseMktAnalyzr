@@ -18,14 +18,14 @@ export default function CalculatorPage() {
   const [units, setUnits] = useState<string>('3');
   const [downPaymentPct, setDownPaymentPct] = useState<string>('20');
   const [interestRate, setInterestRate] = useState<string>('5');
-  const [expenseRatio, setExpenseRatio] = useState<string>('40');
+  const [expenseRatio, setExpenseRatio] = useState<string>('45');
 
   const priceNum = parseInt(price) || 0;
   const rentNum = parseInt(monthlyRent) || 0;
   const unitsNum = parseInt(units) || 1;
   const downPct = (parseFloat(downPaymentPct) || 20) / 100;
   const intRate = (parseFloat(interestRate) || 5) / 100;
-  const expRatio = (parseFloat(expenseRatio) || 40) / 100;
+  const expRatio = (parseFloat(expenseRatio) || 45) / 100;
 
   const { data: calcData, isLoading: calcLoading } = useQuickCalc(
     priceNum > 0 && rentNum > 0

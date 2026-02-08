@@ -309,6 +309,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           <SheetDescription>
             {listing.city}
             {listing.postal_code && ` • ${listing.postal_code}`}
+            {` • MLS ${listing.id}`}
           </SheetDescription>
         </SheetHeader>
 
