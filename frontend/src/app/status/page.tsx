@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Separator } from '@/components/ui/separator';
 import { LoadingCard } from '@/components/LoadingCard';
+import { AdminGuard } from '@/components/AdminGuard';
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
@@ -121,6 +122,14 @@ function FreshnessCard({
 }
 
 export default function StatusPage() {
+  return (
+    <AdminGuard>
+      <StatusContent />
+    </AdminGuard>
+  );
+}
+
+function StatusContent() {
   const { t } = useTranslation();
   const { data: status, isLoading: statusLoading } = useScraperStatus();
   const { data: history } = useScraperHistory(10);

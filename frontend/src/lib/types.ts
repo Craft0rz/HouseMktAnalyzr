@@ -514,3 +514,33 @@ export interface LoginRequest {
   email: string;
   password: string;
 }
+
+// Admin types
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  auth_provider: string;
+  role: 'free' | 'pro' | 'admin';
+  is_active: boolean;
+  is_verified: boolean;
+  created_at: string;
+}
+
+export interface AdminDashboardStats {
+  total_users: number;
+  active_users_24h: number;
+  total_requests_24h: number;
+  total_requests_7d: number;
+  avg_response_ms_24h: number | null;
+  top_endpoints: { endpoint: string; count: number }[];
+  requests_per_day: { day: string; count: number }[];
+  users_by_role: { role: string; count: number }[];
+  recent_signups: AdminUserRow[];
+}
+
+export interface AdminUsersResponse {
+  users: AdminUserRow[];
+  total: number;
+}

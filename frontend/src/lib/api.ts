@@ -472,4 +472,27 @@ export const authApi = {
   },
 };
 
+// Admin endpoints
+export const adminApi = {
+  stats: (): Promise<import('./types').AdminDashboardStats> => {
+    return fetchApi('/api/admin/stats');
+  },
+
+  users: (limit = 50, offset = 0): Promise<import('./types').AdminUsersResponse> => {
+    return fetchApi(`/api/admin/users?limit=${limit}&offset=${offset}`);
+  },
+
+  updateRole: (userId: string, role: string): Promise<{ status: string }> => {
+    return fetchApi(`/api/admin/users/${encodeURIComponent(userId)}/role?role=${encodeURIComponent(role)}`, {
+      method: 'PATCH',
+    });
+  },
+
+  toggleActive: (userId: string, isActive: boolean): Promise<{ status: string }> => {
+    return fetchApi(`/api/admin/users/${encodeURIComponent(userId)}/active?is_active=${isActive}`, {
+      method: 'PATCH',
+    });
+  },
+};
+
 export { ApiError, TOKEN_KEY, REFRESH_KEY };

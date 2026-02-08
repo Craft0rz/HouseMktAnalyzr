@@ -3,6 +3,8 @@
 import logging
 import os
 import sys
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -10,14 +12,58 @@ from pathlib import Path
 src_path = Path(__file__).parent.parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
-from fastapi import FastAPI
+import jwt
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .db import init_pool, close_pool, get_pool
-from .routers import alerts, analysis, auth, market, portfolio, properties, scraper
+from .routers import admin, alerts, analysis, auth, market, portfolio, properties, scraper
 from .scraper_worker import ScraperWorker
 
 logger = logging.getLogger(__name__)
+
+# JWT config (read once; same env vars as auth.py)
+_JWT_SECRET = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
+_JWT_ALGO = os.environ.get("JWT_ALGORITHM", "HS256")
+
+
+class UsageTrackingMiddleware(BaseHTTPMiddleware):
+    """Log every API request to the usage_logs table."""
+
+    async def dispatch(self, request: Request, call_next):
+        start = time.perf_counter()
+        response: Response = await call_next(request)
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+
+        # Extract user_id from Bearer token (best-effort, never block)
+        user_id = None
+        auth_header = request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            try:
+                payload = jwt.decode(
+                    auth_header[7:], _JWT_SECRET, algorithms=[_JWT_ALGO]
+                )
+                user_id = uuid.UUID(payload["sub"])
+            except Exception:
+                pass
+
+        # Fire-and-forget insert (don't slow down the response)
+        try:
+            pool = get_pool()
+            await pool.execute(
+                """INSERT INTO usage_logs (user_id, endpoint, method, status_code, response_time_ms)
+                   VALUES ($1, $2, $3, $4, $5)""",
+                user_id,
+                request.url.path,
+                request.method,
+                response.status_code,
+                elapsed_ms,
+            )
+        except Exception:
+            pass  # never break requests for logging
+
+        return response
 
 
 @asynccontextmanager
@@ -68,6 +114,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(UsageTrackingMiddleware)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
@@ -77,6 +124,7 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["Portfolio"])
 app.include_router(scraper.router, prefix="/api/scraper", tags=["Scraper"])
 app.include_router(market.router, prefix="/api/market", tags=["Market"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 
 
 @app.get("/")

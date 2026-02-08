@@ -305,3 +305,10 @@ async def get_optional_user(
         return await get_user_by_id(payload["sub"])
     except HTTPException:
         return None
+
+
+async def get_admin_user(user: dict = Depends(get_current_user)) -> dict:
+    """Dependency: require admin role."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user

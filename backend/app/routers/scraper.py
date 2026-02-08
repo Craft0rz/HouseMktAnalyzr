@@ -1,10 +1,11 @@
-"""Scraper worker status and control endpoints."""
+"""Scraper worker status and control endpoints (admin only)."""
 
 import asyncio
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
+from ..auth import get_admin_user
 from ..db import get_scraper_stats, get_scrape_job_history, get_data_freshness
 
 router = APIRouter()
@@ -12,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/status")
-async def scraper_status(request: Request) -> dict:
+async def scraper_status(request: Request, _admin: dict = Depends(get_admin_user)) -> dict:
     """Return the background scraper worker's current status."""
     worker = request.app.state.scraper_worker
     if worker is None:
@@ -21,7 +22,7 @@ async def scraper_status(request: Request) -> dict:
 
 
 @router.post("/trigger", status_code=202)
-async def trigger_scrape(request: Request) -> dict:
+async def trigger_scrape(request: Request, _admin: dict = Depends(get_admin_user)) -> dict:
     """Manually trigger a full scrape cycle."""
     worker = request.app.state.scraper_worker
     if worker is None:
@@ -34,7 +35,7 @@ async def trigger_scrape(request: Request) -> dict:
 
 
 @router.get("/stats")
-async def scraper_stats() -> dict:
+async def scraper_stats(_admin: dict = Depends(get_admin_user)) -> dict:
     """Return per-region/type listing counts from the database."""
     try:
         return await get_scraper_stats()
@@ -43,7 +44,7 @@ async def scraper_stats() -> dict:
 
 
 @router.get("/history")
-async def scraper_history(limit: int = 20) -> dict:
+async def scraper_history(limit: int = 20, _admin: dict = Depends(get_admin_user)) -> dict:
     """Return recent scrape job history from the database."""
     try:
         jobs = await get_scrape_job_history(limit=limit)
@@ -53,7 +54,7 @@ async def scraper_history(limit: int = 20) -> dict:
 
 
 @router.get("/freshness")
-async def data_freshness() -> dict:
+async def data_freshness(_admin: dict = Depends(get_admin_user)) -> dict:
     """Return data freshness indicators for all data sources."""
     try:
         return await get_data_freshness()
