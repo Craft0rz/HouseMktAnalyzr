@@ -499,6 +499,11 @@
   "chart.avgScore": "Avg Score",
   "chart.count": "Count",
   "chart.noData": "No data available",
+  "chart.annualRent": "Annual Rent",
+  "chart.monthlyRent": "Monthly Rent",
+  "chart.noi": "NOI",
+  "chart.pricePerUnit": "Price/Unit",
+  "chart.expenses": "Expenses",
 
   "status.title": "Scrape Status",
   "status.subtitle": "Monitor scraping progress, enrichment steps, and data freshness",

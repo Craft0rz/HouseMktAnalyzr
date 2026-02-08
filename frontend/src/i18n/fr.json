@@ -499,6 +499,11 @@
   "chart.avgScore": "Score moyen",
   "chart.count": "Nombre",
   "chart.noData": "Aucune donnée disponible",
+  "chart.annualRent": "Loyer annuel",
+  "chart.monthlyRent": "Loyer mensuel",
+  "chart.noi": "RNE",
+  "chart.pricePerUnit": "Prix/logement",
+  "chart.expenses": "Dépenses",
 
   "status.title": "Statut du scraping",
   "status.subtitle": "Surveiller la progression du scraping, les enrichissements et la fraîcheur des données",
