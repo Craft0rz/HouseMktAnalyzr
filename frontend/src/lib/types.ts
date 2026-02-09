@@ -470,6 +470,15 @@ export interface DataQuality {
   corrected: number;
 }
 
+export interface QualitySnapshot extends DataQuality {
+  enrichment_rates?: {
+    details: number;
+    walk_scores: number;
+    photos: number;
+    conditions: number;
+  };
+}
+
 export interface ScraperStatus {
   enabled?: boolean;
   message?: string;
@@ -512,6 +521,7 @@ export interface ScrapeJob {
   errors: string[];
   step_log: StepResult[];
   duration_sec: number | null;
+  quality_snapshot: QualitySnapshot | null;
 }
 
 export interface ScrapeJobHistoryResponse {

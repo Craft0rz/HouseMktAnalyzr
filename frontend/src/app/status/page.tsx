@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Separator } from '@/components/ui/separator';
 import { LoadingCard } from '@/components/LoadingCard';
 import { AdminGuard } from '@/components/AdminGuard';
+import { QualityTrendChart, EnrichmentTrendChart } from '@/components/charts/QualityTrendChart';
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
@@ -132,7 +133,7 @@ export default function StatusPage() {
 function StatusContent() {
   const { t } = useTranslation();
   const { data: status, isLoading: statusLoading } = useScraperStatus();
-  const { data: history } = useScraperHistory(10);
+  const { data: history } = useScraperHistory(30);
   const { data: freshness } = useDataFreshness();
   const triggerMutation = useTriggerScrape();
 
@@ -374,6 +375,32 @@ function StatusContent() {
                 <p className="text-xs text-muted-foreground">{t('status.totalValidated')}</p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Quality Score Trend */}
+      {history?.jobs && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('status.qualityTrend')}</CardTitle>
+            <CardDescription>{t('status.qualityTrendDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <QualityTrendChart jobs={history.jobs} />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Enrichment Success Rate Trend */}
+      {history?.jobs && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('status.enrichmentTrend')}</CardTitle>
+            <CardDescription>{t('status.enrichmentTrendDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EnrichmentTrendChart jobs={history.jobs} />
           </CardContent>
         </Card>
       )}

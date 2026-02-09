@@ -607,6 +607,11 @@
   "status.corrected": "Auto-Corrected",
   "status.totalValidated": "Total Validated",
 
+  "status.qualityTrend": "Quality Score Trend",
+  "status.qualityTrendDesc": "Average score and quality distribution over recent scrape cycles",
+  "status.enrichmentTrend": "Enrichment Success Rate",
+  "status.enrichmentTrendDesc": "Percentage of listings successfully enriched per cycle",
+
   "status.dataWarnings": "Data Maintenance Required",
   "status.dataWarningsDesc": "Hardcoded data sources that need manual updating",
 

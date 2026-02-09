@@ -274,12 +274,18 @@ async def _create_tables():
                 total_enriched INTEGER DEFAULT 0,
                 errors JSONB DEFAULT '[]'::jsonb,
                 step_log JSONB DEFAULT '[]'::jsonb,
-                duration_sec REAL
+                duration_sec REAL,
+                quality_snapshot JSONB DEFAULT NULL
             )
         """)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_scrape_jobs_started
             ON scrape_jobs(started_at DESC)
+        """)
+        # Migrate: add quality_snapshot column if missing
+        await conn.execute("""
+            ALTER TABLE scrape_jobs
+            ADD COLUMN IF NOT EXISTS quality_snapshot JSONB DEFAULT NULL
         """)
         # Mark abandoned running jobs as failed on startup
         await conn.execute("""
@@ -1617,6 +1623,7 @@ async def insert_scrape_job(
     errors: list[str],
     step_log: list[dict],
     duration_sec: float | None,
+    quality_snapshot: dict | None = None,
 ) -> int:
     """Insert a scrape job record and return its ID."""
     pool = get_pool()
@@ -1625,8 +1632,9 @@ async def insert_scrape_job(
             """
             INSERT INTO scrape_jobs
                 (started_at, completed_at, status, total_listings,
-                 total_enriched, errors, step_log, duration_sec)
-            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8)
+                 total_enriched, errors, step_log, duration_sec,
+                 quality_snapshot)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8, $9::jsonb)
             RETURNING id
             """,
             started_at,
@@ -1637,6 +1645,7 @@ async def insert_scrape_job(
             json.dumps(errors),
             json.dumps(step_log),
             duration_sec,
+            json.dumps(quality_snapshot) if quality_snapshot else None,
         )
     return row["id"]
 
@@ -1649,7 +1658,7 @@ async def get_scrape_job_history(limit: int = 20) -> list[dict]:
             """
             SELECT id, started_at, completed_at, status,
                    total_listings, total_enriched, errors,
-                   step_log, duration_sec
+                   step_log, duration_sec, quality_snapshot
             FROM scrape_jobs
             ORDER BY started_at DESC
             LIMIT $1
@@ -1667,6 +1676,7 @@ async def get_scrape_job_history(limit: int = 20) -> list[dict]:
             "errors": json.loads(r["errors"]) if r["errors"] else [],
             "step_log": json.loads(r["step_log"]) if r["step_log"] else [],
             "duration_sec": r["duration_sec"],
+            "quality_snapshot": json.loads(r["quality_snapshot"]) if r["quality_snapshot"] else None,
         }
         for r in rows
     ]

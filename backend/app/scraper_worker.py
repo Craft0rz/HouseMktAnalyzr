@@ -21,7 +21,7 @@ from .db import (
     upsert_neighbourhood_stats_batch, get_neighbourhood_stats_age,
     upsert_tax_rate_history_batch,
     mark_stale_listings, mark_delisted,
-    insert_scrape_job,
+    insert_scrape_job, get_data_quality_summary,
 )
 
 logger = logging.getLogger(__name__)
@@ -279,6 +279,19 @@ class ScraperWorker:
         self._status["enrichment_progress"]["validation"]["phase"] = "running"
         await self._validate_data_quality()
 
+        # Capture quality snapshot for historical tracking
+        try:
+            quality_snapshot = await get_data_quality_summary()
+            ep = self._status["enrichment_progress"]
+            quality_snapshot["enrichment_rates"] = {
+                "details": round(ep["details"]["done"] / max(ep["details"]["total"], 1) * 100, 1),
+                "walk_scores": round(ep["walk_scores"]["done"] / max(ep["walk_scores"]["total"], 1) * 100, 1),
+                "photos": round(ep["photos"]["done"] / max(ep["photos"]["total"], 1) * 100, 1),
+                "conditions": round(ep["conditions"]["done"] / max(ep["conditions"]["total"], 1) * 100, 1),
+            }
+        except Exception:
+            quality_snapshot = None
+
         # Persist job history to database
         total_enriched = sum(
             self._status["enrichment_progress"][k]["done"]
@@ -295,6 +308,7 @@ class ScraperWorker:
                 errors=errors,
                 step_log=self._status["step_results"],
                 duration_sec=round((datetime.now(timezone.utc) - start_time).total_seconds(), 1),
+                quality_snapshot=quality_snapshot,
             )
         except Exception:
             logger.exception("Failed to persist scrape job to database")

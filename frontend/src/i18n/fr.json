@@ -607,6 +607,11 @@
   "status.corrected": "Auto-corrigées",
   "status.totalValidated": "Total validées",
 
+  "status.qualityTrend": "Tendance du score de qualité",
+  "status.qualityTrendDesc": "Score moyen et distribution de qualité sur les cycles récents",
+  "status.enrichmentTrend": "Taux de succès d'enrichissement",
+  "status.enrichmentTrendDesc": "Pourcentage de fiches enrichies avec succès par cycle",
+
   "status.dataWarnings": "Maintenance des données requise",
   "status.dataWarningsDesc": "Sources de données codées en dur nécessitant une mise à jour manuelle",
 
