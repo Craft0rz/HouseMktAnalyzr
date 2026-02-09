@@ -81,7 +81,6 @@ export interface InvestmentMetrics {
   annual_rent: number;
   is_positive_cash_flow: boolean;
   rate_sensitivity: RateSensitivity | null;
-  rent_control_risk: string | null;
   comparable_ppu: ComparablePPU | null;
 }
 

@@ -27,10 +27,6 @@ DEFAULT_EXPENSE_RATIOS = {
     "total_expense_ratio": 0.45,  # ~45% of gross rent (bank model midpoint with management + capex)
 }
 
-# Quebec TAL (Tribunal administratif du logement) rent increase guideline.
-# Updated annually; this is used for rent control warnings on multi-unit properties.
-TAL_GUIDELINE_INCREASE_PCT = 3.3  # 2025 guideline ~3.3% (varies by component)
-
 # Two-pillar scoring: Financial (70) + Location & Quality (30) = 100
 SCORING_WEIGHTS = {
     # Financial pillar (0-70)
@@ -471,15 +467,6 @@ class InvestmentCalculator:
             monthly_expenses=monthly_expenses,
         )
 
-        # TAL rent control warning for multi-unit properties
-        rent_control_risk = None
-        if listing.units >= 2:
-            rent_control_risk = (
-                f"Quebec rent control (TAL): existing tenant rents increase "
-                f"~{TAL_GUIDELINE_INCREASE_PCT}%/yr. Market rents may not apply "
-                f"to occupied units."
-            )
-
         # Calculate financial score (0-70 pillar)
         score, breakdown = self._calculate_score(
             cap_rate=cap,
@@ -502,7 +489,6 @@ class InvestmentCalculator:
             score=round(score, 1),
             score_breakdown=breakdown,
             rate_sensitivity=rate_sensitivity,
-            rent_control_risk=rent_control_risk,
         )
 
     @staticmethod

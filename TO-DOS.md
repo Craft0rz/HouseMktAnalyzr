@@ -1,1 +1,6 @@
 # TO-DOS
+
+## Verify Cash Flow Alignment After Mortgage Fix - 2026-02-09 08:12
+
+- **Verify list vs detail cash flow match** - Confirm the mortgage formula fix produces matching cash flow values between the property list and detail panel. **Problem:** The detail panel was calculating mortgage payments using US-style monthly compounding and 25-year amortization, while the backend used Canadian semi-annual compounding and 30-year amortization. This caused the "Cash flow" in the list (from `metrics.cash_flow_monthly`) to differ from the "Net Monthly Cash Flow" in the detail panel. Fix applied: aligned detail panel to use Canadian compounding and 30yr amortization. Also fixed a second inline mortgage calculation in the Market Context card and updated en/fr i18n strings from "25yr" to "30yr". **Files:** `frontend/src/components/PropertyDetail.tsx:269-279,1024-1029`, `frontend/src/i18n/en.json:440`, `frontend/src/i18n/fr.json:440`, `src/housemktanalyzr/analysis/calculator.py:254-288` (backend reference). **Solution:** Test with a few properties and compare `metrics.cash_flow_monthly` from the API to the detail panel's computed `netCashFlow`. Minor rounding differences are expected (backend uses `int(math.ceil())`) but values should be within a few dollars.
+

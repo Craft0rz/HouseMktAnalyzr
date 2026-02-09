@@ -266,13 +266,15 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   // Use enriched listing if available, otherwise fall back to search data
   const listing = enrichedListing || property.listing;
 
-  // Calculate mortgage estimates (20% down, 5% rate, 25 years)
+  // Calculate mortgage estimates (20% down, 5% rate, 30 years)
+  // Uses Canadian semi-annual compounding to match backend calculator
   const downPaymentPct = 0.20;
   const interestRate = 0.05;
-  const amortizationYears = 25;
+  const amortizationYears = 30;
   const downPayment = listing.price * downPaymentPct;
   const principal = listing.price - downPayment;
-  const monthlyRate = interestRate / 12;
+  const semiAnnualRate = interestRate / 2;
+  const monthlyRate = Math.pow(1 + semiAnnualRate, 1 / 6) - 1;
   const numPayments = amortizationYears * 12;
   const monthlyMortgage = principal * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1);
 
@@ -723,21 +725,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </Card>
           )}
 
-          {/* TAL Rent Control Warning */}
-          {metrics.rent_control_risk && listing.units >= 2 && (
-            <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 p-4 border border-amber-200 dark:border-amber-900">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <div className="text-sm font-medium text-amber-800 dark:text-amber-300">{t('detail.rentControlTitle')}</div>
-                  <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                    {t('detail.rentControlDesc')}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* Comparable Price-per-Door */}
           {metrics.comparable_ppu && (
             <Card>
@@ -1020,8 +1007,9 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                         rate: marketData.mortgage_rate.toFixed(2),
                         payment: formatPrice(
                           (() => {
-                            const r = marketData.mortgage_rate! / 100 / 12;
-                            const n = 25 * 12;
+                            const sa = marketData.mortgage_rate! / 100 / 2;
+                            const r = Math.pow(1 + sa, 1 / 6) - 1;
+                            const n = 30 * 12;
                             const p = listing.price * 0.8;
                             return p * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
                           })(),
