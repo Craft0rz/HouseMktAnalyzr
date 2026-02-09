@@ -495,4 +495,4 @@ export const adminApi = {
   },
 };
 
-export { ApiError, TOKEN_KEY, REFRESH_KEY };
+export { ApiError, TOKEN_KEY, REFRESH_KEY, attemptTokenRefresh };

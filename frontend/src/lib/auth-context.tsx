@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useCallback, useEffect, useState, type ReactNode } from 'react';
-import { authApi, ApiError, TOKEN_KEY, REFRESH_KEY } from './api';
+import { authApi, attemptTokenRefresh, ApiError, TOKEN_KEY, REFRESH_KEY } from './api';
 import type { User, AuthResponse, RegisterRequest, LoginRequest } from './types';
 
 interface AuthContextType {
@@ -30,7 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // On mount, check if we have a valid token and load user
+  // On mount, check if we have a valid token and load user.
+  // If the access token is expired, attempt a refresh before giving up.
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) {
@@ -39,10 +40,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     authApi.me()
       .then(setUser)
-      .catch((err) => {
-        // Only clear tokens on 401 (invalid/expired token).
-        // Network errors or 5xx during deploys should not sign the user out.
+      .catch(async (err) => {
         if (err instanceof ApiError && err.status === 401) {
+          // Access token expired/invalid — try refreshing before logging out.
+          // fetchApi skips auto-refresh for /api/auth/ endpoints, so we do it here.
+          const refreshed = await attemptTokenRefresh();
+          if (refreshed) {
+            try {
+              const user = await authApi.me();
+              setUser(user);
+              return;
+            } catch { /* refresh succeeded but me() still failed — fall through */ }
+          }
           clearTokens();
         }
       })
