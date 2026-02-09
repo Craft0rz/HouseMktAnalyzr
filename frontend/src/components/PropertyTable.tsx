@@ -32,7 +32,7 @@ import { useComparison } from '@/lib/comparison-context';
 import { usePortfolioContext } from '@/lib/portfolio-context';
 import { propertiesApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { formatPrice } from '@/lib/formatters';
+import { formatPrice, formatCashFlow as formatCashFlowUtil } from '@/lib/formatters';
 import type { PropertyWithMetrics, PriceChangeMap, LifecycleMap } from '@/lib/types';
 
 export type StatusFilter = 'all' | 'active' | 'new' | 'stale' | 'delisted' | 'price_drop';
@@ -50,16 +50,6 @@ const formatPercent = (value: number | null | undefined) => {
   return `${value.toFixed(1)}%`;
 };
 
-const formatCashFlow = (value: number | null | undefined) => {
-  if (value == null) return '-';
-  const formatted = new Intl.NumberFormat('en-CA', {
-    style: 'currency',
-    currency: 'CAD',
-    maximumFractionDigits: 0,
-  }).format(Math.abs(value));
-  return value >= 0 ? formatted : `-${formatted}`;
-};
-
 const getScoreColor = (score: number) => {
   if (score >= 70) return 'bg-green-500';
   if (score >= 50) return 'bg-yellow-500';
@@ -75,6 +65,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
   const [lifecycle, setLifecycle] = useState<LifecycleMap>({});
   const { addProperty, removeProperty, isSelected, canAdd } = useComparison();
   const { isInPortfolio, addToWatchList, removeFromWatchList } = usePortfolioContext();
+  const formatCashFlow = (value: number | null | undefined) => formatCashFlowUtil(value, locale);
 
   // Fetch recent price changes and lifecycle data when data loads
   useEffect(() => {

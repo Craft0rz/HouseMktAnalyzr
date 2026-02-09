@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { useComparison } from '@/lib/comparison-context';
 import { ScoreBreakdown } from '@/components/charts';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { formatPrice as formatPriceUtil } from '@/lib/formatters';
+import { formatPrice as formatPriceUtil, formatCashFlow as formatCashFlowUtil } from '@/lib/formatters';
 import { marketApi } from '@/lib/api';
 import type {
   PropertyWithMetrics,
@@ -25,7 +25,7 @@ import type {
 
 const formatPercent = (value: number | null | undefined) => {
   if (value == null) return '-';
-  return `${value.toFixed(2)}%`;
+  return `${value.toFixed(1)}%`;
 };
 
 const getScoreColor = (score: number) => {
@@ -130,6 +130,7 @@ export default function ComparePage() {
   const { selectedProperties, removeProperty, clearAll } = useComparison();
   const { t, locale } = useTranslation();
   const formatPrice = (price: number) => formatPriceUtil(price, locale);
+  const formatCashFlow = (value: number) => formatCashFlowUtil(value, locale);
 
   // Market data state
   const [marketDataMap, setMarketDataMap] = useState<Record<string, PropertyMarketData>>({});
@@ -386,7 +387,7 @@ export default function ComparePage() {
             label={t('compare.monthlyCashFlow')}
             properties={selectedProperties}
             getValue={(p) => p.metrics.cash_flow_monthly}
-            format={(v) => (v != null ? formatPrice(v as number) : '-')}
+            format={(v) => (v != null ? formatCashFlow(v as number) : '-')}
             getBest={(props) => getBestValue(props, (p) => p.metrics.cash_flow_monthly, true)}
             getNumericValue={(p) => p.metrics.cash_flow_monthly}
             colorFn={(v) => getCashFlowColor(v as number | null)}
