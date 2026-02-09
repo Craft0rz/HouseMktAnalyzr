@@ -83,7 +83,7 @@ class PropertyListing(BaseModel):
     longitude: float | None = Field(default=None, description="Longitude from geocoding")
 
     # Property photos
-    photo_urls: list[str] = Field(default_factory=list, description="Gallery photo URLs")
+    photo_urls: list[str] | None = Field(default=None, description="Gallery photo URLs")
 
     # AI condition assessment (from Gemini)
     condition_score: float | None = Field(
@@ -165,12 +165,6 @@ class InvestmentMetrics(BaseModel):
     rate_sensitivity: dict[str, float] | None = Field(
         default=None,
         description="Cash flow at base, -1.5%, +1.5% rates: {low_rate, low_cash_flow, base_rate, base_cash_flow, high_rate, high_cash_flow}",
-    )
-
-    # Quebec rent control warning
-    rent_control_risk: str | None = Field(
-        default=None,
-        description="TAL rent control warning for multi-unit properties",
     )
 
     # Comparable price-per-door from other listings in same region

@@ -15,6 +15,7 @@ References:
 import asyncio
 import hashlib
 import logging
+import os
 import re
 from datetime import date
 from typing import Any, Optional
@@ -128,7 +129,7 @@ class CentrisScraper(DataSource):
         self.user_agent = user_agent or (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
+            "Chrome/133.0.0.0 Safari/537.36"
         )
         self._last_request_time = 0.0
         self._client: Optional[httpx.AsyncClient] = None
@@ -149,6 +150,43 @@ class CentrisScraper(DataSource):
                 follow_redirects=True,
             )
         return self._client
+
+    async def _get_page_with_browser(self, url: str) -> Optional[str]:
+        """Fetch a page using Playwright headless Chromium for JS-rendered content.
+
+        Returns the fully rendered HTML string, or None if Playwright is not
+        available or browser launch fails. Caller should fall back to httpx.
+        """
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            return None
+
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                try:
+                    context = await browser.new_context(
+                        user_agent=self.user_agent,
+                        viewport={"width": 1920, "height": 1080},
+                    )
+                    page = await context.new_page()
+                    await page.goto(url, wait_until="networkidle", timeout=30000)
+                    # Wait for gallery images to load
+                    try:
+                        await page.wait_for_selector(
+                            "img[src*='media.ashx'], img[data-src*='media.ashx']",
+                            timeout=5000,
+                        )
+                    except Exception:
+                        pass  # Photos may not be present on every page
+                    html = await page.content()
+                    return html
+                finally:
+                    await browser.close()
+        except Exception as e:
+            logger.warning(f"Playwright fetch failed for {url}: {e}")
+            return None
 
     async def _rate_limit(self) -> None:
         """Enforce rate limiting between requests."""
@@ -358,6 +396,16 @@ class CentrisScraper(DataSource):
             if url and not url.startswith("http"):
                 url = f"{self.BASE_URL}{url}"
 
+            # Extract thumbnail photo URL from card image
+            thumbnail_url = None
+            img_elem = card.find("img")
+            if img_elem:
+                img_url = img_elem.get("data-src") or img_elem.get("src") or ""
+                if img_url and ("centris.ca" in img_url or "media.ashx" in img_url):
+                    if not img_url.startswith("http"):
+                        img_url = f"{self.BASE_URL}{img_url}"
+                    thumbnail_url = img_url
+
             # Extract address - Centris uses .address with two child divs
             address_elem = card.find(class_="address")
             street = ""
@@ -475,6 +523,7 @@ class CentrisScraper(DataSource):
                 estimated_rent=None,
                 listing_date=None,
                 url=url or self.SEARCH_URL,
+                photo_urls=[thumbnail_url] if thumbnail_url else None,
                 raw_data={"mls_id": mls_id} if mls_id else None,
             )
 
@@ -738,10 +787,23 @@ class CentrisScraper(DataSource):
             url = f"{self.BASE_URL}/en/{centris_id}"
 
         try:
-            response = await self._make_request(url)
-            # Use response.text (httpx auto-decodes from Content-Type header)
-            # to correctly handle ½ and other special characters
-            soup = BeautifulSoup(response.text, "html.parser")
+            # Try Playwright first for JS-rendered content (gallery photos)
+            html = None
+            if os.environ.get("PLAYWRIGHT_ENABLED", "false").lower() in (
+                "true", "1", "yes",
+            ):
+                await self._rate_limit()
+                html = await self._get_page_with_browser(url)
+                if html:
+                    logger.debug(f"Playwright rendered {listing_id}")
+
+            if html:
+                soup = BeautifulSoup(html, "html.parser")
+            else:
+                response = await self._make_request(url)
+                # Use response.text (httpx auto-decodes from Content-Type header)
+                # to correctly handle ½ and other special characters
+                soup = BeautifulSoup(response.text, "html.parser")
             page_text = soup.get_text(" ", strip=True)
 
             # Parse structured characteristics
@@ -1089,6 +1151,7 @@ class CentrisScraper(DataSource):
                     net_income=detailed.net_income or listing.net_income,
                     municipal_assessment=detailed.municipal_assessment or listing.municipal_assessment,
                     annual_taxes=detailed.annual_taxes or listing.annual_taxes,
+                    photo_urls=detailed.photo_urls or listing.photo_urls,
                     listing_date=listing.listing_date,
                     url=listing.url,
                     raw_data={

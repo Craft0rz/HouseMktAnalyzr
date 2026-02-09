@@ -11,6 +11,14 @@ RUN pip install --no-cache-dir .
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Optional: Install Playwright for JS-rendered photo extraction
+# Set INSTALL_PLAYWRIGHT=true as a build arg to enable (~600MB addition)
+ARG INSTALL_PLAYWRIGHT=false
+RUN if [ "$INSTALL_PLAYWRIGHT" = "true" ]; then \
+        pip install --no-cache-dir playwright && \
+        playwright install --with-deps chromium; \
+    fi
+
 # Copy backend application
 COPY backend/app/ app/
 

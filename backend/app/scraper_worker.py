@@ -572,6 +572,11 @@ class ScraperWorker:
                     raise
                 except Exception as e:
                     logger.warning(f"Photo fetch failed for {item['id']}: {e}")
+                    # Set sentinel so we don't retry on crash/timeout failures
+                    try:
+                        await update_photo_urls(item["id"], [])
+                    except Exception:
+                        pass
                     failed += 1
                 self._status["enrichment_progress"]["photos"]["done"] = enriched
                 self._status["enrichment_progress"]["photos"]["failed"] = failed

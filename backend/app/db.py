@@ -611,9 +611,10 @@ async def update_walk_scores(
 
 
 async def get_listings_without_photos(limit: int = 30) -> list[dict]:
-    """Get cached listings that don't have photo_urls yet.
+    """Get cached listings that haven't had photo fetching attempted yet.
 
-    These need their detail page fetched to extract photos.
+    Uses photo_fetch_attempted_at sentinel to prevent infinite retry loops.
+    A listing is eligible only if it has never been attempted (no sentinel).
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -623,10 +624,7 @@ async def get_listings_without_photos(limit: int = 30) -> list[dict]:
             """
             SELECT id, data FROM properties
             WHERE expires_at > $1
-              AND (
-                  (data->'photo_urls') IS NULL
-                  OR jsonb_array_length(COALESCE(data->'photo_urls', '[]'::jsonb)) = 0
-              )
+              AND (data->>'photo_fetch_attempted_at') IS NULL
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
@@ -644,7 +642,10 @@ async def get_listings_without_photos(limit: int = 30) -> list[dict]:
 
 
 async def update_photo_urls(listing_id: str, photo_urls: list[str]) -> bool:
-    """Update photo_urls in a listing's JSONB data."""
+    """Update photo_urls in a listing's JSONB data.
+
+    Always sets photo_fetch_attempted_at sentinel to prevent infinite retries.
+    """
     pool = get_pool()
 
     async with pool.acquire() as conn:
@@ -656,6 +657,7 @@ async def update_photo_urls(listing_id: str, photo_urls: list[str]) -> bool:
 
         data = json.loads(row["data"])
         data["photo_urls"] = photo_urls
+        data["photo_fetch_attempted_at"] = datetime.now(timezone.utc).isoformat()
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",

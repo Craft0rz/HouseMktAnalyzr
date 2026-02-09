@@ -96,3 +96,32 @@ async def revalidate_listings(request: Request, _admin: dict = Depends(get_admin
         "listings_to_revalidate": count,
         "message": f"Cleared {count} listings. They will be re-validated on next enrichment cycle.",
     }
+
+
+@router.post("/reset-photos", status_code=202)
+async def reset_photos(request: Request, _admin: dict = Depends(get_admin_user)) -> dict:
+    """Clear photo_fetch_attempted_at and photo_urls to force re-fetching.
+
+    The next enrichment cycle will attempt to fetch photos for all cleared listings.
+    """
+    worker = request.app.state.scraper_worker
+    if worker is None:
+        raise HTTPException(503, "Scraper not available (no database)")
+
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE properties
+            SET data = data - 'photo_fetch_attempted_at' - 'photo_urls'
+            WHERE (data->>'photo_fetch_attempted_at') IS NOT NULL
+            """
+        )
+        # Result is like "UPDATE 123"
+        count = int(result.split()[-1]) if result else 0
+
+    return {
+        "status": "photo_markers_cleared",
+        "listings_to_refetch": count,
+        "message": f"Cleared photos for {count} listings. They will be re-fetched on next enrichment cycle.",
+    }
