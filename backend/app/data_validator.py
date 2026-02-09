@@ -180,10 +180,18 @@ def compute_quality_score(data: dict, flags: list[dict]) -> int:
     """Layer 3: Compute data completeness score 0-100."""
     score = 0
 
+    units = data.get("units", 1) or 1
+
     for field, pts in _QUALITY_WEIGHTS.items():
         val = data.get(field)
         if field == "photo_urls":
             if val and len(val) > 0:
+                score += pts
+        elif field == "gross_revenue":
+            if val is not None:
+                score += pts
+            elif units <= 1:
+                # Single-family: rental revenue not expected, don't penalize
                 score += pts
         elif val is not None:
             score += pts
@@ -199,8 +207,9 @@ def compute_quality_score(data: dict, flags: list[dict]) -> int:
         if data.get("units", 0) > 0:
             score += _UNITS_CORRECT_PTS
 
-    # Bonus for no sanity flags
-    if not flags:
+    # Bonus for no warning-level sanity flags (info flags don't penalize)
+    warning_flags = [f for f in flags if f.get("severity") == "warning"]
+    if not warning_flags:
         score += _NO_FLAGS_PTS
 
     return min(score, 100)

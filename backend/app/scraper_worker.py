@@ -259,11 +259,6 @@ class ScraperWorker:
         self._status["enrichment_progress"]["details"]["phase"] = "running"
         await self._enrich_listing_details()
 
-        # Validate and score data quality
-        self._status["current_phase"] = "validating_data"
-        self._status["enrichment_progress"]["validation"]["phase"] = "running"
-        await self._validate_data_quality()
-
         # Enrich listings with Walk Scores
         self._status["current_phase"] = "enriching_walk_scores"
         self._status["enrichment_progress"]["walk_scores"]["phase"] = "running"
@@ -278,6 +273,11 @@ class ScraperWorker:
         self._status["current_phase"] = "enriching_conditions"
         self._status["enrichment_progress"]["conditions"]["phase"] = "running"
         await self._enrich_condition_scores()
+
+        # Validate and score data quality (runs LAST so all enrichment fields are available)
+        self._status["current_phase"] = "validating_data"
+        self._status["enrichment_progress"]["validation"]["phase"] = "running"
+        await self._validate_data_quality()
 
         # Persist job history to database
         total_enriched = sum(
