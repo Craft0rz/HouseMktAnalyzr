@@ -368,6 +368,25 @@ class ScraperWorker:
                             item["id"], url=item.get("url") or None
                         )
                         if detailed:
+                            # Guard: if detail page returned but has zero
+                            # useful data, don't stamp the sentinel — the page
+                            # was likely empty or a redirect we didn't catch.
+                            detail_fields = (
+                                detailed.postal_code, detailed.sqft,
+                                detailed.year_built, detailed.annual_taxes,
+                                detailed.gross_revenue, detailed.municipal_assessment,
+                                detailed.lot_sqft,
+                            )
+                            if not any(detail_fields) and detailed.address == "Unknown":
+                                logger.warning(
+                                    f"Detail enrichment for {item['id']} returned "
+                                    f"empty data, skipping sentinel"
+                                )
+                                total_failed += 1
+                                self._status["enrichment_progress"]["details"]["done"] = total_enriched
+                                self._status["enrichment_progress"]["details"]["failed"] = total_failed
+                                continue
+
                             # Build fields dict: detail page is authoritative
                             fields = {
                                 # Detail-only fields (not on search cards)

@@ -801,10 +801,26 @@ class CentrisScraper(DataSource):
                 soup = BeautifulSoup(html, "html.parser")
             else:
                 response = await self._make_request(url)
+                # Detect delisted listings: Centris returns 302 → search results
+                # page (HTTP 200) with "listingnotfound" in the final URL.
+                final_url = str(response.url)
+                if "listingnotfound" in final_url:
+                    logger.info(f"Listing {listing_id} is delisted (redirected to search)")
+                    return None
                 # Use response.text (httpx auto-decodes from Content-Type header)
                 # to correctly handle ½ and other special characters
                 soup = BeautifulSoup(response.text, "html.parser")
+
             page_text = soup.get_text(" ", strip=True)
+
+            # Detect search results page (fallback for redirects we didn't catch above)
+            # A detail page has carac-container divs; a search results page has
+            # property-thumbnail-item divs but no characteristics.
+            has_characteristics = bool(soup.find(class_="carac-container"))
+            has_search_results = bool(soup.find(class_="property-thumbnail-item"))
+            if not has_characteristics and has_search_results:
+                logger.info(f"Listing {listing_id} returned search results page, not detail page")
+                return None
 
             # Parse structured characteristics
             chars = self._parse_characteristics(soup)
@@ -970,30 +986,29 @@ class CentrisScraper(DataSource):
             total_expenses = None
             net_income = None
 
+            def _parse_amount(text: str) -> int | None:
+                """Parse a dollar amount string, returning None if empty."""
+                cleaned = re.sub(r"[^\d]", "", text)
+                return int(cleaned) if cleaned else None
+
             for key in ("Potential gross revenue", "Gross revenue",
                         "Revenus bruts potentiels", "Revenu brut potentiel",
                         "Revenus bruts", "Revenu brut"):
                 if key in chars:
-                    m = re.search(r"([\d,\s]+)", chars[key].replace("$", "").replace("\xa0", ""))
-                    if m:
-                        gross_revenue = int(m.group(1).replace(",", "").replace(" ", ""))
+                    gross_revenue = _parse_amount(chars[key])
                     break
 
             # Centris may show total expenses and/or net income for revenue properties
             for key in ("Total expenses", "Expenses", "Operating expenses",
                         "Dépenses totales", "Dépenses", "Dépenses d'exploitation"):
                 if key in chars:
-                    m = re.search(r"([\d,\s]+)", chars[key].replace("$", "").replace("\xa0", ""))
-                    if m:
-                        total_expenses = int(m.group(1).replace(",", "").replace(" ", ""))
+                    total_expenses = _parse_amount(chars[key])
                     break
 
             for key in ("Net income", "Estimated net income",
                         "Revenu net", "Revenu net estimé"):
                 if key in chars:
-                    m = re.search(r"([\d,\s]+)", chars[key].replace("$", "").replace("\xa0", ""))
-                    if m:
-                        net_income = int(m.group(1).replace(",", "").replace(" ", ""))
+                    net_income = _parse_amount(chars[key])
                     break
 
             # Infer missing values when two of the three are known
@@ -1014,7 +1029,7 @@ class CentrisScraper(DataSource):
                 page_text, re.I | re.S
             )
             if assess_match:
-                municipal_assessment = int(assess_match.group(1).replace(",", "").replace(" ", ""))
+                municipal_assessment = _parse_amount(assess_match.group(1))
 
             # Taxes - find the second occurrence (first is filter UI) (EN/FR)
             tax_matches = re.findall(
@@ -1022,7 +1037,7 @@ class CentrisScraper(DataSource):
                 page_text, re.I
             )
             if len(tax_matches) >= 2:
-                annual_taxes = int(tax_matches[1][2].replace(",", "").replace(" ", ""))
+                annual_taxes = _parse_amount(tax_matches[1][2])
 
             # === PARKING ===
             parking_spaces = 0
@@ -1106,7 +1121,7 @@ class CentrisScraper(DataSource):
         except (CaptchaError, RateLimitError):
             raise
         except Exception as e:
-            logger.error(f"Error fetching listing details for {listing_id}: {e}")
+            logger.error(f"Error fetching listing details for {listing_id}: {e}", exc_info=True)
             return None
 
     async def enrich_listing(
