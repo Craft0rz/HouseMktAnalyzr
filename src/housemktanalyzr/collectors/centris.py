@@ -927,27 +927,34 @@ class CentrisScraper(DataSource):
                     rooms = int(room_match.group(1))
 
             # === PROPERTY CHARACTERISTICS ===
+            # Units: sqft, pi (pieds), pc (pieds carrés), mc (mètres carrés)
+            _AREA_UNITS = r"(?:sqft|pi\b|pc\b|sq\.?\s*ft)"
+            def _parse_area(text: str) -> int | None:
+                """Parse an area value, handling comma and space separators."""
+                cleaned = re.sub(r"[^\d]", "", text)
+                return int(cleaned) if cleaned else None
+
             # Living area / Building area
             sqft = None
             sqft_match = re.search(
-                r"(?:Living area|Building area|Superficie habitable|Superficie du bâtiment)[:\s]*([\d,]+)\s*(?:sqft|pi)",
+                r"(?:Living area|Building area|Superficie habitable|Superficie du bâtiment)[:\s]*([\d,.\s]+)\s*" + _AREA_UNITS,
                 page_text, re.I
             )
             if sqft_match:
-                sqft = int(sqft_match.group(1).replace(",", ""))
+                sqft = _parse_area(sqft_match.group(1))
 
             # Lot area (from characteristics or text, EN/FR)
             lot_sqft = None
             for key in ("Lot area", "Superficie du terrain", "Terrain"):
                 if key in chars:
-                    lot_match = re.search(r"([\d,]+)\s*(?:sqft|pi)", chars[key])
+                    lot_match = re.search(r"([\d,.\s]+)\s*" + _AREA_UNITS, chars[key])
                     if lot_match:
-                        lot_sqft = int(lot_match.group(1).replace(",", ""))
+                        lot_sqft = _parse_area(lot_match.group(1))
                     break
             if not lot_sqft:
-                lot_match = re.search(r"(?:Lot area|Superficie du terrain)[:\s]*([\d,]+)\s*(?:sqft|pi)", page_text, re.I)
+                lot_match = re.search(r"(?:Lot area|Superficie du terrain)[:\s]*([\d,.\s]+)\s*" + _AREA_UNITS, page_text, re.I)
                 if lot_match:
-                    lot_sqft = int(lot_match.group(1).replace(",", ""))
+                    lot_sqft = _parse_area(lot_match.group(1))
 
             # Year built (EN/FR)
             year_built = None
