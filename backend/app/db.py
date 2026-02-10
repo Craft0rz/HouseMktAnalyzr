@@ -438,7 +438,7 @@ async def cache_listings(
                 INSERT INTO properties (id, source, city, property_type, price, data, region, fetched_at, expires_at, first_seen_at, last_seen_at, status)
                 VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $10, 'active')
                 ON CONFLICT (id) DO UPDATE SET
-                    data = EXCLUDED.data,
+                    data = properties.data || jsonb_strip_nulls(EXCLUDED.data),
                     price = EXCLUDED.price,
                     region = COALESCE(EXCLUDED.region, properties.region),
                     fetched_at = EXCLUDED.fetched_at,
