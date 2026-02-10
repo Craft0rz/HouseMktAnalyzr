@@ -290,6 +290,7 @@ class ScraperWorker:
                 "conditions": round(ep["conditions"]["done"] / max(ep["conditions"]["total"], 1) * 100, 1),
             }
         except Exception:
+            logger.warning("Failed to capture quality snapshot", exc_info=True)
             quality_snapshot = None
 
         # Persist job history to database
