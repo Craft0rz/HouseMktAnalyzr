@@ -6,6 +6,7 @@ the public score page. No API key required.
 
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Optional
 
@@ -17,24 +18,37 @@ logger = logging.getLogger(__name__)
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 WALKSCORE_BASE = "https://www.walkscore.com/score"
 
+# Quebec province bounding box (generous margins)
+QUEBEC_LAT_MIN = 44.0
+QUEBEC_LAT_MAX = 63.0
+QUEBEC_LNG_MIN = -80.0
+QUEBEC_LNG_MAX = -56.0
+
+
+def is_valid_quebec_coords(lat: float, lng: float) -> bool:
+    """Check that coordinates fall within Quebec province bounds."""
+    return (QUEBEC_LAT_MIN <= lat <= QUEBEC_LAT_MAX
+            and QUEBEC_LNG_MIN <= lng <= QUEBEC_LNG_MAX)
+
 
 @dataclass
 class WalkScoreResult:
     walk_score: int | None
     transit_score: int | None
     bike_score: int | None
-    latitude: float
-    longitude: float
+    latitude: float | None
+    longitude: float | None
+    postal_code: str | None = None
 
 
 async def geocode_address(
     address: str,
     city: str,
     client: httpx.AsyncClient,
-) -> Optional[tuple[float, float]]:
+) -> Optional[tuple[float, float, str | None]]:
     """Geocode an address using Nominatim (OpenStreetMap).
 
-    Returns (latitude, longitude) or None if geocoding fails.
+    Returns (latitude, longitude, postal_code) or None if geocoding fails.
     """
     query = f"{address}, {city}, QC, Canada"
     params = {
@@ -42,6 +56,7 @@ async def geocode_address(
         "format": "json",
         "limit": 1,
         "countrycodes": "ca",
+        "addressdetails": 1,
     }
     headers = {"User-Agent": "HouseMktAnalyzr/1.0"}
 
@@ -54,7 +69,21 @@ async def geocode_address(
             logger.warning(f"Geocoding returned no results for: {query}")
             return None
 
-        return float(results[0]["lat"]), float(results[0]["lon"])
+        lat = float(results[0]["lat"])
+        lon = float(results[0]["lon"])
+
+        if not is_valid_quebec_coords(lat, lon):
+            logger.warning(
+                f"Geocoding result outside Quebec bounds for: {query} "
+                f"(lat={lat}, lon={lon})"
+            )
+            return None
+
+        postal_code = None
+        addr_details = results[0].get("address", {})
+        if addr_details.get("postcode"):
+            postal_code = addr_details["postcode"].strip().upper()
+        return lat, lon, postal_code
     except Exception as e:
         logger.error(f"Geocoding failed for {query}: {e}")
         return None
@@ -79,11 +108,9 @@ def _build_walkscore_slug(address: str, city: str) -> str:
         text = text.encode("latin-1").decode("utf-8")
     except (UnicodeDecodeError, UnicodeEncodeError):
         pass
-    # Remove accents (basic: é->e, è->e, ê->e, à->a, etc.)
-    for src, dst in [("é", "e"), ("è", "e"), ("ê", "e"), ("ë", "e"),
-                     ("à", "a"), ("â", "a"), ("ô", "o"), ("î", "i"),
-                     ("ù", "u"), ("û", "u"), ("ç", "c")]:
-        text = text.replace(src, dst).replace(src.upper(), dst.upper())
+    # Remove all diacritical marks (é->e, ô->o, ç->c, etc.)
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     # Remove non-alphanumeric (keep spaces and hyphens)
     slug = re.sub(r"[^\w\s-]", "", text)
     # Collapse multiple spaces/hyphens into single hyphen
@@ -157,15 +184,20 @@ async def enrich_with_walk_score(
     }
 
     async with httpx.AsyncClient(timeout=15.0, headers=headers, follow_redirects=True) as client:
-        # Geocode if we don't have coordinates
-        if latitude is None or longitude is None:
+        # Geocode if we don't have coordinates or existing ones are invalid
+        postal_code = None
+        need_geocode = (
+            latitude is None or longitude is None
+            or not is_valid_quebec_coords(latitude, longitude)
+        )
+        if need_geocode:
             geo = await geocode_address(address, city, client)
             if geo:
-                latitude, longitude = geo
+                latitude, longitude, postal_code = geo
             else:
-                # Still try scraping even without coordinates
-                latitude = latitude or 0.0
-                longitude = longitude or 0.0
+                # Keep as None — don't store fake (0, 0) coordinates
+                latitude = None
+                longitude = None
 
         scores = await scrape_walk_score(address, city, client)
         if not scores:
@@ -177,4 +209,5 @@ async def enrich_with_walk_score(
             bike_score=scores["bike_score"],
             latitude=latitude,
             longitude=longitude,
+            postal_code=postal_code,
         )

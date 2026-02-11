@@ -19,6 +19,9 @@ RUN if [ "$INSTALL_PLAYWRIGHT" = "true" ]; then \
         playwright install --with-deps chromium; \
     fi
 
+# Enable Playwright at runtime when browsers are installed
+ENV PLAYWRIGHT_ENABLED=${INSTALL_PLAYWRIGHT}
+
 # Copy backend application
 COPY backend/app/ app/
 

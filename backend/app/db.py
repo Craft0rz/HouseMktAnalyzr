@@ -601,6 +601,7 @@ async def update_walk_scores(
     bike_score: int | None,
     latitude: float | None,
     longitude: float | None,
+    postal_code: str | None = None,
 ) -> bool:
     """Update walk scores in a listing's JSONB data."""
     pool = get_pool()
@@ -620,12 +621,59 @@ async def update_walk_scores(
             data["latitude"] = latitude
         if longitude:
             data["longitude"] = longitude
+        # Only fill postal_code if listing doesn't already have one
+        if postal_code and not data.get("postal_code"):
+            data["postal_code"] = postal_code
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",
             json.dumps(data), listing_id,
         )
     return True
+
+
+async def get_listings_with_bad_coordinates(limit: int = 200) -> list[dict]:
+    """Get active listings with missing or out-of-Quebec coordinates.
+
+    Returns listings where lat/lng is null, zero, or outside Quebec bounds.
+    Quebec bounds: lat 44.0–63.0, lng -80.0–-56.0.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, data FROM properties
+            WHERE expires_at > $1
+              AND status = 'active'
+              AND (
+                (data->>'latitude') IS NULL
+                OR (data->>'longitude') IS NULL
+                OR (data->>'latitude')::float = 0
+                OR (data->>'longitude')::float = 0
+                OR (data->>'latitude')::float < 44.0
+                OR (data->>'latitude')::float > 63.0
+                OR (data->>'longitude')::float < -80.0
+                OR (data->>'longitude')::float > -56.0
+              )
+            ORDER BY fetched_at DESC
+            LIMIT $2
+            """,
+            now, limit,
+        )
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        results.append({
+            "id": row["id"],
+            "address": data.get("address", ""),
+            "city": data.get("city", ""),
+            "latitude": data.get("latitude"),
+            "longitude": data.get("longitude"),
+        })
+    return results
 
 
 async def get_listings_without_photos(limit: int = 30) -> list[dict]:

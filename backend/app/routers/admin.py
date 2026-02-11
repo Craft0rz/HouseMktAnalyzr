@@ -1,6 +1,8 @@
 """Admin dashboard endpoints — require admin role."""
 
+import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -8,7 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..auth import get_admin_user
-from ..db import get_pool
+from ..db import get_pool, get_listings_with_bad_coordinates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -309,3 +313,69 @@ async def get_removed_listings(
         page=page,
         page_size=page_size,
     )
+
+
+# --- Geocoding revalidation ---
+
+
+@router.post("/revalidate-geocoding")
+async def revalidate_geocoding(
+    _admin: dict = Depends(get_admin_user),
+):
+    """Re-geocode listings with missing or out-of-Quebec coordinates.
+
+    Finds active listings where lat/lng is null, zero, or outside Quebec
+    bounds and re-geocodes them via Nominatim.
+    """
+    from housemktanalyzr.enrichment.walkscore import geocode_address
+
+    import httpx
+
+    listings = await get_listings_with_bad_coordinates(limit=200)
+    if not listings:
+        return {"status": "ok", "message": "All listings have valid coordinates", "fixed": 0, "failed": 0}
+
+    fixed = 0
+    failed = 0
+    headers = {"User-Agent": "HouseMktAnalyzr/1.0"}
+
+    async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
+        for item in listings:
+            try:
+                geo = await geocode_address(item["address"], item["city"], client)
+                if geo:
+                    lat, lon, postal_code = geo
+                    # Update only coordinates (preserve existing walk scores)
+                    pool = get_pool()
+                    async with pool.acquire() as conn:
+                        row = await conn.fetchrow(
+                            "SELECT data FROM properties WHERE id = $1", item["id"]
+                        )
+                        if row:
+                            data = json.loads(row["data"])
+                            data["latitude"] = lat
+                            data["longitude"] = lon
+                            if postal_code and not data.get("postal_code"):
+                                data["postal_code"] = postal_code
+                            await conn.execute(
+                                "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+                                json.dumps(data), item["id"],
+                            )
+                    fixed += 1
+                    logger.info(f"Re-geocoded {item['id']}: ({lat}, {lon})")
+                else:
+                    failed += 1
+                    logger.warning(f"Re-geocoding failed for {item['id']}: {item['address']}, {item['city']}")
+            except Exception as e:
+                failed += 1
+                logger.warning(f"Re-geocoding error for {item['id']}: {e}")
+
+            # Respect Nominatim rate limit (1 req/sec)
+            await asyncio.sleep(1.1)
+
+    return {
+        "status": "ok",
+        "total_checked": len(listings),
+        "fixed": fixed,
+        "failed": failed,
+    }

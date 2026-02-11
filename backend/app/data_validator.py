@@ -203,7 +203,7 @@ def run_sanity_checks(data: dict) -> list[dict]:
 
     # Enriched but still missing sqft — flag for price-per-sqft gap
     raw_data = data.get("raw_data") or {}
-    if not sqft and raw_data.get("enriched") or raw_data.get("detail_enriched_at"):
+    if not sqft and (raw_data.get("enriched") or data.get("detail_enriched_at")):
         flags.append({
             "rule": "sqft_missing_after_enrichment",
             "value": None,

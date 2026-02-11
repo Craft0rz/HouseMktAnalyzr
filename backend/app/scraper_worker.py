@@ -575,6 +575,7 @@ class ScraperWorker:
                         bike_score=result.bike_score,
                         latitude=result.latitude,
                         longitude=result.longitude,
+                        postal_code=result.postal_code,
                     )
                     enriched += 1
                 else:

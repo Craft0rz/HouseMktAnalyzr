@@ -883,6 +883,16 @@ class CentrisScraper(DataSource):
             if postal_elem:
                 postal_code = postal_elem.get_text(strip=True)
 
+            # Fallback: regex search for Canadian postal code in page text
+            if not postal_code:
+                pc_match = re.search(
+                    r"\b([A-Za-z]\d[A-Za-z])\s?(\d[A-Za-z]\d)\b", page_text
+                )
+                if pc_match:
+                    postal_code = (
+                        f"{pc_match.group(1).upper()} {pc_match.group(2).upper()}"
+                    )
+
             # Fallback to title parsing if schema.org didn't have address
             if address == "Unknown":
                 title = soup.find("title")
