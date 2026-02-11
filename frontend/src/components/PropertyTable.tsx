@@ -192,7 +192,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
       header: t('table.address'),
       cell: ({ row }) => {
         const lc = lifecycle[row.original.listing.id];
-        const isNew = lc && lc.days_on_market !== null && lc.days_on_market <= 7;
+        const isNew = lc && lc.days_on_market !== null && lc.days_on_market <= 2;
         const isStale = lc?.status === 'stale';
         const isDelisted = lc?.status === 'delisted';
         return (
