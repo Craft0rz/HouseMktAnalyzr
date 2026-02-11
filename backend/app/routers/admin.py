@@ -1,5 +1,6 @@
 """Admin dashboard endpoints — require admin role."""
 
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -184,3 +185,127 @@ async def toggle_user_active(
     if result == "UPDATE 0":
         raise HTTPException(404, "User not found")
     return {"status": "ok", "user_id": user_id, "is_active": is_active}
+
+
+# --- Removed listings analytics ---
+
+
+class RemovedListingRow(BaseModel):
+    property_id: str
+    address: str
+    city: str
+    region: str | None
+    property_type: str | None
+    price: int | None
+    status: str
+    days_on_market: int | None
+    last_seen_at: str | None
+
+
+class RemovedListingsStats(BaseModel):
+    total_removed_7d: int
+    total_removed_30d: int
+    avg_days_on_market: float | None
+    by_region: list[dict]
+    by_property_type: list[dict]
+    weekly_removals: list[dict]
+
+
+class RemovedListingsResponse(BaseModel):
+    stats: RemovedListingsStats
+    listings: list[RemovedListingRow]
+    total_count: int
+    page: int
+    page_size: int
+
+
+@router.get("/removed-listings", response_model=RemovedListingsResponse)
+async def get_removed_listings(
+    page: int = Query(0, ge=0),
+    page_size: int = Query(50, ge=1, le=200),
+    region: str | None = Query(default=None),
+    _admin: dict = Depends(get_admin_user),
+):
+    """Removed listings with aggregate analytics (admin only)."""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        base = "status IN ('stale', 'delisted') AND last_seen_at > NOW() - INTERVAL '30 days'"
+        params: list = []
+        idx = 1
+        if region:
+            base += f" AND region = ${idx}"
+            params.append(region)
+            idx += 1
+
+        total_7d = await conn.fetchval(
+            f"SELECT COUNT(*) FROM properties WHERE {base} AND last_seen_at > NOW() - INTERVAL '7 days'",
+            *params,
+        )
+        total_30d = await conn.fetchval(
+            f"SELECT COUNT(*) FROM properties WHERE {base}", *params
+        )
+        avg_dom = await conn.fetchval(
+            f"""SELECT AVG(EXTRACT(EPOCH FROM (last_seen_at - first_seen_at)) / 86400)::REAL
+                FROM properties WHERE {base} AND first_seen_at IS NOT NULL""",
+            *params,
+        )
+
+        region_rows = await conn.fetch(
+            f"""SELECT region, COUNT(*) AS count FROM properties
+                WHERE {base} AND region IS NOT NULL
+                GROUP BY region ORDER BY count DESC LIMIT 10""",
+            *params,
+        )
+        type_rows = await conn.fetch(
+            f"""SELECT (data->>'property_type') AS property_type, COUNT(*) AS count
+                FROM properties WHERE {base}
+                GROUP BY property_type ORDER BY count DESC""",
+            *params,
+        )
+        weekly_rows = await conn.fetch(
+            f"""SELECT DATE_TRUNC('week', last_seen_at) AS week_start, COUNT(*) AS count
+                FROM properties WHERE {base} AND last_seen_at > NOW() - INTERVAL '4 weeks'
+                GROUP BY week_start ORDER BY week_start""",
+            *params,
+        )
+
+        listing_rows = await conn.fetch(
+            f"""SELECT id, data, status, region, price, first_seen_at, last_seen_at
+                FROM properties WHERE {base}
+                ORDER BY last_seen_at DESC
+                LIMIT ${idx} OFFSET ${idx + 1}""",
+            *params, page_size, page * page_size,
+        )
+
+    listings = []
+    for row in listing_rows:
+        ld = json.loads(row["data"])
+        first_seen = row["first_seen_at"]
+        last_seen = row["last_seen_at"]
+        dom = (last_seen - first_seen).days if first_seen and last_seen else None
+        listings.append(RemovedListingRow(
+            property_id=row["id"],
+            address=ld.get("address", "N/A"),
+            city=ld.get("city", "N/A"),
+            region=row["region"],
+            property_type=ld.get("property_type"),
+            price=row["price"] or ld.get("price"),
+            status=row["status"],
+            days_on_market=dom,
+            last_seen_at=last_seen.isoformat() if last_seen else None,
+        ))
+
+    return RemovedListingsResponse(
+        stats=RemovedListingsStats(
+            total_removed_7d=total_7d,
+            total_removed_30d=total_30d,
+            avg_days_on_market=round(avg_dom, 1) if avg_dom else None,
+            by_region=[{"region": r["region"], "count": r["count"]} for r in region_rows],
+            by_property_type=[{"property_type": r["property_type"], "count": r["count"]} for r in type_rows],
+            weekly_removals=[{"week_start": r["week_start"].isoformat(), "count": r["count"]} for r in weekly_rows],
+        ),
+        listings=listings,
+        total_count=total_30d,
+        page=page,
+        page_size=page_size,
+    )

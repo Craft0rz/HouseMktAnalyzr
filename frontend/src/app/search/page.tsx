@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Search, Archive, List, Map } from 'lucide-react';
+import { Loader2, Search, List, Map } from 'lucide-react';
 import { SearchFilters, type SearchFilters as SearchFiltersType } from '@/components/SearchFilters';
 import { PropertyTable, type StatusFilter } from '@/components/PropertyTable';
 import { PropertyDetail } from '@/components/PropertyDetail';
@@ -14,8 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { analysisApi, propertiesApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { formatPrice } from '@/lib/formatters';
-import type { PropertyWithMetrics, BatchAnalysisResponse, RemovedListing } from '@/lib/types';
+import type { PropertyWithMetrics, BatchAnalysisResponse } from '@/lib/types';
 
 // Extract so the chunk starts downloading on page load, not on first map click
 const mapImport = () => import('@/components/PropertyMap').then((m) => m.PropertyMap);
@@ -31,7 +30,7 @@ const PropertyMap = dynamic(mapImport, {
 if (typeof window !== 'undefined') mapImport();
 
 export default function SearchPage() {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
 
   const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
     { value: 'all', label: t('search.filterAll') },
@@ -47,15 +46,6 @@ export default function SearchPage() {
   const [mlsNumber, setMlsNumber] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
-  const [removedListings, setRemovedListings] = useState<RemovedListing[]>([]);
-  const [showRemoved, setShowRemoved] = useState(false);
-
-  // Fetch recently removed listings
-  useEffect(() => {
-    propertiesApi.getRecentlyRemoved()
-      .then((res) => setRemovedListings(res.listings))
-      .catch(() => {});
-  }, []);
 
   const idLookupMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -268,67 +258,6 @@ export default function SearchPage() {
               <li>{t('search.readyTip3')}</li>
             </ul>
           </CardContent>
-        </Card>
-      )}
-
-      {/* Recently Removed */}
-      {removedListings.length > 0 && (
-        <Card>
-          <CardHeader className="cursor-pointer" onClick={() => setShowRemoved(!showRemoved)}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Archive className="h-5 w-5 text-muted-foreground" />
-                <CardTitle className="text-lg">{t('search.recentlyRemoved')}</CardTitle>
-                <Badge variant="secondary">{removedListings.length}</Badge>
-              </div>
-              <Button variant="ghost" size="sm">
-                {showRemoved ? t('common.hide') : t('common.show')}
-              </Button>
-            </div>
-            <CardDescription>
-              {t('search.recentlyRemovedDesc')}
-            </CardDescription>
-          </CardHeader>
-          {showRemoved && (
-            <CardContent>
-              <div className="space-y-2">
-                {removedListings.map((item) => {
-                  const dom = item.days_on_market;
-                  return (
-                    <div
-                      key={item.listing.id}
-                      className="flex items-center justify-between p-3 rounded-md border hover:bg-muted/50 cursor-pointer"
-                      onClick={() => {
-                        setSelectedProperty({ listing: item.listing, metrics: {} as PropertyWithMetrics['metrics'] });
-                        setDetailOpen(true);
-                      }}
-                    >
-                      <div>
-                        <div className="font-medium">{item.listing.address}</div>
-                        <div className="text-sm text-muted-foreground flex items-center gap-2">
-                          <span>{item.listing.city}</span>
-                          <Badge variant="outline" className="text-[9px] px-1 py-0 h-4 border-gray-400/50 text-gray-500">
-                            {item.status}
-                          </Badge>
-                          {dom !== null && <span>{t('search.daysOnMarket', { days: dom })}</span>}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-medium">
-                          {formatPrice(item.listing.price, locale)}
-                        </div>
-                        {item.last_seen_at && (
-                          <div className="text-xs text-muted-foreground">
-                            {t('search.lastSeen', { date: new Date(item.last_seen_at).toLocaleDateString() })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          )}
         </Card>
       )}
 

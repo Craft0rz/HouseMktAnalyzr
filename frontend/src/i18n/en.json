@@ -712,5 +712,25 @@
   "admin.next": "Next",
   "admin.pageInfo": "Page {current} of {total}",
   "admin.accessDenied": "Access Denied",
-  "admin.accessDeniedDesc": "You need admin privileges to view this page."
+  "admin.accessDeniedDesc": "You need admin privileges to view this page.",
+
+  "admin.removedListings": "Removed Listings",
+  "admin.removedListingsDesc": "Properties that went stale or were delisted",
+  "admin.removed7d": "Removed (7d)",
+  "admin.removed30d": "Removed (30d)",
+  "admin.avgDaysOnMarket": "Avg Days on Market",
+  "admin.avgDom": "Average time from first seen to removal",
+  "admin.byRegion": "By Region",
+  "admin.byPropertyType": "By Property Type",
+  "admin.weeklyRemovals": "Weekly Removals",
+  "admin.last4Weeks": "Last 4 weeks",
+  "admin.address": "Address",
+  "admin.city": "City",
+  "admin.region": "Region",
+  "admin.propertyType": "Type",
+  "admin.price": "Price",
+  "admin.dom": "DOM",
+  "admin.lastSeen": "Last Seen",
+  "admin.noRemovedListings": "No removed listings in the last 30 days",
+  "admin.loadingRemoved": "Loading removed listings..."
 }

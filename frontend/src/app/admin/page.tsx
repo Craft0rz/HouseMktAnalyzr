@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, Activity, Clock, BarChart3, Shield, Ban, Check } from 'lucide-react';
+import { Users, Activity, Clock, BarChart3, Shield, Ban, Check, Archive, MapPin, Calendar } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -13,7 +13,7 @@ import { LoadingCard } from '@/components/LoadingCard';
 import { AdminGuard } from '@/components/AdminGuard';
 import { adminApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
-import type { AdminDashboardStats, AdminUsersResponse } from '@/lib/types';
+import type { AdminDashboardStats, AdminUsersResponse, AdminRemovedListingsResponse } from '@/lib/types';
 
 export default function AdminPage() {
   return (
@@ -27,6 +27,7 @@ function AdminDashboard() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [usersPage, setUsersPage] = useState(0);
+  const [removedPage, setRemovedPage] = useState(0);
 
   const { data: stats, isLoading: statsLoading } = useQuery<AdminDashboardStats>({
     queryKey: ['admin', 'stats'],
@@ -37,6 +38,12 @@ function AdminDashboard() {
   const { data: usersData, isLoading: usersLoading } = useQuery<AdminUsersResponse>({
     queryKey: ['admin', 'users', usersPage],
     queryFn: () => adminApi.users(50, usersPage * 50),
+  });
+
+  const { data: removedData, isLoading: removedLoading } = useQuery<AdminRemovedListingsResponse>({
+    queryKey: ['admin', 'removed-listings', removedPage],
+    queryFn: () => adminApi.removedListings(removedPage, 50),
+    refetchInterval: 60_000,
   });
 
   const roleMutation = useMutation({
@@ -230,6 +237,189 @@ function AdminDashboard() {
           </CardContent>
         </Card>
       )}
+
+      {/* Removed Listings Analytics */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Archive className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle>{t('admin.removedListings')}</CardTitle>
+              <CardDescription>{t('admin.removedListingsDesc')}</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {removedLoading ? (
+            <LoadingCard message={t('admin.loadingRemoved')} />
+          ) : removedData ? (
+            <div className="space-y-6">
+              {/* Stat cards */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardDescription>{t('admin.removed7d')}</CardDescription>
+                    <Archive className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{removedData.stats.total_removed_7d}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardDescription>{t('admin.removed30d')}</CardDescription>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{removedData.stats.total_removed_30d}</div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between pb-2">
+                    <CardDescription>{t('admin.avgDaysOnMarket')}</CardDescription>
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {removedData.stats.avg_days_on_market != null
+                        ? `${removedData.stats.avg_days_on_market}d`
+                        : '-'}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{t('admin.avgDom')}</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Region & Type breakdowns */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {removedData.stats.by_region.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">{t('admin.byRegion')}</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {removedData.stats.by_region.map((r) => (
+                        <Badge key={r.region} variant="secondary" className="gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {r.region} ({r.count})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {removedData.stats.by_property_type.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">{t('admin.byPropertyType')}</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {removedData.stats.by_property_type.map((pt) => (
+                        <Badge key={pt.property_type ?? 'unknown'} variant="outline">
+                          {pt.property_type ?? 'N/A'} ({pt.count})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Weekly removals chart */}
+              {removedData.stats.weekly_removals.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">{t('admin.weeklyRemovals')}</h4>
+                  <p className="text-xs text-muted-foreground mb-2">{t('admin.last4Weeks')}</p>
+                  <div className="flex items-end gap-2 h-24">
+                    {removedData.stats.weekly_removals.map((w) => {
+                      const max = Math.max(...removedData.stats.weekly_removals.map(x => x.count), 1);
+                      const pct = (w.count / max) * 100;
+                      const weekLabel = new Date(w.week_start).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                      return (
+                        <div key={w.week_start} className="flex-1 flex flex-col items-center gap-1">
+                          <div
+                            className="w-full bg-primary/80 rounded-t hover:bg-primary transition-colors"
+                            style={{ height: `${Math.max(pct, 4)}%` }}
+                            title={`${weekLabel}: ${w.count}`}
+                          />
+                          <span className="text-[10px] text-muted-foreground">{weekLabel}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Listing table */}
+              {removedData.listings.length > 0 ? (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t('admin.address')}</TableHead>
+                        <TableHead>{t('admin.city')}</TableHead>
+                        <TableHead>{t('admin.region')}</TableHead>
+                        <TableHead>{t('admin.propertyType')}</TableHead>
+                        <TableHead className="text-right">{t('admin.price')}</TableHead>
+                        <TableHead>{t('admin.status')}</TableHead>
+                        <TableHead className="text-right">{t('admin.dom')}</TableHead>
+                        <TableHead>{t('admin.lastSeen')}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {removedData.listings.map((l) => (
+                        <TableRow key={l.property_id}>
+                          <TableCell className="text-sm font-medium">{l.address}</TableCell>
+                          <TableCell className="text-sm">{l.city}</TableCell>
+                          <TableCell className="text-sm">{l.region ?? '-'}</TableCell>
+                          <TableCell className="text-sm">{l.property_type ?? '-'}</TableCell>
+                          <TableCell className="text-sm text-right">
+                            {l.price != null ? `$${l.price.toLocaleString()}` : '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={l.status === 'delisted' ? 'destructive' : 'secondary'}>
+                              {l.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-right">
+                            {l.days_on_market != null ? l.days_on_market : '-'}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {l.last_seen_at ? new Date(l.last_seen_at).toLocaleDateString() : '-'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+
+                  {removedData.total_count > 50 && (
+                    <div className="flex justify-center gap-2 mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={removedPage === 0}
+                        onClick={() => setRemovedPage(p => p - 1)}
+                      >
+                        {t('admin.previous')}
+                      </Button>
+                      <span className="flex items-center text-sm text-muted-foreground">
+                        {t('admin.pageInfo', {
+                          current: removedPage + 1,
+                          total: Math.ceil(removedData.total_count / 50),
+                        })}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={(removedPage + 1) * 50 >= removedData.total_count}
+                        onClick={() => setRemovedPage(p => p + 1)}
+                      >
+                        {t('admin.next')}
+                      </Button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('admin.noRemovedListings')}</p>
+              )}
+            </div>
+          ) : null}
+        </CardContent>
+      </Card>
 
       {/* User management */}
       <Card>

@@ -33,7 +33,7 @@ const nextConfig: NextConfig = {
           "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com",
           "style-src 'self' 'unsafe-inline'",
           `connect-src 'self' ${apiUrl} https://${apiHost} https://accounts.google.com`,
-          "img-src 'self' data: https://media.centris.ca https://*.centris.ca",
+          "img-src 'self' data: https://media.centris.ca https://*.centris.ca https://*.tile.openstreetmap.org",
           "font-src 'self'",
           "frame-src 'self' https://accounts.google.com",
           "frame-ancestors 'none'",

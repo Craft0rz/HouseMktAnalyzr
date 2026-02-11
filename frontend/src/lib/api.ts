@@ -28,7 +28,6 @@ import type {
   PriceChangeMap,
   LifecycleMap,
   PortfolioNotification,
-  RemovedListing,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -186,11 +185,6 @@ export const propertiesApi = {
 
   getLifecycle: (): Promise<{ listings: LifecycleMap }> => {
     return fetchApi('/api/properties/lifecycle');
-  },
-
-  getRecentlyRemoved: (region?: string): Promise<{ listings: RemovedListing[]; count: number }> => {
-    const params = region ? `?region=${encodeURIComponent(region)}` : '';
-    return fetchApi(`/api/properties/recently-removed${params}`);
   },
 
   getAllListings: (params: {
@@ -493,6 +487,12 @@ export const adminApi = {
     return fetchApi(`/api/admin/users/${encodeURIComponent(userId)}/active?is_active=${isActive}`, {
       method: 'PATCH',
     });
+  },
+
+  removedListings: (page = 0, pageSize = 50, region?: string): Promise<import('./types').AdminRemovedListingsResponse> => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (region) params.set('region', region);
+    return fetchApi(`/api/admin/removed-listings?${params}`);
   },
 };
 

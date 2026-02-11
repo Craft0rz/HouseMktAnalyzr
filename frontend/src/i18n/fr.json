@@ -712,5 +712,25 @@
   "admin.next": "Suivant",
   "admin.pageInfo": "Page {current} de {total}",
   "admin.accessDenied": "Accès refusé",
-  "admin.accessDeniedDesc": "Vous avez besoin de privilèges administrateur pour voir cette page."
+  "admin.accessDeniedDesc": "Vous avez besoin de privilèges administrateur pour voir cette page.",
+
+  "admin.removedListings": "Annonces retirées",
+  "admin.removedListingsDesc": "Propriétés devenues périmées ou retirées",
+  "admin.removed7d": "Retirées (7j)",
+  "admin.removed30d": "Retirées (30j)",
+  "admin.avgDaysOnMarket": "Jours sur le marché (moy.)",
+  "admin.avgDom": "Durée moyenne entre la première apparition et le retrait",
+  "admin.byRegion": "Par région",
+  "admin.byPropertyType": "Par type de propriété",
+  "admin.weeklyRemovals": "Retraits hebdomadaires",
+  "admin.last4Weeks": "4 dernières semaines",
+  "admin.address": "Adresse",
+  "admin.city": "Ville",
+  "admin.region": "Région",
+  "admin.propertyType": "Type",
+  "admin.price": "Prix",
+  "admin.dom": "JMA",
+  "admin.lastSeen": "Dernière vue",
+  "admin.noRemovedListings": "Aucune annonce retirée au cours des 30 derniers jours",
+  "admin.loadingRemoved": "Chargement des annonces retirées..."
 }

@@ -443,13 +443,6 @@ export interface PortfolioNotification {
   last_seen_at?: string;
 }
 
-export interface RemovedListing {
-  listing: PropertyListing;
-  status: string;
-  last_seen_at: string | null;
-  days_on_market: number | null;
-}
-
 // Scraper status types
 
 export interface EnrichmentPhaseProgress {
@@ -625,4 +618,33 @@ export interface AdminDashboardStats {
 export interface AdminUsersResponse {
   users: AdminUserRow[];
   total: number;
+}
+
+export interface AdminRemovedListingRow {
+  property_id: string;
+  address: string;
+  city: string;
+  region: string | null;
+  property_type: string | null;
+  price: number | null;
+  status: string;
+  days_on_market: number | null;
+  last_seen_at: string | null;
+}
+
+export interface AdminRemovedListingsStats {
+  total_removed_7d: number;
+  total_removed_30d: number;
+  avg_days_on_market: number | null;
+  by_region: { region: string; count: number }[];
+  by_property_type: { property_type: string; count: number }[];
+  weekly_removals: { week_start: string; count: number }[];
+}
+
+export interface AdminRemovedListingsResponse {
+  stats: AdminRemovedListingsStats;
+  listings: AdminRemovedListingRow[];
+  total_count: number;
+  page: number;
+  page_size: number;
 }
