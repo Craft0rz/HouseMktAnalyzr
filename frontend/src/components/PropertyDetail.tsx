@@ -170,6 +170,8 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [downPaymentValue, setDownPaymentValue] = useState<string>('20');
   const [downPaymentMode, setDownPaymentMode] = useState<'pct' | 'dollar'>('pct');
   const [interestRateInput, setInterestRateInput] = useState<string>('5');
+  const [amortizationInput, setAmortizationInput] = useState<string>('30');
+  const [cashFlowPeriod, setCashFlowPeriod] = useState<'monthly' | 'yearly'>('monthly');
 
   const intlLocale = locale === 'fr' ? 'fr-CA' : 'en-CA';
 
@@ -281,7 +283,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
         : 0.2
   ));
   const interestRate = Math.max(0.001, Math.min(0.25, (parseFloat(interestRateInput) || 5) / 100));
-  const amortizationYears = 30;
+  const amortizationYears = Math.max(1, Math.min(40, Math.round(parseFloat(amortizationInput) || 30)));
   const downPayment = listing.price * downPaymentPct;
   const principal = listing.price - downPayment;
   const semiAnnualRate = interestRate / 2;
@@ -314,15 +316,19 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     : (monthlyExpenses as any).taxes ?? 0;
   const grossCashFlow = monthlyIncome - monthlyMortgage - monthlyTaxes;
 
+  // Cash flow period multiplier (monthly=1, yearly=12)
+  const cfMul = cashFlowPeriod === 'yearly' ? 12 : 1;
+
   // Rent upside analysis — "at market" KPIs when rent is 5%+ below CMHC zone average
   const showRentUpside = metrics.rent_source === 'declared'
     && metrics.rent_vs_market_pct != null
     && metrics.rent_vs_market_pct < -5
     && metrics.cmhc_estimated_rent != null;
-  let marketRent = 0, marketGrossCashFlow = 0, marketNetCashFlow = 0, marketCapRate = 0, marketCoCReturn = 0;
-  let currentCapRateCalc = 0, currentCoCReturn = 0;
+  let marketRent = 0, marketGrossCashFlow = 0, marketNetCashFlow = 0, marketCapRate = 0, marketGrossYield = 0;
+  let currentCapRateCalc = 0, currentGrossYield = 0;
   if (showRentUpside) {
-    marketRent = metrics.cmhc_estimated_rent! * listing.units;
+    // cmhc_estimated_rent is already total monthly rent (per-unit * units in backend)
+    marketRent = metrics.cmhc_estimated_rent!;
     const mktMonthlyTaxes = hasActualExpenses ? 0 : (listing.annual_taxes || listing.price * 0.012) / 12;
     const mktTotalExpenses = hasActualExpenses
       ? monthlyMortgage + listing.total_expenses! / 12
@@ -333,10 +339,10 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     marketNetCashFlow = marketRent - mktTotalExpenses;
     const mktOpEx = mktTotalExpenses - monthlyMortgage;
     marketCapRate = ((marketRent - mktOpEx) * 12) / listing.price * 100;
-    marketCoCReturn = ((marketNetCashFlow * 12) / downPayment) * 100;
+    marketGrossYield = (marketRent * 12) / listing.price * 100;
     const curOpEx = totalExpenses - monthlyMortgage;
     currentCapRateCalc = ((monthlyIncome - curOpEx) * 12) / listing.price * 100;
-    currentCoCReturn = ((netCashFlow * 12) / downPayment) * 100;
+    currentGrossYield = (monthlyIncome * 12) / listing.price * 100;
   }
 
   const isInComparison = selectedProperties.some(p => p.listing.id === listing.id);
@@ -764,10 +770,10 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                         <td className="px-3 py-2 text-right text-green-600">+{(marketCapRate - currentCapRateCalc).toFixed(1)}%</td>
                       </tr>
                       <tr>
-                        <td className="px-3 py-2 text-muted-foreground">{t('detail.rentUpsideCoCReturn')}</td>
-                        <td className="px-3 py-2 text-right">{currentCoCReturn.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right">{marketCoCReturn.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right text-green-600">+{(marketCoCReturn - currentCoCReturn).toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.grossYield')}</td>
+                        <td className="px-3 py-2 text-right">{currentGrossYield.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right">{marketGrossYield.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{(marketGrossYield - currentGrossYield).toFixed(1)}%</td>
                       </tr>
                     </tbody>
                   </table>
@@ -785,7 +791,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-muted-foreground">{t('detail.downPayment')}</label>
@@ -830,9 +836,9 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       step={downPaymentMode === 'pct' ? '1' : '1000'}
                       value={downPaymentValue}
                       onChange={(e) => setDownPaymentValue(e.target.value)}
-                      className="h-8 text-sm w-24"
+                      className="h-8 text-sm w-full"
                     />
-                    <span className="text-sm text-muted-foreground">
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
                       = {downPaymentMode === 'pct'
                         ? formatPrice(downPayment, locale)
                         : `${(downPaymentPct * 100).toFixed(1)}%`}
@@ -849,9 +855,24 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       step="0.1"
                       value={interestRateInput}
                       onChange={(e) => setInterestRateInput(e.target.value)}
-                      className="h-8 text-sm w-20"
+                      className="h-8 text-sm w-full"
                     />
                     <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">{t('detail.amortization')}</label>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Input
+                      type="number"
+                      min="1"
+                      max="40"
+                      step="1"
+                      value={amortizationInput}
+                      onChange={(e) => setAmortizationInput(e.target.value)}
+                      className="h-8 text-sm w-full"
+                    />
+                    <span className="text-xs text-muted-foreground">{t('detail.years')}</span>
                   </div>
                 </div>
               </div>
@@ -864,9 +885,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   <div className="text-muted-foreground">{t('detail.monthlyPayment')}</div>
                   <div className="font-medium">{formatPrice(monthlyMortgage, locale)}</div>
                 </div>
-              </div>
-              <div className="text-xs text-muted-foreground">
-                {t('detail.amortizationNote', { years: amortizationYears })}
               </div>
             </CardContent>
           </Card>
@@ -1170,84 +1188,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                   <div className="rounded-lg bg-muted/30 p-3 border border-muted">
                     <p className="text-xs text-muted-foreground leading-relaxed">
                       {listing.condition_details.notes}
-                    </p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Market Context */}
-          {marketData && (marketData.mortgage_rate != null || marketData.policy_rate != null) && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4" />
-                  {t('detail.marketContext')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  {marketData.mortgage_rate != null && (
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-muted-foreground">{t('detail.mortgageRate')}</span>
-                        {marketData.mortgage_direction === 'up' ? (
-                          <TrendingUp className="h-3 w-3 text-red-500" />
-                        ) : marketData.mortgage_direction === 'down' ? (
-                          <TrendingDown className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <Minus className="h-3 w-3 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="text-lg font-bold">{marketData.mortgage_rate.toFixed(2)}%</div>
-                    </div>
-                  )}
-                  {marketData.policy_rate != null && (
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-muted-foreground">{t('detail.bocPolicy')}</span>
-                        {marketData.policy_direction === 'up' ? (
-                          <TrendingUp className="h-3 w-3 text-red-500" />
-                        ) : marketData.policy_direction === 'down' ? (
-                          <TrendingDown className="h-3 w-3 text-green-500" />
-                        ) : (
-                          <Minus className="h-3 w-3 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="text-lg font-bold">{marketData.policy_rate.toFixed(2)}%</div>
-                    </div>
-                  )}
-                  {marketData.prime_rate != null && (
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <div className="text-xs text-muted-foreground mb-1">{t('detail.primeRate')}</div>
-                      <div className="text-lg font-bold">{marketData.prime_rate.toFixed(2)}%</div>
-                    </div>
-                  )}
-                  {marketData.cpi != null && (
-                    <div className="p-3 rounded-lg bg-muted/50">
-                      <div className="text-xs text-muted-foreground mb-1">{t('detail.cpiIndex')}</div>
-                      <div className="text-lg font-bold">{marketData.cpi.toFixed(1)}</div>
-                    </div>
-                  )}
-                </div>
-                {/* Mortgage impact based on real rate */}
-                {marketData.mortgage_rate != null && (
-                  <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 p-3 border border-blue-200 dark:border-blue-900">
-                    <p className="text-xs text-muted-foreground">
-                      {t('detail.mortgageImpact', {
-                        rate: marketData.mortgage_rate.toFixed(2),
-                        payment: formatPrice(
-                          (() => {
-                            const sa = marketData.mortgage_rate! / 100 / 2;
-                            const r = Math.pow(1 + sa, 1 / 6) - 1;
-                            const n = 30 * 12;
-                            const p = listing.price * 0.8;
-                            return p * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-                          })(),
-                          locale
-                        ),
-                      })}
                     </p>
                   </div>
                 )}

@@ -406,6 +406,8 @@
   "detail.loanAmount": "Montant du prêt",
   "detail.monthlyPayment": "Paiement mensuel",
   "detail.interestRate": "Taux d'intérêt",
+  "detail.amortization": "Amortissement",
+  "detail.years": "ans",
   "detail.amortizationNote": "Basé sur un amortissement de {years} ans. Les conditions réelles peuvent varier.",
   "detail.keyMetrics": "Métriques clés",
   "detail.capRate": "Taux de capitalisation",
@@ -505,7 +507,6 @@
   "detail.rentUpsideCurrent": "Actuel",
   "detail.rentUpsideAtMarket": "Au marché",
   "detail.rentUpsideDelta": "Écart",
-  "detail.rentUpsideCoCReturn": "Rendement comptant",
   "detail.dataVintage": "Données : {year}",
 
   "score.financial": "Financier",

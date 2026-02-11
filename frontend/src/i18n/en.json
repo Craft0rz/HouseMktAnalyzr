@@ -406,6 +406,8 @@
   "detail.loanAmount": "Loan Amount",
   "detail.monthlyPayment": "Monthly Payment",
   "detail.interestRate": "Interest Rate",
+  "detail.amortization": "Amortization",
+  "detail.years": "yrs",
   "detail.amortizationNote": "Based on {years}-year amortization. Actual terms may vary.",
   "detail.keyMetrics": "Key Metrics",
   "detail.capRate": "Cap Rate",
@@ -505,7 +507,6 @@
   "detail.rentUpsideCurrent": "Current",
   "detail.rentUpsideAtMarket": "At Market",
   "detail.rentUpsideDelta": "Delta",
-  "detail.rentUpsideCoCReturn": "Cash-on-Cash",
   "detail.dataVintage": "Data: {year}",
 
   "score.financial": "Financial",
