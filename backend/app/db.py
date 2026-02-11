@@ -483,7 +483,7 @@ async def get_cached_listings(
 
     By default returns only active (non-expired) listings.
     With include_stale=True, also returns stale/recently-delisted listings.
-    With new_only=True, only returns listings first seen in the last 7 days.
+    With new_only=True, only returns listings first seen in the last 48 hours.
     With price_drops_only=True, only returns listings with a price drop
     recorded in the last 30 days.
 
@@ -524,7 +524,7 @@ async def get_cached_listings(
 
     if new_only:
         conditions.append(f"p.first_seen_at > ${idx}")
-        params.append(now - timedelta(days=7))
+        params.append(now - timedelta(hours=48))
         idx += 1
 
     join_clause = ""

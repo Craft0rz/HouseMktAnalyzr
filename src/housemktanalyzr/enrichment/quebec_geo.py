@@ -5,9 +5,9 @@ sources. All functions accept latitude/longitude coordinates and return
 structured data. Failures are handled gracefully (return None/defaults).
 
 Data sources:
-- Schools: Quebec MEES ArcGIS endpoint (infogeo.education.gouv.qc.ca)
-- Flood zones: CEHQ ESRI REST API (servicesgeo.enviroweb.gouv.qc.ca)
-- Parks: Montreal Open Data + OpenStreetMap Overpass API fallback
+- Schools: Quebec MEES ArcGIS endpoint (DonneesOuvertes/SW_MEES layers)
+- Flood zones: CEHQ via Donnees Quebec public themes MapServer
+- Parks: OpenStreetMap Overpass API (works for all Quebec regions)
 """
 
 import logging
@@ -59,8 +59,12 @@ async def fetch_nearby_schools(
 ) -> list[dict] | None:
     """Fetch nearby schools from Quebec MEES ArcGIS endpoint.
 
-    Uses the Quebec Ministry of Education's GIS service to find schools
-    within a given radius of the specified coordinates.
+    Uses the Quebec Ministry of Education's GIS service (DonneesOuvertes/SW_MEES)
+    to find schools within a given radius. Queries multiple layers to get both
+    French and English schools:
+      - Layer 3: francophone public
+      - Layer 5: anglophone public
+      - Layer 9: private schools
 
     Args:
         lat: Latitude of the property.
@@ -75,82 +79,82 @@ async def fetch_nearby_schools(
     if key in _schools_cache:
         return _schools_cache[key]
 
-    url = (
-        "https://infogeo.education.gouv.qc.ca/arcgis/rest/services/"
-        "Carte_des_etablissements/MapServer/0/query"
-    )
-    params = {
-        "geometry": f"{lon},{lat}",
-        "geometryType": "esriGeometryPoint",
-        "spatialRel": "esriSpatialRelIntersects",
-        "outFields": "*",
-        "distance": str(radius_m),
-        "units": "esriSRUnit_Meter",
-        "returnGeometry": "true",
-        "f": "json",
+    # Layer ID → language mapping
+    layers = {
+        3: "french",   # Francophone public
+        5: "english",  # Anglophone public
+        9: "french",   # Private (default to french, check attrs)
     }
+
+    base_url = (
+        "https://infogeo.education.gouv.qc.ca/arcgis/rest/services/"
+        "DonneesOuvertes/SW_MEES/MapServer/{layer}/query"
+    )
+
+    schools: list[dict] = []
 
     try:
         async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+            for layer_id, default_lang in layers.items():
+                url = base_url.format(layer=layer_id)
+                params = {
+                    "geometry": f"{lon},{lat}",
+                    "geometryType": "esriGeometryPoint",
+                    "spatialRel": "esriSpatialRelIntersects",
+                    "inSR": "4326",
+                    "outFields": "*",
+                    "distance": str(radius_m),
+                    "units": "esriSRUnit_Meter",
+                    "returnGeometry": "true",
+                    "f": "json",
+                }
 
-        features = data.get("features", [])
-        schools: list[dict] = []
+                resp = await client.get(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
 
-        for feature in features:
-            attrs = feature.get("attributes", {})
-            geom = feature.get("geometry", {})
+                if data.get("error"):
+                    logger.warning(f"School API layer {layer_id} error: {data['error']}")
+                    continue
 
-            # Calculate distance from property to school
-            school_lat = geom.get("y")
-            school_lon = geom.get("x")
-            distance_m = None
-            if school_lat is not None and school_lon is not None:
-                distance_m = round(haversine_distance(lat, lon, school_lat, school_lon))
+                for feature in data.get("features", []):
+                    attrs = feature.get("attributes", {})
+                    geom = feature.get("geometry", {})
 
-            # Determine school type from attributes
-            # Common field names in this dataset
-            school_name = (
-                attrs.get("NOM_OFFICI")
-                or attrs.get("NOM_ETABLI")
-                or attrs.get("ETAB_NOM")
-                or attrs.get("NOM")
-                or "Unknown"
-            )
-            # Ordre d'enseignement: Primaire, Secondaire, etc.
-            ordre = (
-                attrs.get("ORDRE_ENS")
-                or attrs.get("ORDRE")
-                or attrs.get("NIVEAU")
-                or ""
-            ).lower()
-            if "primaire" in ordre or "elementary" in ordre:
-                school_type = "elementary"
-            elif "secondaire" in ordre or "secondary" in ordre:
-                school_type = "secondary"
-            else:
-                school_type = "other"
+                    school_lat = geom.get("y")
+                    school_lon = geom.get("x")
+                    distance_m = None
+                    if school_lat is not None and school_lon is not None:
+                        distance_m = round(haversine_distance(lat, lon, school_lat, school_lon))
 
-            # Language: look for anglophone/francophone indicators
-            langue = (
-                attrs.get("LANGUE_ENS")
-                or attrs.get("LANGUE")
-                or attrs.get("RESEAU")
-                or ""
-            ).lower()
-            if "anglais" in langue or "english" in langue or "anglophone" in langue:
-                language = "english"
-            else:
-                language = "french"
+                    school_name = (
+                        attrs.get("NOM_OFFCL_ORGNS")
+                        or attrs.get("NOM_OFFICI")
+                        or attrs.get("NOM_ETABLI")
+                        or attrs.get("NOM")
+                        or "Unknown"
+                    )
 
-            schools.append({
-                "name": school_name,
-                "type": school_type,
-                "distance_m": distance_m,
-                "language": language,
-            })
+                    ordre = (
+                        attrs.get("ORDRE_ENS")
+                        or attrs.get("ORDRE")
+                        or ""
+                    ).lower()
+                    if "primaire" in ordre or "prescolaire" in ordre:
+                        school_type = "elementary"
+                    elif "secondaire" in ordre:
+                        school_type = "secondary"
+                    else:
+                        school_type = "other"
+
+                    language = default_lang
+
+                    schools.append({
+                        "name": school_name,
+                        "type": school_type,
+                        "distance_m": distance_m,
+                        "language": language,
+                    })
 
         # Sort by distance
         schools.sort(key=lambda s: s["distance_m"] if s["distance_m"] is not None else float("inf"))
