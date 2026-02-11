@@ -263,11 +263,31 @@ class CentrisScraper(DataSource):
 
         Note: We check for actual CAPTCHA challenges, not just script references.
         Centris pages normally include recaptcha.js but that doesn't mean we're blocked.
+
+        Uses multiple validity indicators to avoid false positives when Centris
+        changes CSS class names.
         """
         content = response.text.lower()
 
-        # If we see property listings, it's not a CAPTCHA page
-        if "property-thumbnail-item" in content or "property-thumbnail-summary" in content:
+        # Multiple indicators that this is a valid Centris page (not a CAPTCHA).
+        # If ANY of these are present, it's a real page — not a challenge.
+        valid_page_indicators = [
+            "property-thumbnail-item",       # Search result card class
+            "property-thumbnail-summary",    # Card summary class
+            "carac-container",               # Detail page characteristic section
+            "itemprop=\"price\"",            # Schema.org price metadata
+            "centris.ca/media.ashx",         # Centris media/photo URLs
+            "data-mlsnumber",                # MLS number data attribute
+            "inscription-address",           # Listing address section
+            "resultcount",                   # Search results count element
+        ]
+        if any(indicator in content for indicator in valid_page_indicators):
+            return False
+
+        # Also check response metadata: real pages are substantial
+        # CAPTCHA challenge pages are typically small (<5KB)
+        if len(response.content) > 10000 and response.status_code == 200:
+            # Large 200 response — likely a real page even if we can't find markers
             return False
 
         # Check for actual CAPTCHA challenge indicators (not just script refs)
@@ -499,6 +519,18 @@ class CentrisScraper(DataSource):
                             units = int(plex_match.group(1))
 
             property_type = self._determine_property_type(type_text, units)
+
+            # P0 fix: Ensure unit count is consistent with property type.
+            # If detection failed (units=1) but type is known plex, use type as fallback.
+            _TYPE_MIN_UNITS = {
+                PropertyType.DUPLEX: 2,
+                PropertyType.TRIPLEX: 3,
+                PropertyType.QUADPLEX: 4,
+                PropertyType.MULTIPLEX: 5,
+            }
+            min_units = _TYPE_MIN_UNITS.get(property_type)
+            if min_units and units < min_units:
+                units = min_units
 
             # Generate ID - prefer MLS ID
             if mls_id:
@@ -994,9 +1026,29 @@ class CentrisScraper(DataSource):
             net_income = None
 
             def _parse_amount(text: str) -> int | None:
-                """Parse a dollar amount string, returning None if empty."""
-                cleaned = re.sub(r"[^\d]", "", text)
-                return int(cleaned) if cleaned else None
+                """Parse a dollar amount string, handling French/English formats.
+
+                Handles:
+                  - "123,456"     → 123456  (EN thousands comma)
+                  - "123 456"     → 123456  (FR thousands space)
+                  - "123 456,78"  → 123456  (FR with decimals — truncate cents)
+                  - "123,456.78"  → 123456  (EN with decimals)
+                  - "$123 456"    → 123456  (with currency symbol)
+                """
+                if not text:
+                    return None
+                # Strip currency symbols and surrounding whitespace
+                cleaned = re.sub(r"[$€\s]", "", text.strip())
+                if not cleaned:
+                    return None
+                # If there's a decimal separator (last comma or dot with ≤2 digits after),
+                # split there and keep only the integer part
+                decimal_match = re.match(r"^([\d,.\s]+?)[.,](\d{1,2})$", cleaned)
+                if decimal_match:
+                    cleaned = decimal_match.group(1)
+                # Remove remaining thousands separators (commas, dots, spaces)
+                cleaned = re.sub(r"[,.\s]", "", cleaned)
+                return int(cleaned) if cleaned.isdigit() else None
 
             for key in ("Potential gross revenue", "Gross revenue",
                         "Revenus bruts potentiels", "Revenu brut potentiel",
@@ -1018,13 +1070,49 @@ class CentrisScraper(DataSource):
                     net_income = _parse_amount(chars[key])
                     break
 
-            # Infer missing values when two of the three are known
+            # Validate financial fields independently before inference
+            # Reject nonsensical values: negative, zero, or implausibly high
+            _finance_inferred: list[str] = []
+
+            def _validate_financial(val: int | None, name: str) -> int | None:
+                if val is None:
+                    return None
+                if val <= 0:
+                    logger.debug(f"Rejecting {name}={val} (non-positive) for {listing_id}")
+                    return None
+                if val > 10_000_000:  # >$10M annual is implausible for residential
+                    logger.debug(f"Rejecting {name}={val} (>$10M) for {listing_id}")
+                    return None
+                return val
+
+            gross_revenue = _validate_financial(gross_revenue, "gross_revenue")
+            total_expenses = _validate_financial(total_expenses, "total_expenses")
+            net_income = _validate_financial(net_income, "net_income")
+
+            # Cross-check: expenses should not exceed revenue
+            if gross_revenue and total_expenses and total_expenses > gross_revenue:
+                logger.warning(
+                    f"Expenses ({total_expenses}) > revenue ({gross_revenue}) for {listing_id}, "
+                    f"clearing expenses"
+                )
+                total_expenses = None
+
+            # Infer missing values when two of the three are known, and flag inferred fields
             if gross_revenue and total_expenses and not net_income:
                 net_income = gross_revenue - total_expenses
+                if net_income > 0:
+                    _finance_inferred.append("net_income")
+                else:
+                    net_income = None  # Don't store negative inferred net income
             elif gross_revenue and net_income and not total_expenses:
                 total_expenses = gross_revenue - net_income
+                if total_expenses > 0:
+                    _finance_inferred.append("total_expenses")
+                else:
+                    total_expenses = None
             elif not gross_revenue and total_expenses and net_income:
                 gross_revenue = total_expenses + net_income
+                _finance_inferred.append("gross_revenue")
 
             # === TAXES & ASSESSMENT ===
             municipal_assessment = None
@@ -1080,6 +1168,17 @@ class CentrisScraper(DataSource):
 
             property_type = self._determine_property_type(type_text, units)
 
+            # P0 fix: Ensure unit count is consistent with property type on detail pages
+            _TYPE_MIN_UNITS = {
+                PropertyType.DUPLEX: 2,
+                PropertyType.TRIPLEX: 3,
+                PropertyType.QUADPLEX: 4,
+                PropertyType.MULTIPLEX: 5,
+            }
+            min_units = _TYPE_MIN_UNITS.get(property_type)
+            if min_units and units < min_units:
+                units = min_units
+
             # === PHOTOS ===
             photo_urls = self._extract_photo_urls(soup)
 
@@ -1091,6 +1190,7 @@ class CentrisScraper(DataSource):
                 "parking_spaces": parking_spaces,
                 "garage_spaces": garage_spaces,
                 "photo_urls": photo_urls,
+                "finance_inferred_fields": _finance_inferred if _finance_inferred else None,
             }
 
             # Add all characteristics

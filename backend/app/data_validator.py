@@ -36,8 +36,53 @@ def apply_detail_corrections(data: dict) -> tuple[dict, list[dict]]:
         })
         data["units"] = expected
 
-    # MULTIPLEX with units=1 is always wrong — but we can't guess the count,
-    # so just flag it (handled by sanity checks)
+    # MULTIPLEX with units=1 is always wrong — try to extract from raw_data,
+    # otherwise set minimum of 5 (definition of multiplex)
+    if ptype == "MULTIPLEX" and current_units <= 1:
+        raw = data.get("raw_data") or {}
+        raw_units = raw.get("number_of_units") or raw.get("nombre_d'unités") or raw.get("nombre_de_logements")
+        if raw_units:
+            import re
+            m = re.search(r"(\d+)", str(raw_units))
+            if m:
+                extracted = int(m.group(1))
+                if extracted >= 5:
+                    corrections.append({
+                        "field": "units",
+                        "old": current_units,
+                        "new": extracted,
+                        "reason": f"MULTIPLEX units extracted from raw_data: {extracted}",
+                    })
+                    data["units"] = extracted
+                    current_units = extracted
+        # If still wrong after raw_data check, set floor of 5
+        if data.get("units", 1) <= 1:
+            corrections.append({
+                "field": "units",
+                "old": current_units,
+                "new": 5,
+                "reason": "MULTIPLEX must have >=5 units, defaulting to 5",
+            })
+            data["units"] = 5
+
+    # Validate inferred financial fields: if a field was inferred by the scraper,
+    # cross-check it against sanity bounds
+    raw_data = data.get("raw_data") or {}
+    inferred = raw_data.get("finance_inferred_fields") or []
+    units = data.get("units") or 1
+    for field in inferred:
+        val = data.get(field)
+        if val is not None and units > 0:
+            per_unit = val / units
+            # Gross revenue per unit: $3k-$40k/yr is plausible for Quebec
+            if field == "gross_revenue" and (per_unit < 3000 or per_unit > 40000):
+                corrections.append({
+                    "field": field,
+                    "old": val,
+                    "new": None,
+                    "reason": f"Inferred {field} per unit ${per_unit:.0f} outside plausible range",
+                })
+                data[field] = None
 
     return data, corrections
 
@@ -156,6 +201,26 @@ def run_sanity_checks(data: dict) -> list[dict]:
                 "severity": "info",
             })
 
+    # Enriched but still missing sqft — flag for price-per-sqft gap
+    raw_data = data.get("raw_data") or {}
+    if not sqft and raw_data.get("enriched") or raw_data.get("detail_enriched_at"):
+        flags.append({
+            "rule": "sqft_missing_after_enrichment",
+            "value": None,
+            "threshold": None,
+            "severity": "warning",
+        })
+
+    # Flag inferred financial fields so downstream consumers know
+    inferred_fields = raw_data.get("finance_inferred_fields") or []
+    if inferred_fields:
+        flags.append({
+            "rule": "financial_values_inferred",
+            "value": inferred_fields,
+            "threshold": None,
+            "severity": "info",
+        })
+
     return flags
 
 
@@ -206,6 +271,11 @@ def compute_quality_score(data: dict, flags: list[dict]) -> int:
         # Non-plex types (HOUSE, MULTIPLEX) — give points if units > 0
         if data.get("units", 0) > 0:
             score += _UNITS_CORRECT_PTS
+
+    # Extra penalty: sqft missing after enrichment blocks price-per-sqft analysis
+    sqft_missing_flag = any(f.get("rule") == "sqft_missing_after_enrichment" for f in flags)
+    if sqft_missing_flag:
+        score = max(score - 5, 0)
 
     # Bonus for no warning-level sanity flags (info flags don't penalize)
     warning_flags = [f for f in flags if f.get("severity") == "warning"]

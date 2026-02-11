@@ -363,11 +363,37 @@ class ScraperWorker:
                     total_enriched + total_failed + len(listings)
                 )
 
+                max_detail_retries = 2
+                detail_retry_backoff = 3.0
+
                 for item in listings:
+                    detailed = None
+                    for attempt in range(1, max_detail_retries + 1):
+                        try:
+                            detailed = await scraper.get_listing_details(
+                                item["id"], url=item.get("url") or None
+                            )
+                            if detailed:
+                                break
+                            # got None — listing may be delisted, don't retry
+                            break
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as e:
+                            if attempt < max_detail_retries:
+                                logger.info(
+                                    f"Detail fetch retry {attempt}/{max_detail_retries} "
+                                    f"for {item['id']}: {e}"
+                                )
+                                await asyncio.sleep(detail_retry_backoff * attempt)
+                            else:
+                                logger.warning(
+                                    f"Detail enrichment failed for {item['id']} "
+                                    f"after {max_detail_retries} attempts: {e}"
+                                )
+                                detailed = None
+
                     try:
-                        detailed = await scraper.get_listing_details(
-                            item["id"], url=item.get("url") or None
-                        )
                         if detailed:
                             # Guard: if detail page returned but has zero
                             # useful data, don't stamp the sentinel — the page
