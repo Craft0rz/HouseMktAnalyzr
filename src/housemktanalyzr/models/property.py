@@ -108,6 +108,62 @@ class PropertyListing(BaseModel):
     }
 
 
+class FamilyHomeMetrics(BaseModel):
+    """Family home scoring metrics for owner-occupied houses.
+
+    Evaluates houses on livability, value, and space/comfort instead of
+    investment returns. Used for property_type=HOUSE listings where families
+    care about quality of life rather than rental yields.
+    """
+
+    property_id: str
+    purchase_price: int
+
+    # Overall score (0-100)
+    family_score: float = Field(ge=0, le=100)
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
+
+    # Livability Pillar (0-40)
+    livability_score: float = Field(ge=0, le=40)
+    walk_score_pts: float | None = None       # 0-8 from walk_score
+    transit_score_pts: float | None = None     # 0-8 from transit_score
+    safety_pts: float | None = None            # 0-8 from safety_score
+    school_proximity_pts: float | None = None  # 0-10 (future: geo data)
+    parks_pts: float | None = None             # 0-6 (future: geo data)
+
+    # Value Pillar (0-35)
+    value_score: float = Field(ge=0, le=35)
+    price_vs_assessment_pts: float | None = None  # 0-10
+    price_per_sqft: float | None = None
+    price_per_sqft_pts: float | None = None       # 0-8
+    monthly_cost_estimate: int | None = None      # mortgage + taxes + insurance + energy
+    affordability_pts: float | None = None        # 0-10
+    market_trajectory_pts: float | None = None    # 0-7 (future: price history trend)
+
+    # Space & Comfort Pillar (0-25)
+    space_score: float = Field(ge=0, le=25)
+    lot_size_pts: float | None = None         # 0-8
+    bedroom_pts: float | None = None          # 0-7
+    condition_pts: float | None = None        # 0-6 from condition_score
+    age_pts: float | None = None              # 0-4 from year_built
+
+    # Cost of ownership breakdown
+    estimated_monthly_mortgage: int | None = None
+    estimated_monthly_taxes: int | None = None
+    estimated_annual_energy: int | None = None
+    estimated_annual_insurance: int | None = None
+    welcome_tax: int | None = None
+    total_cash_needed: int | None = None
+
+    # Risk flags
+    flood_zone: bool | None = None            # future: CEHQ API
+    contaminated_nearby: bool | None = None   # future: ESRI API
+
+    model_config = {
+        "validate_assignment": True,
+    }
+
+
 class InvestmentMetrics(BaseModel):
     """Investment analysis metrics for a property.
 

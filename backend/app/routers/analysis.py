@@ -10,15 +10,22 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from housemktanalyzr.analysis.calculator import InvestmentCalculator
+from housemktanalyzr.analysis.family_scorer import FamilyHomeScorer
 from housemktanalyzr.analysis.ranker import PropertyRanker
-from housemktanalyzr.models.property import InvestmentMetrics, PropertyListing
+from housemktanalyzr.models.property import (
+    FamilyHomeMetrics,
+    InvestmentMetrics,
+    PropertyListing,
+    PropertyType,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Shared calculator and ranker instances
+# Shared calculator, ranker, and family scorer instances
 calculator = InvestmentCalculator()
 ranker = PropertyRanker()
+family_scorer = FamilyHomeScorer()
 
 # Timeout for individual DB queries in location scoring (seconds)
 _DB_QUERY_TIMEOUT = 5
@@ -330,6 +337,21 @@ class QuickMetricsResponse(BaseModel):
     total_cash_needed: int
 
 
+class HouseWithScore(BaseModel):
+    """House listing with its family score metrics."""
+
+    listing: PropertyListing
+    family_metrics: FamilyHomeMetrics
+
+
+class FamilyBatchResponse(BaseModel):
+    """Response containing batch family scoring results."""
+
+    results: list[HouseWithScore]
+    count: int
+    summary: dict
+
+
 @router.post("/analyze", response_model=InvestmentMetrics)
 async def analyze_property(request: AnalyzeRequest) -> InvestmentMetrics:
     """Analyze a single property listing.
@@ -614,3 +636,123 @@ async def get_top_opportunities(
     return BatchAnalysisResponse(
         results=response_results, count=len(top_results), summary=summary,
     )
+
+
+# =========================================================================
+# Family Home Scoring Endpoints
+# =========================================================================
+
+
+@router.post("/family-score", response_model=FamilyHomeMetrics)
+async def family_score_property(request: AnalyzeRequest) -> FamilyHomeMetrics:
+    """Score a single house listing for family livability.
+
+    Evaluates the property on three pillars:
+    - Livability (0-40): walkability, transit, safety, schools, parks
+    - Value (0-35): price vs assessment, price/sqft, affordability
+    - Space & Comfort (0-25): lot size, bedrooms, condition, age
+
+    The listing should be property_type=HOUSE for meaningful results.
+    """
+    try:
+        # Fetch location data for safety score
+        location_data = await _fetch_location_data(
+            request.listing.city, request.listing.postal_code
+        )
+
+        metrics = family_scorer.score_property(
+            listing=request.listing,
+            safety_score=location_data.get("safety_score"),
+        )
+        return metrics
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Family scoring failed: {str(e)}"
+        )
+
+
+@router.post("/family-score-batch", response_model=FamilyBatchResponse)
+async def family_score_batch(request: AnalyzeBatchRequest) -> FamilyBatchResponse:
+    """Score multiple house listings for family livability.
+
+    Filters to HOUSE-type listings only, scores each on the 3-pillar family
+    model, and returns results sorted by family_score descending.
+    """
+    try:
+        # Filter to only HOUSE type listings
+        house_listings = [
+            l for l in request.listings
+            if l.property_type == PropertyType.HOUSE
+        ]
+
+        if not house_listings:
+            return FamilyBatchResponse(results=[], count=0, summary={})
+
+        # Batch-fetch location data by unique (city, postal_code) pairs
+        unique_keys = list({
+            (listing.city, listing.postal_code)
+            for listing in house_listings if listing.city
+        })
+        location_data_list = await asyncio.gather(
+            *[_fetch_location_data(city, pc) for city, pc in unique_keys]
+        )
+        location_data_map = dict(zip(unique_keys, location_data_list))
+        empty_location = {
+            "safety_score": None, "vacancy_rate": None,
+            "rent_cagr": None, "median_household_income": None,
+        }
+
+        # Score each house
+        response_results = []
+        for listing in house_listings:
+            try:
+                key = (listing.city, listing.postal_code)
+                location_data = location_data_map.get(key, empty_location)
+
+                metrics = family_scorer.score_property(
+                    listing=listing,
+                    safety_score=location_data.get("safety_score"),
+                )
+                response_results.append(
+                    HouseWithScore(listing=listing, family_metrics=metrics)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to score house {listing.id}: {e}")
+
+        # Sort by family_score descending
+        response_results.sort(
+            key=lambda x: x.family_metrics.family_score, reverse=True
+        )
+
+        # Summary statistics
+        scores = [r.family_metrics.family_score for r in response_results]
+        monthly_costs = [
+            r.family_metrics.monthly_cost_estimate
+            for r in response_results
+            if r.family_metrics.monthly_cost_estimate is not None
+        ]
+
+        summary = {
+            "avg_family_score": round(sum(scores) / len(scores), 1) if scores else 0,
+            "max_family_score": round(max(scores), 1) if scores else 0,
+            "min_family_score": round(min(scores), 1) if scores else 0,
+            "avg_monthly_cost": (
+                round(sum(monthly_costs) / len(monthly_costs))
+                if monthly_costs else 0
+            ),
+            "total_houses_scored": len(response_results),
+            "total_submitted": len(request.listings),
+            "houses_filtered": len(request.listings) - len(house_listings),
+        }
+
+        return FamilyBatchResponse(
+            results=response_results,
+            count=len(response_results),
+            summary=summary,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Family batch scoring failed: {str(e)}"
+        )

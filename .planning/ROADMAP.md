@@ -126,6 +126,15 @@ Modern frontend with React/Next.js and FastAPI backend complete.
 Plans:
 - [x] 08-01: Install Leaflet, create PropertyMap component, add Table/Map toggle to search page
 
+### Phase 9: Family Homes
+**Goal**: Add a dedicated "Houses" section with family-oriented scoring (livability, value, space) instead of investment metrics, plus Quebec geo data enrichment (schools, flood zones, parks)
+**Depends on**: Phase 8 (map view for houses), v3.0 (walk scores, geocoding)
+
+Plans:
+- [x] 09-01: Family Home Scoring Engine — FamilyHomeMetrics model, FamilyHomeScorer class, API endpoints
+- [ ] 09-02: Frontend Houses Section — /houses page, HouseDetail component, family score visualization, i18n
+- [ ] 09-03: Quebec Geo Data Enrichment — School proximity (WFS), flood zones (CEHQ), parks (Montreal open data), scraper integration
+
 ### Next Steps
 - [ ] **Custom domain + Cloudflare** — Register domain, set up Cloudflare DNS proxy for CDN/DDoS protection
 - [ ] **Walk Score in list view** — Display scores as columns in the property table
