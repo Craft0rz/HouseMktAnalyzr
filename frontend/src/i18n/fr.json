@@ -746,7 +746,7 @@
   "admin.revalidateListingsFailed": "Échec de la revalidation des annonces",
   "admin.revalidateGeo": "Corriger géoloc.",
   "admin.revalidateGeoDesc": "Re-géocoder les mauvaises coord.",
-  "admin.revalidateGeoSuccess": "Géocodage corrigé : {fixed} corrigées, {failed} échouées",
+  "admin.revalidateGeoSuccess": "Re-géocodage de {count} annonces en arrière-plan",
   "admin.revalidateGeoFailed": "Échec de la revalidation du géocodage",
   "admin.checkAlerts": "Vérifier les alertes",
   "admin.checkAlertsDesc": "Exécuter le matching maintenant",

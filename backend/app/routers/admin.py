@@ -318,22 +318,34 @@ async def get_removed_listings(
 # --- Geocoding revalidation ---
 
 
-@router.post("/revalidate-geocoding")
+@router.post("/revalidate-geocoding", status_code=202)
 async def revalidate_geocoding(
     _admin: dict = Depends(get_admin_user),
 ):
     """Re-geocode listings with missing or out-of-Quebec coordinates.
 
     Finds active listings where lat/lng is null, zero, or outside Quebec
-    bounds and re-geocodes them via Nominatim.
+    bounds and kicks off background re-geocoding via Nominatim.
+    Returns immediately with the count of listings queued.
     """
+    listings = await get_listings_with_bad_coordinates(limit=200)
+    if not listings:
+        return {"status": "ok", "message": "All listings have valid coordinates", "total_queued": 0}
+
+    asyncio.create_task(_run_geocoding_revalidation(listings))
+
+    return {
+        "status": "started",
+        "message": f"Re-geocoding {len(listings)} listings in background",
+        "total_queued": len(listings),
+    }
+
+
+async def _run_geocoding_revalidation(listings: list[dict]):
+    """Background task: re-geocode a batch of listings."""
     from housemktanalyzr.enrichment.walkscore import geocode_address
 
     import httpx
-
-    listings = await get_listings_with_bad_coordinates(limit=200)
-    if not listings:
-        return {"status": "ok", "message": "All listings have valid coordinates", "fixed": 0, "failed": 0}
 
     fixed = 0
     failed = 0
@@ -345,7 +357,6 @@ async def revalidate_geocoding(
                 geo = await geocode_address(item["address"], item["city"], client)
                 if geo:
                     lat, lon, postal_code = geo
-                    # Update only coordinates (preserve existing walk scores)
                     pool = get_pool()
                     async with pool.acquire() as conn:
                         row = await conn.fetchrow(
@@ -373,9 +384,4 @@ async def revalidate_geocoding(
             # Respect Nominatim rate limit (1 req/sec)
             await asyncio.sleep(1.1)
 
-    return {
-        "status": "ok",
-        "total_checked": len(listings),
-        "fixed": fixed,
-        "failed": failed,
-    }
+    logger.info(f"Geocoding revalidation done: {fixed} fixed, {failed} failed out of {len(listings)}")

@@ -650,12 +650,12 @@ async def get_listings_with_bad_coordinates(limit: int = 200) -> list[dict]:
               AND (
                 (data->>'latitude') IS NULL
                 OR (data->>'longitude') IS NULL
-                OR (data->>'latitude')::float = 0
-                OR (data->>'longitude')::float = 0
-                OR (data->>'latitude')::float < 44.0
-                OR (data->>'latitude')::float > 63.0
-                OR (data->>'longitude')::float < -80.0
-                OR (data->>'longitude')::float > -56.0
+                OR NOT (
+                  (data->>'latitude') ~ E'^-?[0-9]+\\.?[0-9]*$'
+                  AND (data->>'longitude') ~ E'^-?[0-9]+\\.?[0-9]*$'
+                  AND (data->>'latitude')::float BETWEEN 44.0 AND 63.0
+                  AND (data->>'longitude')::float BETWEEN -80.0 AND -56.0
+                )
               )
             ORDER BY fetched_at DESC
             LIMIT $2

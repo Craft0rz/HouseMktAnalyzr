@@ -28,6 +28,8 @@ import type {
   PriceChangeMap,
   LifecycleMap,
   PortfolioNotification,
+  FamilyHomeMetrics,
+  FamilyBatchResponse,
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -396,6 +398,54 @@ export const marketApi = {
   },
 };
 
+// Houses (family scoring) endpoints
+export const housesApi = {
+  scoreHouse: async (listing: PropertyListing): Promise<FamilyHomeMetrics> => {
+    return fetchApi('/api/analysis/family-score', {
+      method: 'POST',
+      body: JSON.stringify({ listing }),
+    });
+  },
+
+  scoreBatch: async (listings: PropertyListing[]): Promise<FamilyBatchResponse> => {
+    return fetchApi('/api/analysis/family-score-batch', {
+      method: 'POST',
+      body: JSON.stringify({ listings }),
+    });
+  },
+
+  search: async (params: PropertySearchParams): Promise<FamilyBatchResponse> => {
+    // Step 1: Fetch HOUSE listings via top-opportunities
+    const searchParams = new URLSearchParams();
+    searchParams.set('property_types', 'HOUSE');
+    if (params.region) searchParams.set('region', params.region);
+    if (params.min_price) searchParams.set('min_price', String(params.min_price));
+    if (params.max_price) searchParams.set('max_price', String(params.max_price));
+    if (params.limit) searchParams.set('limit', String(params.limit));
+
+    const topResponse = await fetchApi<import('./types').BatchAnalysisResponse>(
+      `/api/analysis/top-opportunities?${searchParams}`,
+    );
+
+    const listings = topResponse.results.map((r) => r.listing);
+
+    if (listings.length === 0) {
+      return { results: [], count: 0, summary: {} };
+    }
+
+    // Step 2: Score the listings with family scoring
+    const familyResponse = await fetchApi<FamilyBatchResponse>(
+      '/api/analysis/family-score-batch',
+      {
+        method: 'POST',
+        body: JSON.stringify({ listings }),
+      },
+    );
+
+    return familyResponse;
+  },
+};
+
 // Health check
 export const healthApi = {
   check: (): Promise<{ status: string }> => {
@@ -503,8 +553,8 @@ export const adminApi = {
     return fetchApi('/api/scraper/revalidate', { method: 'POST' });
   },
 
-  revalidateGeocoding: (): Promise<{ status: string; total_checked: number; fixed: number; failed: number }> => {
-    return fetchApi('/api/admin/revalidate-geocoding', { method: 'POST' }, 300_000);
+  revalidateGeocoding: (): Promise<{ status: string; message: string; total_queued: number }> => {
+    return fetchApi('/api/admin/revalidate-geocoding', { method: 'POST' });
   },
 
   checkAlerts: (): Promise<{ alerts_checked: number; total_new_matches: number; notifications_sent: number }> => {

@@ -80,7 +80,7 @@ function AdminDashboard() {
 
   const revalidateGeoMutation = useMutation({
     mutationFn: () => adminApi.revalidateGeocoding(),
-    onSuccess: (data) => toast.success(t('admin.revalidateGeoSuccess', { fixed: data.fixed, failed: data.failed })),
+    onSuccess: (data) => toast.success(data.message || t('admin.revalidateGeoSuccess', { count: data.total_queued })),
     onError: () => toast.error(t('admin.revalidateGeoFailed')),
   });
 

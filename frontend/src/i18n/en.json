@@ -746,7 +746,7 @@
   "admin.revalidateListingsFailed": "Failed to revalidate listings",
   "admin.revalidateGeo": "Fix Geocoding",
   "admin.revalidateGeoDesc": "Re-geocode bad coordinates",
-  "admin.revalidateGeoSuccess": "Geocoding fixed: {fixed} corrected, {failed} failed",
+  "admin.revalidateGeoSuccess": "Re-geocoding {count} listings in background",
   "admin.revalidateGeoFailed": "Failed to revalidate geocoding",
   "admin.checkAlerts": "Check Alerts",
   "admin.checkAlertsDesc": "Run alert matching now",
