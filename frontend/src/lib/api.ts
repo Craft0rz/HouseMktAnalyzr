@@ -421,7 +421,7 @@ export const housesApi = {
     const searchParams = new URLSearchParams();
     searchParams.set('property_types', 'HOUSE');
     searchParams.set('min_score', '0');
-    searchParams.set('limit', '50');
+    searchParams.set('limit', '200');
     if (params.region) searchParams.set('region', params.region);
     if (params.min_price) searchParams.set('min_price', String(params.min_price));
     if (params.max_price) searchParams.set('max_price', String(params.max_price));

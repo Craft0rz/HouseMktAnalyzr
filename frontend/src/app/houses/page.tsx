@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ const PropertyMap = dynamic(mapImport, {
 if (typeof window !== 'undefined') mapImport();
 
 type SortOption = 'score' | 'price_asc' | 'price_desc' | 'bedrooms' | 'lot_size';
+const PAGE_SIZE = 24;
 
 function getScoreBadgeClasses(score: number): string {
   if (score >= 70) return 'bg-green-500 text-white';
@@ -73,6 +74,7 @@ export default function HousesPage() {
   const [results, setResults] = useState<FamilyBatchResponse | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('score');
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [page, setPage] = useState(0);
   const [selectedHouse, setSelectedHouse] = useState<HouseWithScore | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -105,6 +107,7 @@ export default function HousesPage() {
     },
     onSuccess: (data) => {
       setResults(data);
+      setPage(0);
     },
   });
 
@@ -150,6 +153,12 @@ export default function HousesPage() {
 
     return filtered;
   }, [results, sortBy, minBedrooms, minLotSize]);
+
+  const totalPages = Math.max(1, Math.ceil(displayResults.length / PAGE_SIZE));
+  const pagedResults = useMemo(
+    () => displayResults.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [displayResults, page],
+  );
 
   // Adapt data for PropertyMap (it expects PropertyWithMetrics[])
   const mapData = useMemo<PropertyWithMetrics[]>(() => {
@@ -246,7 +255,7 @@ export default function HousesPage() {
             {/* Min Bedrooms */}
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('houses.minBedrooms')}</label>
-              <Select value={minBedrooms} onValueChange={setMinBedrooms}>
+              <Select value={minBedrooms} onValueChange={(v) => { setMinBedrooms(v); setPage(0); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="-" />
                 </SelectTrigger>
@@ -315,7 +324,7 @@ export default function HousesPage() {
             </div>
             <div className="flex items-center gap-3">
               {/* Sort */}
-              <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+              <Select value={sortBy} onValueChange={(v) => { setSortBy(v as SortOption); setPage(0); }}>
                 <SelectTrigger className="w-[180px] h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -359,17 +368,46 @@ export default function HousesPage() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {displayResults.map((house) => (
-                  <HouseCard
-                    key={house.listing.id}
-                    house={house}
-                    onClick={() => handleCardClick(house)}
-                    t={t}
-                    locale={locale}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {pagedResults.map((house) => (
+                    <HouseCard
+                      key={house.listing.id}
+                      house={house}
+                      onClick={() => handleCardClick(house)}
+                      t={t}
+                      locale={locale}
+                    />
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-4 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page === 0}
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      {t('admin.previous')}
+                    </Button>
+                    <span className="text-sm text-muted-foreground">
+                      {t('admin.pageInfo', { current: page + 1, total: totalPages })}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page >= totalPages - 1}
+                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                    >
+                      {t('admin.next')}
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )}
+              </>
             )
           ) : (
             <PropertyMap

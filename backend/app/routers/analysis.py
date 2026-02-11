@@ -539,7 +539,7 @@ async def get_top_opportunities(
     min_price: Optional[int] = Query(default=None),
     max_price: Optional[int] = Query(default=None),
     min_score: float = Query(default=50.0, ge=0, le=100),
-    limit: int = Query(default=10, ge=1, le=50),
+    limit: int = Query(default=10, ge=1, le=200),
 ) -> BatchAnalysisResponse:
     """Find top investment opportunities.
 
