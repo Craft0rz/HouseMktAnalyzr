@@ -732,5 +732,24 @@
   "admin.dom": "DOM",
   "admin.lastSeen": "Last Seen",
   "admin.noRemovedListings": "No removed listings in the last 30 days",
-  "admin.loadingRemoved": "Loading removed listings..."
+  "admin.loadingRemoved": "Loading removed listings...",
+
+  "admin.actions": "Admin Actions",
+  "admin.actionsDesc": "Trigger data operations manually",
+  "admin.triggerScrape": "Trigger Scrape",
+  "admin.triggerScrapeDesc": "Run a full scrape cycle",
+  "admin.scrapeTriggered": "Scrape cycle started",
+  "admin.scrapeFailed": "Failed to trigger scrape",
+  "admin.revalidateListings": "Revalidate Listings",
+  "admin.revalidateListingsDesc": "Re-fetch detail pages",
+  "admin.revalidateListingsSuccess": "{count} listings queued for revalidation",
+  "admin.revalidateListingsFailed": "Failed to revalidate listings",
+  "admin.revalidateGeo": "Fix Geocoding",
+  "admin.revalidateGeoDesc": "Re-geocode bad coordinates",
+  "admin.revalidateGeoSuccess": "Geocoding fixed: {fixed} corrected, {failed} failed",
+  "admin.revalidateGeoFailed": "Failed to revalidate geocoding",
+  "admin.checkAlerts": "Check Alerts",
+  "admin.checkAlertsDesc": "Run alert matching now",
+  "admin.checkAlertsSuccess": "{matches} new matches, {sent} notifications sent",
+  "admin.checkAlertsFailed": "Failed to check alerts"
 }

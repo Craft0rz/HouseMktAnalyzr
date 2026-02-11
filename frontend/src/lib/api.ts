@@ -494,6 +494,22 @@ export const adminApi = {
     if (region) params.set('region', region);
     return fetchApi(`/api/admin/removed-listings?${params}`);
   },
+
+  triggerScrape: (): Promise<{ status: string; message: string }> => {
+    return fetchApi('/api/scraper/trigger', { method: 'POST' });
+  },
+
+  revalidateListings: (): Promise<{ status: string; cleared: number }> => {
+    return fetchApi('/api/scraper/revalidate', { method: 'POST' });
+  },
+
+  revalidateGeocoding: (): Promise<{ status: string; total_checked: number; fixed: number; failed: number }> => {
+    return fetchApi('/api/admin/revalidate-geocoding', { method: 'POST' }, 300_000);
+  },
+
+  checkAlerts: (): Promise<{ alerts_checked: number; total_new_matches: number; notifications_sent: number }> => {
+    return fetchApi('/api/alerts/check-now', { method: 'POST' });
+  },
 };
 
 export { ApiError, TOKEN_KEY, REFRESH_KEY, attemptTokenRefresh };

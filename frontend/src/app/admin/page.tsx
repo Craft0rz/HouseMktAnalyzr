@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Users, Activity, Clock, BarChart3, Shield, Ban, Check, Archive, MapPin, Calendar } from 'lucide-react';
+import { Users, Activity, Clock, BarChart3, Shield, Ban, Check, Archive, MapPin, Calendar, RefreshCw, Play, MapPinCheck, Bell, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +64,30 @@ function AdminDashboard() {
       toast.success(t('admin.statusUpdated'));
     },
     onError: () => toast.error(t('admin.statusUpdateFailed')),
+  });
+
+  const scrapeMutation = useMutation({
+    mutationFn: () => adminApi.triggerScrape(),
+    onSuccess: (data) => toast.success(data.message || t('admin.scrapeTriggered')),
+    onError: (err) => toast.error(err instanceof Error ? err.message : t('admin.scrapeFailed')),
+  });
+
+  const revalidateListingsMutation = useMutation({
+    mutationFn: () => adminApi.revalidateListings(),
+    onSuccess: (data) => toast.success(t('admin.revalidateListingsSuccess', { count: data.cleared })),
+    onError: () => toast.error(t('admin.revalidateListingsFailed')),
+  });
+
+  const revalidateGeoMutation = useMutation({
+    mutationFn: () => adminApi.revalidateGeocoding(),
+    onSuccess: (data) => toast.success(t('admin.revalidateGeoSuccess', { fixed: data.fixed, failed: data.failed })),
+    onError: () => toast.error(t('admin.revalidateGeoFailed')),
+  });
+
+  const checkAlertsMutation = useMutation({
+    mutationFn: () => adminApi.checkAlerts(),
+    onSuccess: (data) => toast.success(t('admin.checkAlertsSuccess', { matches: data.total_new_matches, sent: data.notifications_sent })),
+    onError: () => toast.error(t('admin.checkAlertsFailed')),
   });
 
   if (statsLoading) {
@@ -140,6 +164,61 @@ function AdminDashboard() {
           </Card>
         </div>
       )}
+
+      {/* Admin Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{t('admin.actions')}</CardTitle>
+          <CardDescription>{t('admin.actionsDesc')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Button
+              variant="outline"
+              className="h-auto py-3 flex flex-col items-center gap-1.5"
+              disabled={scrapeMutation.isPending}
+              onClick={() => scrapeMutation.mutate()}
+            >
+              {scrapeMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
+              <span className="text-sm font-medium">{t('admin.triggerScrape')}</span>
+              <span className="text-xs text-muted-foreground">{t('admin.triggerScrapeDesc')}</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-auto py-3 flex flex-col items-center gap-1.5"
+              disabled={revalidateListingsMutation.isPending}
+              onClick={() => revalidateListingsMutation.mutate()}
+            >
+              {revalidateListingsMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
+              <span className="text-sm font-medium">{t('admin.revalidateListings')}</span>
+              <span className="text-xs text-muted-foreground">{t('admin.revalidateListingsDesc')}</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-auto py-3 flex flex-col items-center gap-1.5"
+              disabled={revalidateGeoMutation.isPending}
+              onClick={() => revalidateGeoMutation.mutate()}
+            >
+              {revalidateGeoMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <MapPinCheck className="h-5 w-5" />}
+              <span className="text-sm font-medium">{t('admin.revalidateGeo')}</span>
+              <span className="text-xs text-muted-foreground">{t('admin.revalidateGeoDesc')}</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="h-auto py-3 flex flex-col items-center gap-1.5"
+              disabled={checkAlertsMutation.isPending}
+              onClick={() => checkAlertsMutation.mutate()}
+            >
+              {checkAlertsMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bell className="h-5 w-5" />}
+              <span className="text-sm font-medium">{t('admin.checkAlerts')}</span>
+              <span className="text-xs text-muted-foreground">{t('admin.checkAlertsDesc')}</span>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Top endpoints */}
       {stats && stats.top_endpoints.length > 0 && (

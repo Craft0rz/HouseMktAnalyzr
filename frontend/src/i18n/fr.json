@@ -732,5 +732,24 @@
   "admin.dom": "JMA",
   "admin.lastSeen": "Dernière vue",
   "admin.noRemovedListings": "Aucune annonce retirée au cours des 30 derniers jours",
-  "admin.loadingRemoved": "Chargement des annonces retirées..."
+  "admin.loadingRemoved": "Chargement des annonces retirées...",
+
+  "admin.actions": "Actions admin",
+  "admin.actionsDesc": "Déclencher des opérations de données manuellement",
+  "admin.triggerScrape": "Lancer le scraping",
+  "admin.triggerScrapeDesc": "Exécuter un cycle complet",
+  "admin.scrapeTriggered": "Cycle de scraping lancé",
+  "admin.scrapeFailed": "Échec du lancement du scraping",
+  "admin.revalidateListings": "Revalider les annonces",
+  "admin.revalidateListingsDesc": "Re-chercher les pages détail",
+  "admin.revalidateListingsSuccess": "{count} annonces en file pour revalidation",
+  "admin.revalidateListingsFailed": "Échec de la revalidation des annonces",
+  "admin.revalidateGeo": "Corriger géoloc.",
+  "admin.revalidateGeoDesc": "Re-géocoder les mauvaises coord.",
+  "admin.revalidateGeoSuccess": "Géocodage corrigé : {fixed} corrigées, {failed} échouées",
+  "admin.revalidateGeoFailed": "Échec de la revalidation du géocodage",
+  "admin.checkAlerts": "Vérifier les alertes",
+  "admin.checkAlertsDesc": "Exécuter le matching maintenant",
+  "admin.checkAlertsSuccess": "{matches} nouvelles correspondances, {sent} notifications envoyées",
+  "admin.checkAlertsFailed": "Échec de la vérification des alertes"
 }
