@@ -35,7 +35,12 @@ import { useTranslation } from '@/i18n/LanguageContext';
 
 export default function Home() {
   const { t, locale } = useTranslation();
-  const [region, setRegion] = useState('montreal');
+  const [region, setRegion] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hmka-region') || 'montreal';
+    }
+    return 'montreal';
+  });
   const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
   const [selectedProperty, setSelectedProperty] = useState<PropertyWithMetrics | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -58,6 +63,10 @@ export default function Home() {
     { value: 'capitale-nationale', label: t('regions.capitaleNationale') },
     { value: 'estrie', label: t('regions.estrie') },
   ];
+
+  useEffect(() => {
+    localStorage.setItem('hmka-region', region);
+  }, [region]);
 
   useEffect(() => {
     marketApi.summary().then(setMarketData).catch(() => {});

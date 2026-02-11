@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,10 +47,19 @@ export function SearchFilters({ onSearch, isLoading }: SearchFiltersProps) {
     { value: 'HOUSE', label: t('propertyTypes.HOUSE') },
   ];
 
-  const [region, setRegion] = useState('montreal');
+  const [region, setRegion] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('hmka-region') || 'montreal';
+    }
+    return 'montreal';
+  });
   const [propertyTypes, setPropertyTypes] = useState<string[]>(['DUPLEX', 'TRIPLEX', 'QUADPLEX']);
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
+
+  useEffect(() => {
+    localStorage.setItem('hmka-region', region);
+  }, [region]);
 
   const handleSearch = () => {
     onSearch({
