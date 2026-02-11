@@ -232,7 +232,8 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     // Fetch neighbourhood safety/development data
     const boroughName = property.listing.city || 'Montreal';
     const assessmentVal = property.listing.municipal_assessment || undefined;
-    marketApi.neighbourhood(boroughName, assessmentVal).then((data) => {
+    const postalCode = property.listing.postal_code || undefined;
+    marketApi.neighbourhood(boroughName, assessmentVal, postalCode).then((data) => {
       if (!cancelled) setNeighbourhood(data);
     }).catch(() => {});
 
@@ -470,6 +471,59 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           </div>
 
           <Separator />
+
+          {/* Property Details */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                {t('detail.propertyDetails')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 gap-3 text-sm">
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">{listing.units}</div>
+                <div className="text-xs text-muted-foreground">{t('common.units')}</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">{listing.bedrooms}</div>
+                <div className="text-xs text-muted-foreground">{t('common.beds')}</div>
+              </div>
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">{listing.bathrooms}</div>
+                <div className="text-xs text-muted-foreground">{t('common.baths')}</div>
+              </div>
+              {listing.sqft && (
+                <div className="text-center p-2 rounded bg-muted/50">
+                  <div className="text-lg font-bold">{(listing.sqft / 1000).toFixed(1)}k</div>
+                  <div className="text-xs text-muted-foreground">{t('common.sqft')}</div>
+                </div>
+              )}
+              {listing.year_built && (
+                <div className="text-center p-2 rounded bg-muted/50">
+                  <div className="text-lg font-bold">{listing.year_built}</div>
+                  <div className="text-xs text-muted-foreground">{t('common.built')}</div>
+                </div>
+              )}
+              {priceHistory?.days_on_market != null && (
+                <div className="text-center p-2 rounded bg-muted/50">
+                  <div className="text-lg font-bold flex items-center justify-center gap-1">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    {priceHistory.days_on_market}
+                  </div>
+                  <div className="text-xs text-muted-foreground">{t('common.daysOnMarket')}</div>
+                </div>
+              )}
+              <div className="text-center p-2 rounded bg-muted/50">
+                <div className="text-lg font-bold">
+                  <Badge variant="outline" className="text-xs">
+                    {t('propertyTypes.' + listing.property_type)}
+                  </Badge>
+                </div>
+                <div className="text-xs text-muted-foreground">{t('common.type')}</div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Score Breakdown */}
           <Card>
@@ -1118,18 +1172,33 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                             forecastLower: Math.round(f.lower_bound),
                             forecastUpper: Math.round(f.upper_bound),
                           }));
-                          // Bridge: last history point starts the forecast line
+                          const talData = (rentTrend.tal_forecasts || []).map(f => ({
+                            year: f.year,
+                            tal: Math.round(f.projected_rent),
+                          }));
+                          // Bridge: last history point starts the forecast lines
                           const lastHistory = historyData[historyData.length - 1];
                           const bridgedForecast = lastHistory
                             ? [{ year: lastHistory.year, forecast: lastHistory.rent, forecastLower: lastHistory.rent, forecastUpper: lastHistory.rent }, ...forecastData]
                             : forecastData;
-                          const chartData = historyData.map(d => ({
+                          const bridgedTal = lastHistory
+                            ? [{ year: lastHistory.year, tal: lastHistory.rent }, ...talData]
+                            : talData;
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          const chartData: any[] = historyData.map(d => ({
                             ...d,
                             ...bridgedForecast.find(f => f.year === d.year),
+                            ...bridgedTal.find(f => f.year === d.year),
                           }));
                           bridgedForecast.forEach(f => {
                             if (!chartData.find(d => d.year === f.year)) {
-                              chartData.push({ ...f, rent: undefined as unknown as number });
+                              const talPoint = bridgedTal.find(t => t.year === f.year);
+                              chartData.push({ ...f, rent: undefined, ...(talPoint || {}) });
+                            }
+                          });
+                          bridgedTal.forEach(f => {
+                            if (!chartData.find(d => d.year === f.year)) {
+                              chartData.push({ ...f, rent: undefined });
                             }
                           });
                           chartData.sort((a, b) => a.year - b.year);
@@ -1164,7 +1233,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                                   color: 'var(--popover-foreground)',
                                 }}
                                 formatter={(value, name) => {
-                                  const label = name === 'rent' ? t('detail.avgRentTooltip') : name === 'forecast' ? t('detail.forecastTooltip') : String(name);
+                                  const label = name === 'rent' ? t('detail.avgRentTooltip') : name === 'forecast' ? t('detail.forecastTooltip') : name === 'tal' ? t('detail.talTooltip') : String(name);
                                   return [`$${value}/${t('common.perMonth')}`, label];
                                 }}
                                 labelFormatter={(label) => `${label}`}
@@ -1208,6 +1277,19 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                                 dot={{ r: 3, fill: 'var(--chart-1)', strokeDasharray: '' }}
                                 connectNulls={false}
                               />
+                              {/* TAL guideline forecast line */}
+                              {talData.length > 0 && (
+                                <Area
+                                  type="monotone"
+                                  dataKey="tal"
+                                  stroke="var(--chart-3)"
+                                  fill="none"
+                                  strokeWidth={2}
+                                  strokeDasharray="5 3"
+                                  dot={{ r: 3, fill: 'var(--chart-3)', strokeDasharray: '' }}
+                                  connectNulls={false}
+                                />
+                              )}
                               {/* Property's rent reference line */}
                               {perUnitRent && (
                                 <ReferenceLine
@@ -1223,11 +1305,17 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       </ResponsiveContainer>
                     </div>
                     {rentTrend.forecasts.length > 0 && (
-                      <div className="text-[10px] text-muted-foreground mt-1">
-                        {t('detail.linearForecast', {
-                          start: rentTrend.forecasts[0]?.year,
-                          end: rentTrend.forecasts[rentTrend.forecasts.length - 1]?.year,
-                        })}
+                      <div className="flex items-center gap-3 text-[10px] text-muted-foreground mt-1 flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: 'var(--chart-1)' }} />
+                          {t('detail.cmhcLegend')}
+                        </span>
+                        {rentTrend.tal_forecasts?.length > 0 && (
+                          <span className="flex items-center gap-1">
+                            <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: 'var(--chart-3)' }} />
+                            {t('detail.talLegend', { rate: rentTrend.tal_forecasts[0].tal_rate_pct })}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1524,58 +1612,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </Card>
           )}
 
-          {/* Property Details (collapsed) */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Home className="h-4 w-4" />
-                {t('detail.propertyDetails')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="grid grid-cols-3 gap-3 text-sm">
-              <div className="text-center p-2 rounded bg-muted/50">
-                <div className="text-lg font-bold">{listing.units}</div>
-                <div className="text-xs text-muted-foreground">{t('common.units')}</div>
-              </div>
-              <div className="text-center p-2 rounded bg-muted/50">
-                <div className="text-lg font-bold">{listing.bedrooms}</div>
-                <div className="text-xs text-muted-foreground">{t('common.beds')}</div>
-              </div>
-              <div className="text-center p-2 rounded bg-muted/50">
-                <div className="text-lg font-bold">{listing.bathrooms}</div>
-                <div className="text-xs text-muted-foreground">{t('common.baths')}</div>
-              </div>
-              {listing.sqft && (
-                <div className="text-center p-2 rounded bg-muted/50">
-                  <div className="text-lg font-bold">{(listing.sqft / 1000).toFixed(1)}k</div>
-                  <div className="text-xs text-muted-foreground">{t('common.sqft')}</div>
-                </div>
-              )}
-              {listing.year_built && (
-                <div className="text-center p-2 rounded bg-muted/50">
-                  <div className="text-lg font-bold">{listing.year_built}</div>
-                  <div className="text-xs text-muted-foreground">{t('common.built')}</div>
-                </div>
-              )}
-              {priceHistory?.days_on_market != null && (
-                <div className="text-center p-2 rounded bg-muted/50">
-                  <div className="text-lg font-bold flex items-center justify-center gap-1">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    {priceHistory.days_on_market}
-                  </div>
-                  <div className="text-xs text-muted-foreground">{t('common.daysOnMarket')}</div>
-                </div>
-              )}
-              <div className="text-center p-2 rounded bg-muted/50">
-                <div className="text-lg font-bold">
-                  <Badge variant="outline" className="text-xs">
-                    {t('propertyTypes.' + listing.property_type)}
-                  </Badge>
-                </div>
-                <div className="text-xs text-muted-foreground">{t('common.type')}</div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </SheetContent>
     </Sheet>

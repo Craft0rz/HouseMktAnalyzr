@@ -249,6 +249,12 @@ class RentForecastResponse(BaseModel):
     upper_bound: float
 
 
+class TalForecastResponse(BaseModel):
+    year: int
+    projected_rent: float
+    tal_rate_pct: float
+
+
 class RentTrendResponse(BaseModel):
     zone: str
     bedroom_type: str
@@ -259,6 +265,7 @@ class RentTrendResponse(BaseModel):
     cagr_5yr: float | None
     growth_direction: str
     forecasts: list[RentForecastResponse]
+    tal_forecasts: list[TalForecastResponse]
     vacancy_rate: float | None
     vacancy_direction: str
 
@@ -348,6 +355,14 @@ async def get_rent_trend(
                         )
                         for f in trend.forecasts
                     ],
+                    tal_forecasts=[
+                        TalForecastResponse(
+                            year=f.year,
+                            projected_rent=f.projected_rent,
+                            tal_rate_pct=f.tal_rate_pct,
+                        )
+                        for f in trend.tal_forecasts
+                    ],
                     vacancy_rate=trend.vacancy_rate,
                     vacancy_direction=trend.vacancy_direction,
                 )
@@ -386,6 +401,14 @@ async def get_rent_trend(
                     upper_bound=f.upper_bound,
                 )
                 for f in trend.forecasts
+            ],
+            tal_forecasts=[
+                TalForecastResponse(
+                    year=f.year,
+                    projected_rent=f.projected_rent,
+                    tal_rate_pct=f.tal_rate_pct,
+                )
+                for f in trend.tal_forecasts
             ],
             vacancy_rate=trend.vacancy_rate,
             vacancy_direction=trend.vacancy_direction,
@@ -610,6 +633,7 @@ async def get_neighbourhood(
     response: Response,
     borough: str = Query(description="Borough or neighbourhood name"),
     assessment: int | None = Query(default=None, description="Property assessment for tax estimate"),
+    postal_code: str | None = Query(default=None, description="Postal code for borough resolution"),
 ):
     """Get safety, permit activity, and tax data for a borough.
 
@@ -619,6 +643,11 @@ async def get_neighbourhood(
     response.headers["Cache-Control"] = "public, s-maxage=3600, max-age=300"
     current_year = date.today().year - 1
 
+    # Resolve city/postal_code to actual borough name
+    from housemktanalyzr.enrichment.geo_mapping import resolve_borough
+    resolved = resolve_borough(borough, postal_code)
+    lookup_name = resolved or borough
+
     # Try DB first
     if _has_db():
         try:
@@ -627,7 +656,7 @@ async def get_neighbourhood(
                 get_tax_history_for_borough,
                 get_all_boroughs_latest_tax_rate,
             )
-            stats = await get_neighbourhood_stats_for_borough(borough)
+            stats = await get_neighbourhood_stats_for_borough(lookup_name)
             if stats:
                 tax_estimate = None
                 res_rate = _decimal_to_num(stats.get("tax_rate_residential"))
@@ -726,9 +755,9 @@ async def get_neighbourhood(
     from housemktanalyzr.enrichment.montreal_data import MontrealOpenDataClient
     client = MontrealOpenDataClient()
     try:
-        results = await client.get_neighbourhood_stats(borough)
+        results = await client.get_neighbourhood_stats(lookup_name)
         if not results:
-            raise HTTPException(status_code=404, detail=f"No data found for borough: {borough}")
+            raise HTTPException(status_code=404, detail=f"No data found for borough: {lookup_name}")
 
         stats = results[0]
 

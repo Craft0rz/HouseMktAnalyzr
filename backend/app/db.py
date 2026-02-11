@@ -1274,17 +1274,6 @@ async def get_neighbourhood_stats_for_borough(borough: str) -> Optional[dict]:
             """,
             borough,
         )
-        if not row:
-            # Partial match
-            row = await conn.fetchrow(
-                """
-                SELECT * FROM neighbourhood_stats
-                WHERE LOWER(borough) LIKE '%' || LOWER($1) || '%'
-                ORDER BY year DESC
-                LIMIT 1
-                """,
-                borough,
-            )
     return dict(row) if row else None
 
 

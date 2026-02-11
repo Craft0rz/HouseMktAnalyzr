@@ -394,9 +394,10 @@ export const marketApi = {
     return fetchApi(`/api/market/demographics?${params}`);
   },
 
-  neighbourhood: (borough: string, assessment?: number): Promise<NeighbourhoodResponse> => {
+  neighbourhood: (borough: string, assessment?: number, postalCode?: string): Promise<NeighbourhoodResponse> => {
     const params = new URLSearchParams({ borough });
     if (assessment) params.set('assessment', String(assessment));
+    if (postalCode) params.set('postal_code', postalCode);
     return fetchApi(`/api/market/neighbourhood?${params}`);
   },
 };

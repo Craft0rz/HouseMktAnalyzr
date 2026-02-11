@@ -301,6 +301,12 @@ export interface RentForecast {
   upper_bound: number;
 }
 
+export interface TalForecast {
+  year: number;
+  projected_rent: number;
+  tal_rate_pct: number;
+}
+
 export interface RentTrendResponse {
   zone: string;
   bedroom_type: string;
@@ -311,6 +317,7 @@ export interface RentTrendResponse {
   cagr_5yr: number | null;
   growth_direction: 'accelerating' | 'decelerating' | 'stable';
   forecasts: RentForecast[];
+  tal_forecasts: TalForecast[];
   vacancy_rate: number | null;
   vacancy_direction: 'up' | 'down' | 'stable';
 }

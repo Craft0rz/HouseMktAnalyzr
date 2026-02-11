@@ -2,12 +2,42 @@
 
 Uses historical CMHC data to compute rent growth trends
 and simple linear forecasts for investment analysis.
+Includes TAL (Tribunal administratif du logement) guideline projections.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+# TAL recommended rent increase percentages by year.
+# Source: https://www.tal.gouv.qc.ca/fr/reconduction-du-bail-et-fixation-de-loyer/augmentation-de-loyer
+# These are the base rates for dwellings without major renovations.
+TAL_RATES: dict[int, float] = {
+    2020: 1.2,
+    2021: 0.8,
+    2022: 1.3,
+    2023: 2.3,
+    2024: 2.3,
+    2025: 5.9,
+    2026: 3.1,
+}
+
+
+def _get_tal_rate(year: int) -> float:
+    """Return TAL rate for a given year, falling back to the latest known rate."""
+    if year in TAL_RATES:
+        return TAL_RATES[year]
+    latest_year = max(TAL_RATES.keys())
+    return TAL_RATES[latest_year]
+
+
+@dataclass
+class TalForecast:
+    """TAL guideline-based rent projection for a single year."""
+    year: int
+    projected_rent: float
+    tal_rate_pct: float
 
 
 @dataclass
@@ -31,6 +61,7 @@ class RentTrend:
     cagr_5yr: float | None  # 5-year CAGR percentage
     growth_direction: str  # "accelerating", "decelerating", "stable"
     forecasts: list[RentForecast]
+    tal_forecasts: list[TalForecast] = field(default_factory=list)
     vacancy_rate: float | None = None
     vacancy_direction: str = "stable"
 
@@ -51,7 +82,7 @@ def compute_trend(
         (annual_growth_rate_pct, cagr_5yr_pct, growth_direction, forecasts)
     """
     if len(years) < 2 or len(values) < 2:
-        return None, None, "stable", []
+        return None, None, "stable", [], []
 
     # Pair and sort
     paired = sorted(zip(years, values))
@@ -66,7 +97,7 @@ def compute_trend(
     ss_xx = sum((xs[i] - x_mean) ** 2 for i in range(n))
 
     if ss_xx == 0:
-        return None, None, "stable", []
+        return None, None, "stable", [], []
 
     slope = ss_xy / ss_xx
     intercept = y_mean - slope * x_mean
@@ -122,7 +153,21 @@ def compute_trend(
             upper_bound=round(projected + 1.96 * std_err, 0),
         ))
 
-    return round(growth_rate, 1), cagr_5yr, direction, forecasts
+    # TAL guideline forecasts: compound from last actual rent using TAL rates
+    tal_forecasts = []
+    if current > 0:
+        tal_rent = current
+        for i in range(1, forecast_years + 1):
+            future_year = xs[-1] + i
+            rate = _get_tal_rate(future_year)
+            tal_rent = tal_rent * (1 + rate / 100)
+            tal_forecasts.append(TalForecast(
+                year=future_year,
+                projected_rent=round(tal_rent, 0),
+                tal_rate_pct=rate,
+            ))
+
+    return round(growth_rate, 1), cagr_5yr, direction, forecasts, tal_forecasts
 
 
 def analyze_zone_rent(
@@ -147,7 +192,7 @@ def analyze_zone_rent(
     years = [r["year"] for r in historical_rents if r.get("rent") is not None]
     rents = [r["rent"] for r in historical_rents if r.get("rent") is not None]
 
-    growth_rate, cagr_5yr, direction, forecasts = compute_trend(years, rents)
+    growth_rate, cagr_5yr, direction, forecasts, tal_forecasts = compute_trend(years, rents)
 
     vacancy_direction = "stable"
     if current_vacancy is not None and previous_vacancy is not None:
@@ -165,6 +210,7 @@ def analyze_zone_rent(
         cagr_5yr=cagr_5yr,
         growth_direction=direction,
         forecasts=forecasts,
+        tal_forecasts=tal_forecasts,
         vacancy_rate=current_vacancy,
         vacancy_direction=vacancy_direction,
     )
