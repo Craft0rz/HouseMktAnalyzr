@@ -905,7 +905,7 @@ async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
               AND property_type = 'HOUSE'
               AND (data->>'latitude') IS NOT NULL
               AND (data->>'longitude') IS NOT NULL
-              AND (data->'geo_enrichment') IS NULL
+              AND (data->'raw_data'->'geo_enrichment') IS NULL
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
@@ -942,7 +942,11 @@ async def update_geo_enrichment(listing_id: str, geo_data: dict) -> bool:
             return False
 
         data = json.loads(row["data"])
-        data["geo_enrichment"] = geo_data
+        # Store inside raw_data so PropertyListing.raw_data preserves it
+        # (_fetch_geo_data checks listing.raw_data["geo_enrichment"])
+        if not data.get("raw_data"):
+            data["raw_data"] = {}
+        data["raw_data"]["geo_enrichment"] = geo_data
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",
