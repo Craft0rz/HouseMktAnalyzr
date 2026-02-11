@@ -849,3 +849,116 @@ async def family_score_batch(request: AnalyzeBatchRequest) -> FamilyBatchRespons
         raise HTTPException(
             status_code=500, detail=f"Family batch scoring failed: {str(e)}"
         )
+
+
+@router.get("/family-search", response_model=FamilyBatchResponse)
+async def family_search(
+    region: str = Query(default="montreal"),
+    min_price: Optional[int] = Query(default=None),
+    max_price: Optional[int] = Query(default=None),
+    new_only: bool = Query(default=False),
+    price_drops_only: bool = Query(default=False),
+) -> FamilyBatchResponse:
+    """Search houses and score them for family livability.
+
+    Queries HOUSE listings directly from the database (no investment scoring
+    overhead) and runs the 3-pillar family scoring model. Supports filtering
+    by new listings (first seen within 7 days) and price drops (last 30 days).
+
+    Returns all matching houses sorted by family_score descending.
+    """
+    if not os.environ.get("DATABASE_URL"):
+        return FamilyBatchResponse(results=[], count=0, summary={})
+
+    try:
+        from ..db import get_cached_listings
+
+        cached = await get_cached_listings(
+            property_types=["HOUSE"],
+            min_price=min_price,
+            max_price=max_price,
+            region=region,
+            limit=0,  # No limit — return all matching houses
+            new_only=new_only,
+            price_drops_only=price_drops_only,
+        )
+
+        if not cached:
+            return FamilyBatchResponse(results=[], count=0, summary={})
+
+        house_listings = [PropertyListing(**d) for d in cached]
+        logger.info(f"Family search: {len(house_listings)} houses for region={region}")
+
+        # Batch-fetch location data by unique (city, postal_code) pairs
+        unique_keys = list({
+            (listing.city, listing.postal_code)
+            for listing in house_listings if listing.city
+        })
+        location_data_list = await asyncio.gather(
+            *[_fetch_location_data(city, pc) for city, pc in unique_keys]
+        )
+        location_data_map = dict(zip(unique_keys, location_data_list))
+        empty_location = {
+            "safety_score": None, "vacancy_rate": None,
+            "rent_cagr": None, "median_household_income": None,
+        }
+
+        # Batch-fetch geo data for all houses in parallel (semaphore-limited)
+        geo_data_list = await asyncio.gather(
+            *[_fetch_geo_data(listing) for listing in house_listings]
+        )
+
+        # Score each house
+        response_results = []
+        for listing, geo_data in zip(house_listings, geo_data_list):
+            try:
+                key = (listing.city, listing.postal_code)
+                location_data = location_data_map.get(key, empty_location)
+
+                metrics = family_scorer.score_property(
+                    listing=listing,
+                    safety_score=location_data.get("safety_score"),
+                    school_distance_m=geo_data.get("school_distance_m"),
+                    park_count_1km=geo_data.get("park_count_1km"),
+                    flood_zone=geo_data.get("flood_zone"),
+                )
+                response_results.append(
+                    HouseWithScore(listing=listing, family_metrics=metrics)
+                )
+            except Exception as e:
+                logger.warning(f"Failed to score house {listing.id}: {e}")
+
+        # Sort by family_score descending
+        response_results.sort(
+            key=lambda x: x.family_metrics.family_score, reverse=True
+        )
+
+        # Summary statistics
+        scores = [r.family_metrics.family_score for r in response_results]
+        monthly_costs = [
+            r.family_metrics.monthly_cost_estimate
+            for r in response_results
+            if r.family_metrics.monthly_cost_estimate is not None
+        ]
+
+        summary = {
+            "avg_family_score": round(sum(scores) / len(scores), 1) if scores else 0,
+            "max_family_score": round(max(scores), 1) if scores else 0,
+            "min_family_score": round(min(scores), 1) if scores else 0,
+            "avg_monthly_cost": (
+                round(sum(monthly_costs) / len(monthly_costs))
+                if monthly_costs else 0
+            ),
+            "total_houses_scored": len(response_results),
+        }
+
+        return FamilyBatchResponse(
+            results=response_results,
+            count=len(response_results),
+            summary=summary,
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Family search failed: {str(e)}"
+        )

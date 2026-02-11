@@ -476,11 +476,16 @@ async def get_cached_listings(
     region: Optional[str] = None,
     limit: int = 100,
     include_stale: bool = False,
+    new_only: bool = False,
+    price_drops_only: bool = False,
 ) -> list[dict]:
     """Get cached listings matching filters.
 
     By default returns only active (non-expired) listings.
     With include_stale=True, also returns stale/recently-delisted listings.
+    With new_only=True, only returns listings first seen in the last 7 days.
+    With price_drops_only=True, only returns listings with a price drop
+    recorded in the last 30 days.
 
     Returns list of raw dicts (parsed from JSONB data column).
     """
@@ -488,39 +493,58 @@ async def get_cached_listings(
     now = datetime.now(timezone.utc)
 
     if include_stale:
-        # Show active + stale + recently delisted (last 7 days)
         conditions = [
-            "(expires_at > $1 OR (status IN ('stale', 'delisted') AND last_seen_at > $1 - INTERVAL '7 days'))"
+            "(p.expires_at > $1 OR (p.status IN ('stale', 'delisted') AND p.last_seen_at > $1 - INTERVAL '7 days'))"
         ]
     else:
-        conditions = ["expires_at > $1"]
+        conditions = ["p.expires_at > $1"]
     params: list = [now]
     idx = 2
 
     if region is not None:
-        conditions.append(f"region = ${idx}")
+        conditions.append(f"p.region = ${idx}")
         params.append(region)
         idx += 1
 
     if property_types:
         placeholders = ", ".join(f"${idx + i}" for i in range(len(property_types)))
-        conditions.append(f"property_type IN ({placeholders})")
+        conditions.append(f"p.property_type IN ({placeholders})")
         params.extend(property_types)
         idx += len(property_types)
 
     if min_price is not None:
-        conditions.append(f"price >= ${idx}")
+        conditions.append(f"p.price >= ${idx}")
         params.append(min_price)
         idx += 1
 
     if max_price is not None:
-        conditions.append(f"price <= ${idx}")
+        conditions.append(f"p.price <= ${idx}")
         params.append(max_price)
         idx += 1
 
+    if new_only:
+        conditions.append(f"p.first_seen_at > ${idx}")
+        params.append(now - timedelta(days=7))
+        idx += 1
+
+    join_clause = ""
+    if price_drops_only:
+        join_clause = (
+            " INNER JOIN price_history ph ON ph.property_id = p.id"
+            f" AND ph.new_price < ph.old_price AND ph.recorded_at > ${idx}"
+        )
+        params.append(now - timedelta(days=30))
+        idx += 1
+
     where = " AND ".join(conditions)
-    query = f"SELECT data FROM properties WHERE {where} ORDER BY price LIMIT ${idx}"
-    params.append(limit)
+    limit_clause = f" LIMIT ${idx}" if limit > 0 else ""
+    if limit > 0:
+        params.append(limit)
+
+    query = (
+        f"SELECT DISTINCT p.data FROM properties p{join_clause}"
+        f" WHERE {where} ORDER BY p.price{limit_clause}"
+    )
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *params)

@@ -792,6 +792,8 @@
   "houses.minBedrooms": "Chambres min.",
   "houses.minLotSize": "Terrain min.",
   "houses.viewOnCentris": "Voir sur Centris",
+  "houses.newListingsOnly": "Nouvelles annonces (≤7 jours)",
+  "houses.priceDropsOnly": "Baisses de prix (30 jours)",
   "houses.noResults": "Aucune maison trouvée selon vos critères",
   "houses.noPhoto": "Pas de photo"
 }

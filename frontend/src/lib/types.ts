@@ -195,6 +195,8 @@ export interface PropertySearchParams {
   max_price?: number;
   limit?: number;
   enrich?: boolean;
+  new_only?: boolean;
+  price_drops_only?: boolean;
 }
 
 // Portfolio types

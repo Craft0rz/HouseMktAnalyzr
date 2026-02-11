@@ -69,6 +69,8 @@ export default function HousesPage() {
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [minBedrooms, setMinBedrooms] = useState<string>('');
   const [minLotSize, setMinLotSize] = useState<string>('');
+  const [newOnly, setNewOnly] = useState(false);
+  const [priceDropsOnly, setPriceDropsOnly] = useState(false);
 
   // Results state
   const [results, setResults] = useState<FamilyBatchResponse | null>(null);
@@ -102,6 +104,8 @@ export default function HousesPage() {
         region,
         min_price: minPrice ? parseInt(minPrice) : undefined,
         max_price: maxPrice ? parseInt(maxPrice) : undefined,
+        new_only: newOnly || undefined,
+        price_drops_only: priceDropsOnly || undefined,
       });
       return response;
     },
@@ -276,6 +280,34 @@ export default function HousesPage() {
                 {searchMutation.isPending ? t('filters.searching') : t('filters.search')}
               </Button>
             </div>
+          </div>
+
+          {/* Toggle filters */}
+          <div className="flex items-center gap-4 pt-2">
+            <button
+              type="button"
+              onClick={() => setNewOnly((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                newOnly
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-input bg-background text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              <span className={`inline-block h-3 w-3 rounded-sm border ${newOnly ? 'bg-primary border-primary' : 'border-muted-foreground'}`} />
+              {t('houses.newListingsOnly')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setPriceDropsOnly((v) => !v)}
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm font-medium transition-colors ${
+                priceDropsOnly
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-input bg-background text-muted-foreground hover:bg-accent'
+              }`}
+            >
+              <span className={`inline-block h-3 w-3 rounded-sm border ${priceDropsOnly ? 'bg-primary border-primary' : 'border-muted-foreground'}`} />
+              {t('houses.priceDropsOnly')}
+            </button>
           </div>
         </CardContent>
       </Card>

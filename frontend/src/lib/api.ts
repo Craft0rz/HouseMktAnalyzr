@@ -415,37 +415,16 @@ export const housesApi = {
   },
 
   search: async (params: PropertySearchParams): Promise<FamilyBatchResponse> => {
-    // Step 1: Fetch HOUSE listings via top-opportunities
-    // Use min_score=0 so investment scoring doesn't filter out family homes,
-    // and a higher limit since family scoring has its own sort.
     const searchParams = new URLSearchParams();
-    searchParams.set('property_types', 'HOUSE');
-    searchParams.set('min_score', '0');
-    searchParams.set('limit', '200');
     if (params.region) searchParams.set('region', params.region);
     if (params.min_price) searchParams.set('min_price', String(params.min_price));
     if (params.max_price) searchParams.set('max_price', String(params.max_price));
+    if (params.new_only) searchParams.set('new_only', 'true');
+    if (params.price_drops_only) searchParams.set('price_drops_only', 'true');
 
-    const topResponse = await fetchApi<import('./types').BatchAnalysisResponse>(
-      `/api/analysis/top-opportunities?${searchParams}`,
+    return fetchApi<FamilyBatchResponse>(
+      `/api/analysis/family-search?${searchParams}`,
     );
-
-    const listings = topResponse.results.map((r) => r.listing);
-
-    if (listings.length === 0) {
-      return { results: [], count: 0, summary: {} };
-    }
-
-    // Step 2: Score the listings with family scoring
-    const familyResponse = await fetchApi<FamilyBatchResponse>(
-      '/api/analysis/family-score-batch',
-      {
-        method: 'POST',
-        body: JSON.stringify({ listings }),
-      },
-    );
-
-    return familyResponse;
   },
 };
 

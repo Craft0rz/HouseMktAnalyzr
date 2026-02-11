@@ -792,6 +792,8 @@
   "houses.minBedrooms": "Min Bedrooms",
   "houses.minLotSize": "Min Lot Size",
   "houses.viewOnCentris": "View on Centris",
+  "houses.newListingsOnly": "New listings (≤7 days)",
+  "houses.priceDropsOnly": "Price drops (30 days)",
   "houses.noResults": "No houses found matching your criteria",
   "houses.noPhoto": "No photo"
 }
