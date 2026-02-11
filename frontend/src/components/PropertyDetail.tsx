@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock, Heart } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock, Heart, ChevronDown, ArrowUpDown } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ import { usePortfolioContext } from '@/lib/portfolio-context';
 import { propertiesApi, marketApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice, formatPercent } from '@/lib/formatters';
-import type { PropertyWithMetrics, PropertyListing, MarketSummaryResponse, RentTrendResponse, DemographicProfile, NeighbourhoodResponse, PriceHistoryResponse } from '@/lib/types';
+import type { PropertyWithMetrics, PropertyListing, RentTrendResponse, DemographicProfile, NeighbourhoodResponse, PriceHistoryResponse } from '@/lib/types';
 
 interface PropertyDetailProps {
   property: PropertyWithMetrics | null;
@@ -162,7 +162,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [marketData, setMarketData] = useState<MarketSummaryResponse | null>(null);
   const [rentTrend, setRentTrend] = useState<RentTrendResponse | null>(null);
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
   const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
@@ -172,6 +171,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [interestRateInput, setInterestRateInput] = useState<string>('5');
   const [amortizationInput, setAmortizationInput] = useState<string>('30');
   const [cashFlowPeriod, setCashFlowPeriod] = useState<'monthly' | 'yearly'>('monthly');
+  const [expensesExpanded, setExpensesExpanded] = useState(false);
 
   const intlLocale = locale === 'fr' ? 'fr-CA' : 'en-CA';
 
@@ -228,11 +228,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     // Fetch price history in parallel
     propertiesApi.getPriceHistory(property.listing.id).then((data) => {
       if (!cancelled) setPriceHistory(data);
-    }).catch(() => {});
-
-    // Fetch market data in parallel
-    marketApi.summary().then((data) => {
-      if (!cancelled) setMarketData(data);
     }).catch(() => {});
 
     // Fetch neighbourhood safety/development data
@@ -421,71 +416,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             })()}
           </div>
 
-          {/* Price History */}
-          {priceHistory && priceHistory.changes.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <DollarSign className="h-4 w-4" />
-                  {t('detail.priceHistory')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {priceHistory.total_change !== 0 && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="text-muted-foreground">{t('detail.totalChange')}</span>
-                    <span className={priceHistory.total_change < 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
-                      {priceHistory.total_change < 0 ? '' : '+'}{formatPrice(priceHistory.total_change, locale)} ({priceHistory.total_change_pct > 0 ? '+' : ''}{priceHistory.total_change_pct}%)
-                    </span>
-                  </div>
-                )}
-                {/* Step chart */}
-                <div className="h-[120px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart
-                      data={(() => {
-                        const points: { date: string; price: number }[] = [];
-                        const sorted = [...priceHistory.changes].reverse();
-                        sorted.forEach((c, i) => {
-                          if (i === 0) {
-                            points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.old_price });
-                          }
-                          points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.new_price });
-                        });
-                        return points;
-                      })()}
-                      margin={{ top: 4, right: 4, bottom: 0, left: -16 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
-                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} formatter={(value) => [formatPrice(value as number, locale), t('detail.askingPrice')]} />
-                      <Line type="stepAfter" dataKey="price" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3, fill: 'var(--chart-1)' }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                {/* Change list */}
-                <div className="space-y-1">
-                  {priceHistory.changes.map((c, i) => (
-                    <div key={i} className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">
-                        {new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <span className="text-muted-foreground">{formatPrice(c.old_price, locale)}</span>
-                        <span className="text-muted-foreground">&rarr;</span>
-                        <span className="font-medium">{formatPrice(c.new_price, locale)}</span>
-                        <span className={c.change < 0 ? 'text-green-600' : 'text-red-600'}>
-                          ({c.change_pct > 0 ? '+' : ''}{c.change_pct}%)
-                        </span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Quick Actions */}
           <div className="flex gap-2">
             <Button asChild variant="outline" className="flex-1">
@@ -570,217 +500,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </div>
             </CardContent>
           </Card>
-
-          {/* Score Breakdown */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Calculator className="h-4 w-4" />
-                {t('detail.scoreBreakdown')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ScoreBreakdown scoreBreakdown={metrics.score_breakdown} />
-            </CardContent>
-          </Card>
-
-          {/* Monthly Cash Flow Breakdown */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <PiggyBank className="h-4 w-4" />
-                {t('detail.monthlyCashFlow')}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Income */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium flex items-center gap-2">
-                    <ArrowUpRight className="h-4 w-4 text-green-500" />
-                    {t('detail.rentalIncome')}
-                    {metrics.rent_source === 'cmhc_estimate' && (
-                      <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        {t('detail.estCmhc')}
-                      </span>
-                    )}
-                  </span>
-                  <span className="font-bold text-green-600">
-                    +{formatPrice(monthlyIncome, locale)}
-                  </span>
-                </div>
-                {metrics.rent_source === 'declared' && metrics.rent_vs_market_pct != null && (
-                  <div className={`text-[11px] mt-1 px-2 py-1 rounded ${
-                    metrics.rent_vs_market_pct < -5
-                      ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
-                      : metrics.rent_vs_market_pct > 5
-                        ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400'
-                        : 'bg-muted text-muted-foreground'
-                  }`}>
-                    {metrics.rent_vs_market_pct < -5
-                      ? t('detail.rentBelowMarket', { pct: Math.abs(metrics.rent_vs_market_pct).toFixed(0) })
-                      : metrics.rent_vs_market_pct > 5
-                        ? t('detail.rentAboveMarket', { pct: metrics.rent_vs_market_pct.toFixed(0) })
-                        : t('detail.rentAtMarket')
-                    }
-                    {metrics.cmhc_estimated_rent != null && (
-                      <span className="text-muted-foreground ml-1">
-                        ({t('detail.cmhcAvg')}: {formatPrice(metrics.cmhc_estimated_rent, locale)}{t('detail.perMonth')})
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <Separator />
-
-              {/* Expenses */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground flex items-center gap-2">
-                    <ArrowDownRight className="h-4 w-4 text-red-500" />
-                    {t('detail.expenses')}
-                  </span>
-                </div>
-                <div className="pl-6 space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('detail.mortgage')}</span>
-                    <span className="text-red-600">-{formatPrice(monthlyExpenses.mortgage, locale)}</span>
-                  </div>
-                  {hasActualExpenses ? (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">{t('detail.operatingExpenses')}</span>
-                      <span className="text-red-600">-{formatPrice((monthlyExpenses as any).operating, locale)}</span>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          {listing.annual_taxes ? t('detail.propertyTaxes') : t('detail.propertyTaxesEst')}
-                        </span>
-                        <span className={listing.annual_taxes ? 'text-red-600' : 'text-orange-500'}>-{formatPrice((monthlyExpenses as any).taxes, locale)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">{t('detail.insurance')}</span>
-                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).insurance, locale)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">{t('detail.maintenance')}</span>
-                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).maintenance, locale)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">{t('detail.vacancy')}</span>
-                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).vacancy, locale)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">{t('detail.management')}</span>
-                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).management, locale)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">{t('detail.capexReserve')}</span>
-                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).capex, locale)}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-                <div className="flex justify-between pt-2 border-t">
-                  <span className="text-sm font-medium">{t('detail.totalExpenses')}</span>
-                  <span className="font-bold text-red-600">-{formatPrice(totalExpenses, locale)}</span>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Gross Cash Flow — only listing-specific costs */}
-              {!hasActualExpenses && (
-                <div className="flex justify-between items-center p-3 rounded-lg">
-                  <div>
-                    <span className="font-semibold text-sm">{t('detail.grossMonthlyCashFlow')}</span>
-                    <div className="text-[10px] text-muted-foreground">{t('detail.grossCashFlowHint')}</div>
-                  </div>
-                  <span className={`text-lg font-bold ${grossCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {grossCashFlow >= 0 ? '+' : ''}{formatPrice(grossCashFlow, locale)}
-                  </span>
-                </div>
-              )}
-
-              {/* Net Cash Flow */}
-              <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
-                <span className="font-semibold">{t('detail.netMonthlyCashFlow')}</span>
-                <span className={`text-xl font-bold ${netCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {netCashFlow >= 0 ? '+' : ''}{formatPrice(netCashFlow, locale)}
-                </span>
-              </div>
-
-              <div className="text-xs text-muted-foreground text-center">
-                {formatPrice(netCashFlow * 12, locale)} |
-                {' '}{t('detail.roiOnDownPayment', { pct: ((netCashFlow * 12) / downPayment * 100).toFixed(1) })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Rent Upside Analysis — appears when rent is significantly below market */}
-          {showRentUpside && (
-            <Card className="border-green-200 dark:border-green-900">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-green-600" />
-                  {t('detail.rentUpsideTitle')}
-                </CardTitle>
-                <p className="text-[11px] text-muted-foreground">
-                  {t('detail.rentUpsideDesc', { pct: Math.abs(metrics.rent_vs_market_pct!).toFixed(0) })}
-                </p>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-hidden rounded-lg border">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-muted/50">
-                        <th className="text-left px-3 py-2 font-medium"></th>
-                        <th className="text-right px-3 py-2 font-medium">{t('detail.rentUpsideCurrent')}</th>
-                        <th className="text-right px-3 py-2 font-medium text-green-600">{t('detail.rentUpsideAtMarket')}</th>
-                        <th className="text-right px-3 py-2 font-medium text-green-600">{t('detail.rentUpsideDelta')}</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      <tr>
-                        <td className="px-3 py-2 text-muted-foreground">{t('detail.rentalIncome')}</td>
-                        <td className="px-3 py-2 text-right">{formatPrice(monthlyIncome, locale)}</td>
-                        <td className="px-3 py-2 text-right">{formatPrice(marketRent, locale)}</td>
-                        <td className="px-3 py-2 text-right text-green-600">+{formatPrice(marketRent - monthlyIncome, locale)}</td>
-                      </tr>
-                      {!hasActualExpenses && (
-                        <tr>
-                          <td className="px-3 py-2 text-muted-foreground">{t('detail.grossMonthlyCashFlow')}</td>
-                          <td className="px-3 py-2 text-right">{formatPrice(grossCashFlow, locale)}</td>
-                          <td className="px-3 py-2 text-right">{formatPrice(marketGrossCashFlow, locale)}</td>
-                          <td className="px-3 py-2 text-right text-green-600">+{formatPrice(marketGrossCashFlow - grossCashFlow, locale)}</td>
-                        </tr>
-                      )}
-                      <tr>
-                        <td className="px-3 py-2 text-muted-foreground">{t('detail.netMonthlyCashFlow')}</td>
-                        <td className="px-3 py-2 text-right">{formatPrice(netCashFlow, locale)}</td>
-                        <td className="px-3 py-2 text-right">{formatPrice(marketNetCashFlow, locale)}</td>
-                        <td className="px-3 py-2 text-right text-green-600">+{formatPrice(marketNetCashFlow - netCashFlow, locale)}</td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2 text-muted-foreground">{t('detail.capRate')}</td>
-                        <td className="px-3 py-2 text-right">{currentCapRateCalc.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right">{marketCapRate.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right text-green-600">+{(marketCapRate - currentCapRateCalc).toFixed(1)}%</td>
-                      </tr>
-                      <tr>
-                        <td className="px-3 py-2 text-muted-foreground">{t('detail.grossYield')}</td>
-                        <td className="px-3 py-2 text-right">{currentGrossYield.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right">{marketGrossYield.toFixed(1)}%</td>
-                        <td className="px-3 py-2 text-right text-green-600">+{(marketGrossYield - currentGrossYield).toFixed(1)}%</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Mortgage Details */}
           <Card>
@@ -889,11 +608,237 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </CardContent>
           </Card>
 
+          {/* Cash Flow Breakdown */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <PiggyBank className="h-4 w-4" />
+                  {t('detail.cashFlow')}
+                </span>
+                <div className="flex rounded-md border overflow-hidden">
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={cashFlowPeriod === 'monthly' ? 'default' : 'ghost'}
+                    className="rounded-none h-5 px-2 text-[10px]"
+                    onClick={() => setCashFlowPeriod('monthly')}
+                  >
+                    {t('detail.monthly')}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant={cashFlowPeriod === 'yearly' ? 'default' : 'ghost'}
+                    className="rounded-none h-5 px-2 text-[10px]"
+                    onClick={() => setCashFlowPeriod('yearly')}
+                  >
+                    {t('detail.yearly')}
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Income */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium flex items-center gap-2">
+                    <ArrowUpRight className="h-4 w-4 text-green-500" />
+                    {t('detail.rentalIncome')}
+                    {metrics.rent_source === 'cmhc_estimate' && (
+                      <span className="text-[10px] font-normal text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                        {t('detail.estCmhc')}
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-bold text-green-600">
+                    +{formatPrice(monthlyIncome * cfMul, locale)}
+                  </span>
+                </div>
+                {metrics.rent_source === 'declared' && metrics.rent_vs_market_pct != null && (
+                  <div className={`text-[11px] mt-1 px-2 py-1 rounded ${
+                    metrics.rent_vs_market_pct < -5
+                      ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400'
+                      : metrics.rent_vs_market_pct > 5
+                        ? 'bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400'
+                        : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {metrics.rent_vs_market_pct < -5
+                      ? t('detail.rentBelowMarket', { pct: Math.abs(metrics.rent_vs_market_pct).toFixed(0) })
+                      : metrics.rent_vs_market_pct > 5
+                        ? t('detail.rentAboveMarket', { pct: metrics.rent_vs_market_pct.toFixed(0) })
+                        : t('detail.rentAtMarket')
+                    }
+                    {metrics.cmhc_estimated_rent != null && (
+                      <span className="text-muted-foreground ml-1">
+                        ({t('detail.cmhcAvg')}: {formatPrice(metrics.cmhc_estimated_rent, locale)}{t('detail.perMonth')})
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Expenses */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="flex justify-between items-center w-full text-left"
+                  onClick={() => setExpensesExpanded(!expensesExpanded)}
+                >
+                  <span className="text-sm text-muted-foreground flex items-center gap-2">
+                    <ArrowDownRight className="h-4 w-4 text-red-500" />
+                    {t('detail.expenses')}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="font-bold text-red-600 text-sm">-{formatPrice(totalExpenses * cfMul, locale)}</span>
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${expensesExpanded ? 'rotate-180' : ''}`} />
+                  </span>
+                </button>
+                {expensesExpanded && (
+                  <div className="pl-6 space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('detail.mortgage')}</span>
+                      <span className="text-red-600">-{formatPrice(monthlyExpenses.mortgage * cfMul, locale)}</span>
+                    </div>
+                    {hasActualExpenses ? (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{t('detail.operatingExpenses')}</span>
+                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).operating * cfMul, locale)}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            {listing.annual_taxes ? t('detail.propertyTaxes') : t('detail.propertyTaxesEst')}
+                          </span>
+                          <span className={listing.annual_taxes ? 'text-red-600' : 'text-orange-500'}>-{formatPrice((monthlyExpenses as any).taxes * cfMul, locale)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">{t('detail.insurance')}</span>
+                          <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).insurance * cfMul, locale)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">{t('detail.maintenance')}</span>
+                          <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).maintenance * cfMul, locale)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">{t('detail.vacancy')}</span>
+                          <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).vacancy * cfMul, locale)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">{t('detail.management')}</span>
+                          <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).management * cfMul, locale)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">{t('detail.capexReserve')}</span>
+                          <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).capex * cfMul, locale)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Gross Cash Flow — only listing-specific costs */}
+              {!hasActualExpenses && (
+                <div className="flex justify-between items-center p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
+                  <div>
+                    <span className="font-semibold text-sm">{t('detail.grossCashFlow')}</span>
+                    <div className="text-[10px] text-muted-foreground">{t('detail.grossCashFlowHint')}</div>
+                  </div>
+                  <span className={`text-lg font-bold ${grossCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {grossCashFlow >= 0 ? '+' : ''}{formatPrice(grossCashFlow * cfMul, locale)}
+                  </span>
+                </div>
+              )}
+
+              {/* Net Cash Flow */}
+              <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
+                <span className="font-semibold">{t('detail.netCashFlow')}</span>
+                <span className={`text-xl font-bold ${netCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {netCashFlow >= 0 ? '+' : ''}{formatPrice(netCashFlow * cfMul, locale)}
+                </span>
+              </div>
+
+              <div className="text-xs text-muted-foreground text-center">
+                {cashFlowPeriod === 'monthly' && <>{formatPrice(netCashFlow * 12, locale)}{t('detail.perYear')} | </>}
+                {t('detail.roiOnDownPayment', { pct: ((netCashFlow * 12) / downPayment * 100).toFixed(1) })}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Rent Upside Analysis — appears when rent is significantly below market */}
+          {showRentUpside && (
+            <Card className="border-green-200 dark:border-green-900">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-green-600" />
+                  {t('detail.rentUpsideTitle')}
+                </CardTitle>
+                <p className="text-[11px] text-muted-foreground">
+                  {t('detail.rentUpsideDesc', { pct: Math.abs(metrics.rent_vs_market_pct!).toFixed(0) })}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-hidden rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="text-left px-3 py-2 font-medium"></th>
+                        <th className="text-right px-3 py-2 font-medium">{t('detail.rentUpsideCurrent')}</th>
+                        <th className="text-right px-3 py-2 font-medium text-green-600">{t('detail.rentUpsideAtMarket')}</th>
+                        <th className="text-right px-3 py-2 font-medium text-green-600">{t('detail.rentUpsideDelta')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.rentalIncome')}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(monthlyIncome * cfMul, locale)}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(marketRent * cfMul, locale)}</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{formatPrice((marketRent - monthlyIncome) * cfMul, locale)}</td>
+                      </tr>
+                      {!hasActualExpenses && (
+                        <tr>
+                          <td className="px-3 py-2 text-muted-foreground">{t('detail.grossCashFlow')}</td>
+                          <td className="px-3 py-2 text-right">{formatPrice(grossCashFlow * cfMul, locale)}</td>
+                          <td className="px-3 py-2 text-right">{formatPrice(marketGrossCashFlow * cfMul, locale)}</td>
+                          <td className="px-3 py-2 text-right text-green-600">+{formatPrice((marketGrossCashFlow - grossCashFlow) * cfMul, locale)}</td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.netCashFlow')}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(netCashFlow * cfMul, locale)}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(marketNetCashFlow * cfMul, locale)}</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{formatPrice((marketNetCashFlow - netCashFlow) * cfMul, locale)}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.capRate')}</td>
+                        <td className="px-3 py-2 text-right">{currentCapRateCalc.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right">{marketCapRate.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{(marketCapRate - currentCapRateCalc).toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.grossYield')}</td>
+                        <td className="px-3 py-2 text-right">{currentGrossYield.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right">{marketGrossYield.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{(marketGrossYield - currentGrossYield).toFixed(1)}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Key Investment Metrics */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
+                <BarChart3 className="h-4 w-4" />
                 {t('detail.keyMetrics')}
               </CardTitle>
             </CardHeader>
@@ -936,7 +881,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4" />
+                  <ArrowUpDown className="h-4 w-4" />
                   {t('detail.rateSensitivity')}
                 </CardTitle>
               </CardHeader>
@@ -971,6 +916,9 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                     </p>
                   </div>
                 )}
+                <p className="text-[10px] text-muted-foreground text-center">
+                  {t('detail.rateSensitivityNote')}
+                </p>
               </CardContent>
             </Card>
           )}
@@ -1022,6 +970,84 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </CardContent>
             </Card>
           )}
+
+          {/* Price History */}
+          {priceHistory && priceHistory.changes.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  {t('detail.priceHistory')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {priceHistory.total_change !== 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">{t('detail.totalChange')}</span>
+                    <span className={priceHistory.total_change < 0 ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                      {priceHistory.total_change < 0 ? '' : '+'}{formatPrice(priceHistory.total_change, locale)} ({priceHistory.total_change_pct > 0 ? '+' : ''}{priceHistory.total_change_pct}%)
+                    </span>
+                  </div>
+                )}
+                {/* Step chart */}
+                <div className="h-[120px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={(() => {
+                        const points: { date: string; price: number }[] = [];
+                        const sorted = [...priceHistory.changes].reverse();
+                        sorted.forEach((c, i) => {
+                          if (i === 0) {
+                            points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.old_price });
+                          }
+                          points.push({ date: new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric' }), price: c.new_price });
+                        });
+                        return points;
+                      })()}
+                      margin={{ top: 4, right: 4, bottom: 0, left: -16 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
+                      <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }} formatter={(value) => [formatPrice(value as number, locale), t('detail.askingPrice')]} />
+                      <Line type="stepAfter" dataKey="price" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3, fill: 'var(--chart-1)' }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                {/* Change list */}
+                <div className="space-y-1">
+                  {priceHistory.changes.map((c, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">
+                        {new Date(c.recorded_at).toLocaleDateString(intlLocale, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="text-muted-foreground">{formatPrice(c.old_price, locale)}</span>
+                        <span className="text-muted-foreground">&rarr;</span>
+                        <span className="font-medium">{formatPrice(c.new_price, locale)}</span>
+                        <span className={c.change < 0 ? 'text-green-600' : 'text-red-600'}>
+                          ({c.change_pct > 0 ? '+' : ''}{c.change_pct}%)
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Score Breakdown */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Calculator className="h-4 w-4" />
+                {t('detail.scoreBreakdown')}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScoreBreakdown scoreBreakdown={metrics.score_breakdown} />
+            </CardContent>
+          </Card>
 
           {/* Walk Score / Condition — loading state */}
           {detailLoading && (
@@ -1288,7 +1314,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                             year: f.year,
                             forecast: Math.round(f.projected_rent),
                             forecastLower: Math.round(f.lower_bound),
-                            forecastUpper: Math.round(f.upper_bound),
+                            forecastBand: Math.round(f.upper_bound) - Math.round(f.lower_bound),
                           }));
                           const talData = (rentTrend.tal_forecasts || []).map(f => ({
                             year: f.year,
@@ -1297,7 +1323,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                           // Bridge: last history point starts the forecast lines
                           const lastHistory = historyData[historyData.length - 1];
                           const bridgedForecast = lastHistory
-                            ? [{ year: lastHistory.year, forecast: lastHistory.rent, forecastLower: lastHistory.rent, forecastUpper: lastHistory.rent }, ...forecastData]
+                            ? [{ year: lastHistory.year, forecast: lastHistory.rent, forecastLower: lastHistory.rent, forecastBand: 0 }, ...forecastData]
                             : forecastData;
                           const bridgedTal = lastHistory
                             ? [{ year: lastHistory.year, tal: lastHistory.rent }, ...talData]
@@ -1351,26 +1377,28 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                                   color: 'var(--popover-foreground)',
                                 }}
                                 formatter={(value, name) => {
+                                  if (name === 'forecastLower' || name === 'forecastBand') return ['', ''];
                                   const label = name === 'rent' ? t('detail.avgRentTooltip') : name === 'forecast' ? t('detail.forecastTooltip') : name === 'tal' ? t('detail.talTooltip') : String(name);
                                   return [`$${value}/${t('common.perMonth')}`, label];
                                 }}
                                 labelFormatter={(label) => `${label}`}
                               />
-                              {/* Forecast confidence band */}
+                              {/* Forecast confidence band (stacked: invisible lower + visible band) */}
                               <Area
                                 type="monotone"
-                                dataKey="forecastUpper"
+                                dataKey="forecastLower"
+                                stackId="band"
                                 stroke="none"
-                                fill="var(--chart-1)"
-                                fillOpacity={0.1}
+                                fill="transparent"
                                 connectNulls={false}
                               />
                               <Area
                                 type="monotone"
-                                dataKey="forecastLower"
+                                dataKey="forecastBand"
+                                stackId="band"
                                 stroke="none"
-                                fill="var(--background)"
-                                fillOpacity={1}
+                                fill="var(--chart-1)"
+                                fillOpacity={0.12}
                                 connectNulls={false}
                               />
                               {/* Historical rent */}
