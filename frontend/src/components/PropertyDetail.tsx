@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock, Heart, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { ExternalLink, MapPin, Home, DollarSign, TrendingUp, TrendingDown, Calculator, Landmark, PiggyBank, ArrowUpRight, ArrowDownRight, Plus, Wrench, Loader2, Footprints, Bus, Bike, Sparkles, AlertTriangle, BarChart3, Minus, Users, Shield, Hammer, Clock, Heart, ChevronDown, ArrowUpDown, Building } from 'lucide-react';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -510,62 +510,62 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-muted-foreground">{t('detail.downPayment')}</label>
-                    <div className="flex rounded-md border overflow-hidden">
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant={downPaymentMode === 'pct' ? 'default' : 'ghost'}
-                        className="rounded-none h-5 px-1.5 text-[10px]"
-                        onClick={() => {
-                          if (downPaymentMode === 'dollar' && listing.price > 0) {
-                            const pct = ((parseFloat(downPaymentValue) || 0) / listing.price * 100).toFixed(1);
-                            setDownPaymentValue(pct);
-                          }
-                          setDownPaymentMode('pct');
-                        }}
-                      >
-                        %
-                      </Button>
-                      <Button
-                        type="button"
-                        size="xs"
-                        variant={downPaymentMode === 'dollar' ? 'default' : 'ghost'}
-                        className="rounded-none h-5 px-1.5 text-[10px]"
-                        onClick={() => {
-                          if (downPaymentMode === 'pct' && listing.price > 0) {
-                            const dollars = Math.round(listing.price * (parseFloat(downPaymentValue) || 20) / 100);
-                            setDownPaymentValue(String(dollars));
-                          }
-                          setDownPaymentMode('dollar');
-                        }}
-                      >
-                        $
-                      </Button>
-                    </div>
+              {/* Down payment: input + %/$ toggle side by side */}
+              <div>
+                <label className="text-xs text-muted-foreground">{t('detail.downPayment')}</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex rounded-md border overflow-hidden shrink-0">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={downPaymentMode === 'pct' ? 'default' : 'ghost'}
+                      className="rounded-none h-9 px-3 text-xs min-w-[36px]"
+                      onClick={() => {
+                        if (downPaymentMode === 'dollar' && listing.price > 0) {
+                          const pct = ((parseFloat(downPaymentValue) || 0) / listing.price * 100).toFixed(1);
+                          setDownPaymentValue(pct);
+                        }
+                        setDownPaymentMode('pct');
+                      }}
+                    >
+                      %
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={downPaymentMode === 'dollar' ? 'default' : 'ghost'}
+                      className="rounded-none h-9 px-3 text-xs min-w-[36px]"
+                      onClick={() => {
+                        if (downPaymentMode === 'pct' && listing.price > 0) {
+                          const dollars = Math.round(listing.price * (parseFloat(downPaymentValue) || 20) / 100);
+                          setDownPaymentValue(String(dollars));
+                        }
+                        setDownPaymentMode('dollar');
+                      }}
+                    >
+                      $
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-1 mt-1">
-                    <Input
-                      type="number"
-                      min={downPaymentMode === 'pct' ? '5' : '0'}
-                      max={downPaymentMode === 'pct' ? '100' : undefined}
-                      step={downPaymentMode === 'pct' ? '1' : '1000'}
-                      value={downPaymentValue}
-                      onChange={(e) => setDownPaymentValue(e.target.value)}
-                      className="h-8 text-sm w-full"
-                    />
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      = {downPaymentMode === 'pct'
-                        ? formatPrice(downPayment, locale)
-                        : `${(downPaymentPct * 100).toFixed(1)}%`}
-                    </span>
-                  </div>
+                  <Input
+                    type="number"
+                    min={downPaymentMode === 'pct' ? '5' : '0'}
+                    max={downPaymentMode === 'pct' ? '100' : undefined}
+                    step={downPaymentMode === 'pct' ? '1' : '1000'}
+                    value={downPaymentValue}
+                    onChange={(e) => setDownPaymentValue(e.target.value)}
+                    className="h-9 text-sm flex-1"
+                  />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    = {downPaymentMode === 'pct'
+                      ? formatPrice(downPayment, locale)
+                      : `${(downPaymentPct * 100).toFixed(1)}%`}
+                  </span>
                 </div>
+              </div>
+              {/* Rate + Amortization side by side */}
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-muted-foreground">{t('detail.interestRate')} (%)</label>
+                  <label className="text-xs text-muted-foreground">{t('detail.interestRate')}</label>
                   <div className="flex items-center gap-1 mt-1">
                     <Input
                       type="number"
@@ -574,7 +574,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       step="0.1"
                       value={interestRateInput}
                       onChange={(e) => setInterestRateInput(e.target.value)}
-                      className="h-8 text-sm w-full"
+                      className="h-9 text-sm w-full"
                     />
                     <span className="text-sm text-muted-foreground">%</span>
                   </div>
@@ -589,7 +589,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       step="1"
                       value={amortizationInput}
                       onChange={(e) => setAmortizationInput(e.target.value)}
-                      className="h-8 text-sm w-full"
+                      className="h-9 text-sm w-full"
                     />
                     <span className="text-xs text-muted-foreground">{t('detail.years')}</span>
                   </div>
@@ -1369,19 +1369,27 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                                 domain={['auto', 'auto']}
                               />
                               <Tooltip
-                                contentStyle={{
-                                  fontSize: 12,
-                                  borderRadius: 8,
-                                  border: '1px solid var(--border)',
-                                  background: 'var(--popover)',
-                                  color: 'var(--popover-foreground)',
+                                content={({ active, payload, label }) => {
+                                  if (!active || !payload) return null;
+                                  const hidden = new Set(['forecastLower', 'forecastBand']);
+                                  const items = payload.filter(p => !hidden.has(p.dataKey as string) && p.value != null);
+                                  if (items.length === 0) return null;
+                                  const nameMap: Record<string, string> = {
+                                    rent: t('detail.avgRentTooltip'),
+                                    forecast: t('detail.forecastTooltip'),
+                                    tal: t('detail.talTooltip'),
+                                  };
+                                  return (
+                                    <div style={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)', padding: '8px 12px' }}>
+                                      <div style={{ marginBottom: 4 }}>{label}</div>
+                                      {items.map((item) => (
+                                        <div key={item.dataKey as string} style={{ color: item.color }}>
+                                          {nameMap[item.dataKey as string] || item.dataKey}: ${item.value}/{t('common.perMonth')}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
                                 }}
-                                formatter={(value, name) => {
-                                  if (name === 'forecastLower' || name === 'forecastBand') return ['', ''];
-                                  const label = name === 'rent' ? t('detail.avgRentTooltip') : name === 'forecast' ? t('detail.forecastTooltip') : name === 'tal' ? t('detail.talTooltip') : String(name);
-                                  return [`$${value}/${t('common.perMonth')}`, label];
-                                }}
-                                labelFormatter={(label) => `${label}`}
                               />
                               {/* Forecast confidence band (stacked: invisible lower + visible band) */}
                               <Area
@@ -1608,7 +1616,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
           )}
 
           {/* Safety & Development */}
-          {neighbourhood && (neighbourhood.crime || neighbourhood.permits || neighbourhood.tax) && (
+          {neighbourhood && (neighbourhood.crime || neighbourhood.permits || neighbourhood.housing_starts || neighbourhood.tax) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -1697,6 +1705,25 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                       <div className="text-lg font-bold">{neighbourhood.permits.total_permits.toLocaleString()}</div>
                       <div className="text-[10px] text-muted-foreground">
                         {t('detail.reno', { count: neighbourhood.permits.transform_permits })} | {t('detail.newConstruction', { count: neighbourhood.permits.construction_permits })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Housing starts (CMHC) */}
+                  {neighbourhood.housing_starts && (
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <div className="text-xs text-muted-foreground mb-1">
+                        <Building className="h-3 w-3 inline mr-1" />
+                        {t('detail.housingStarts')}
+                      </div>
+                      <div className="text-lg font-bold">{neighbourhood.housing_starts.total.toLocaleString()}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {t('detail.startsBreakdown', {
+                          single: neighbourhood.housing_starts.single,
+                          semi: neighbourhood.housing_starts.semi,
+                          row: neighbourhood.housing_starts.row,
+                          apartment: neighbourhood.housing_starts.apartment
+                        })}
                       </div>
                     </div>
                   )}
