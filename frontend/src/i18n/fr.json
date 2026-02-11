@@ -136,6 +136,10 @@
   "search.filterPriceDrops": "Baisses de prix",
   "search.filterStale": "Périmé",
   "search.filterRemoved": "Retiré",
+  "search.tableView": "Tableau",
+  "search.mapView": "Carte",
+  "search.viewDetails": "Voir les détails",
+  "search.noGeocodedListings": "Aucune propriété géocodée à afficher sur la carte",
 
   "filters.region": "Région",
   "filters.minPrice": "Prix minimum",

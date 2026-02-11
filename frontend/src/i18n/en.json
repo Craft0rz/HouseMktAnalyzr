@@ -136,6 +136,10 @@
   "search.filterPriceDrops": "Price Drops",
   "search.filterStale": "Stale",
   "search.filterRemoved": "Removed",
+  "search.tableView": "Table",
+  "search.mapView": "Map",
+  "search.viewDetails": "View Details",
+  "search.noGeocodedListings": "No geocoded listings to display on map",
 
   "filters.region": "Region",
   "filters.minPrice": "Min Price",

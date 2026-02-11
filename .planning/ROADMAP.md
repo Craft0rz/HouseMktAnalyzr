@@ -119,9 +119,15 @@ Modern frontend with React/Next.js and FastAPI backend complete.
 - [x] **Walk Score in scrape cycle** — Enriches listings during background scrape (50/cycle, 3s delay)
 - [x] **Price drop tracking** — Records price history for alert notifications
 
+### Phase 8: Map View
+**Goal**: Add interactive map view to search page with score-colored property markers
+**Depends on**: v3.0 (geocoded coordinates already available)
+
+Plans:
+- [x] 08-01: Install Leaflet, create PropertyMap component, add Table/Map toggle to search page
+
 ### Next Steps
 - [ ] **Custom domain + Cloudflare** — Register domain, set up Cloudflare DNS proxy for CDN/DDoS protection
 - [ ] **Walk Score in list view** — Display scores as columns in the property table
-- [ ] **Map view** — Interactive map with property pins using geocoded coordinates
 - [ ] **Filtering by Walk Score** — Filter listings by min walk/transit/bike score
 - [ ] **Email delivery verification** — End-to-end test of alert email flow

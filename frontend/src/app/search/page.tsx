@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Search, Archive } from 'lucide-react';
+import { Loader2, Search, Archive, List, Map } from 'lucide-react';
 import { SearchFilters, type SearchFilters as SearchFiltersType } from '@/components/SearchFilters';
 import { PropertyTable, type StatusFilter } from '@/components/PropertyTable';
 import { PropertyDetail } from '@/components/PropertyDetail';
@@ -15,6 +16,11 @@ import { analysisApi, propertiesApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice } from '@/lib/formatters';
 import type { PropertyWithMetrics, BatchAnalysisResponse, RemovedListing } from '@/lib/types';
+
+const PropertyMap = dynamic(
+  () => import('@/components/PropertyMap').then((m) => m.PropertyMap),
+  { ssr: false },
+);
 
 export default function SearchPage() {
   const { t, locale } = useTranslation();
@@ -32,6 +38,7 @@ export default function SearchPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [mlsNumber, setMlsNumber] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
   const [removedListings, setRemovedListings] = useState<RemovedListing[]>([]);
   const [showRemoved, setShowRemoved] = useState(false);
 
@@ -183,27 +190,58 @@ export default function SearchPage() {
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-1">
-              {STATUS_FILTERS.map((f) => (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                {STATUS_FILTERS.map((f) => (
+                  <Button
+                    key={f.value}
+                    variant={statusFilter === f.value ? 'default' : 'outline'}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setStatusFilter(f.value)}
+                  >
+                    {f.label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-1 border-l pl-3">
                 <Button
-                  key={f.value}
-                  variant={statusFilter === f.value ? 'default' : 'outline'}
+                  variant={viewMode === 'table' ? 'default' : 'outline'}
                   size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setStatusFilter(f.value)}
+                  className="h-7 px-2"
+                  onClick={() => setViewMode('table')}
+                  title={t('search.tableView')}
                 >
-                  {f.label}
+                  <List className="h-4 w-4" />
+                  <span className="ml-1 text-xs hidden sm:inline">{t('search.tableView')}</span>
                 </Button>
-              ))}
+                <Button
+                  variant={viewMode === 'map' ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 px-2"
+                  onClick={() => setViewMode('map')}
+                  title={t('search.mapView')}
+                >
+                  <Map className="h-4 w-4" />
+                  <span className="ml-1 text-xs hidden sm:inline">{t('search.mapView')}</span>
+                </Button>
+              </div>
             </div>
           </div>
 
-          <PropertyTable
-            data={results.results}
-            onRowClick={handleRowClick}
-            isLoading={searchMutation.isPending}
-            statusFilter={statusFilter}
-          />
+          {viewMode === 'table' ? (
+            <PropertyTable
+              data={results.results}
+              onRowClick={handleRowClick}
+              isLoading={searchMutation.isPending}
+              statusFilter={statusFilter}
+            />
+          ) : (
+            <PropertyMap
+              data={results.results}
+              onMarkerClick={handleRowClick}
+            />
+          )}
         </>
       )}
 
