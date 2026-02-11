@@ -328,7 +328,7 @@ async def revalidate_geocoding(
     bounds and kicks off background re-geocoding via Nominatim.
     Returns immediately with the count of listings queued.
     """
-    listings = await get_listings_with_bad_coordinates(limit=200)
+    listings = await get_listings_with_bad_coordinates()
     if not listings:
         return {"status": "ok", "message": "All listings have valid coordinates", "total_queued": 0}
 
@@ -342,41 +342,50 @@ async def revalidate_geocoding(
 
 
 async def _run_geocoding_revalidation(listings: list[dict]):
-    """Background task: re-geocode a batch of listings."""
+    """Background task: re-geocode a batch of listings.
+
+    On success: updates lat/lng in JSONB data.
+    On failure: stamps geocode_failed_at so the listing is skipped next time.
+    """
     from housemktanalyzr.enrichment.walkscore import geocode_address
 
     import httpx
 
     fixed = 0
     failed = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
     headers = {"User-Agent": "HouseMktAnalyzr/1.0"}
 
     async with httpx.AsyncClient(timeout=15.0, headers=headers) as client:
         for item in listings:
             try:
                 geo = await geocode_address(item["address"], item["city"], client)
-                if geo:
-                    lat, lon, postal_code = geo
-                    pool = get_pool()
-                    async with pool.acquire() as conn:
-                        row = await conn.fetchrow(
-                            "SELECT data FROM properties WHERE id = $1", item["id"]
-                        )
-                        if row:
-                            data = json.loads(row["data"])
+                pool = get_pool()
+                async with pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT data FROM properties WHERE id = $1", item["id"]
+                    )
+                    if row:
+                        data = json.loads(row["data"])
+                        if geo:
+                            lat, lon, postal_code = geo
                             data["latitude"] = lat
                             data["longitude"] = lon
                             if postal_code and not data.get("postal_code"):
                                 data["postal_code"] = postal_code
-                            await conn.execute(
-                                "UPDATE properties SET data = $1::jsonb WHERE id = $2",
-                                json.dumps(data), item["id"],
-                            )
-                    fixed += 1
-                    logger.info(f"Re-geocoded {item['id']}: ({lat}, {lon})")
-                else:
-                    failed += 1
-                    logger.warning(f"Re-geocoding failed for {item['id']}: {item['address']}, {item['city']}")
+                            # Clear any previous failure marker
+                            data.pop("geocode_failed_at", None)
+                            fixed += 1
+                            logger.info(f"Re-geocoded {item['id']}: ({lat}, {lon})")
+                        else:
+                            # Mark as failed so we don't retry forever
+                            data["geocode_failed_at"] = now_iso
+                            failed += 1
+                            logger.warning(f"Re-geocoding failed for {item['id']}: {item['address']}, {item['city']}")
+                        await conn.execute(
+                            "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+                            json.dumps(data), item["id"],
+                        )
             except Exception as e:
                 failed += 1
                 logger.warning(f"Re-geocoding error for {item['id']}: {e}")

@@ -632,10 +632,11 @@ async def update_walk_scores(
     return True
 
 
-async def get_listings_with_bad_coordinates(limit: int = 200) -> list[dict]:
+async def get_listings_with_bad_coordinates() -> list[dict]:
     """Get active listings with missing or out-of-Quebec coordinates.
 
     Returns listings where lat/lng is null, zero, or outside Quebec bounds.
+    Skips listings already marked with geocode_failed_at (already attempted).
     Quebec bounds: lat 44.0–63.0, lng -80.0–-56.0.
     """
     pool = get_pool()
@@ -647,6 +648,7 @@ async def get_listings_with_bad_coordinates(limit: int = 200) -> list[dict]:
             SELECT id, data FROM properties
             WHERE expires_at > $1
               AND status = 'active'
+              AND (data->>'geocode_failed_at') IS NULL
               AND (
                 (data->>'latitude') IS NULL
                 OR (data->>'longitude') IS NULL
@@ -658,9 +660,8 @@ async def get_listings_with_bad_coordinates(limit: int = 200) -> list[dict]:
                 )
               )
             ORDER BY fetched_at DESC
-            LIMIT $2
             """,
-            now, limit,
+            now,
         )
 
     results = []
@@ -878,6 +879,70 @@ async def update_condition_score(
         data = json.loads(row["data"])
         data["condition_score"] = condition_score
         data["condition_details"] = condition_details
+
+        await conn.execute(
+            "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+            json.dumps(data), listing_id,
+        )
+    return True
+
+
+async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
+    """Get HOUSE listings with coordinates but no geo enrichment data.
+
+    Returns list of dicts with id, latitude, longitude for geo enrichment.
+    Only returns listings where property_type is HOUSE, latitude/longitude
+    are present, and geo_enrichment key is absent from JSONB data.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, data FROM properties
+            WHERE expires_at > $1
+              AND property_type = 'HOUSE'
+              AND (data->>'latitude') IS NOT NULL
+              AND (data->>'longitude') IS NOT NULL
+              AND (data->'geo_enrichment') IS NULL
+            ORDER BY fetched_at DESC
+            LIMIT $2
+            """,
+            now, limit,
+        )
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        lat = data.get("latitude")
+        lon = data.get("longitude")
+        if lat is not None and lon is not None:
+            results.append({
+                "id": row["id"],
+                "latitude": float(lat),
+                "longitude": float(lon),
+            })
+    return results
+
+
+async def update_geo_enrichment(listing_id: str, geo_data: dict) -> bool:
+    """Store geo enrichment data in a listing's JSONB data.
+
+    Merges the geo_data dict into the listing's data under the
+    'geo_enrichment' key.
+    """
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT data FROM properties WHERE id = $1", listing_id
+        )
+        if not row:
+            return False
+
+        data = json.loads(row["data"])
+        data["geo_enrichment"] = geo_data
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",
