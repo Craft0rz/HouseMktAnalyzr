@@ -903,24 +903,24 @@ async def family_search(
             "rent_cagr": None, "median_household_income": None,
         }
 
-        # Batch-fetch geo data for all houses in parallel (semaphore-limited)
-        geo_data_list = await asyncio.gather(
-            *[_fetch_geo_data(listing) for listing in house_listings]
-        )
-
-        # Score each house
+        # Read pre-enriched geo data inline — no live API calls during search.
+        # The background enrichment task populates raw_data.geo_enrichment;
+        # search only reads what's already cached.
         response_results = []
-        for listing, geo_data in zip(house_listings, geo_data_list):
+        for listing in house_listings:
             try:
+                raw = listing.raw_data or {}
+                geo = raw.get("geo_enrichment") or {}
+
                 key = (listing.city, listing.postal_code)
                 location_data = location_data_map.get(key, empty_location)
 
                 metrics = family_scorer.score_property(
                     listing=listing,
                     safety_score=location_data.get("safety_score"),
-                    school_distance_m=geo_data.get("school_distance_m"),
-                    park_count_1km=geo_data.get("park_count_1km"),
-                    flood_zone=geo_data.get("flood_zone"),
+                    school_distance_m=geo.get("nearest_elementary_m"),
+                    park_count_1km=geo.get("park_count_1km"),
+                    flood_zone=geo.get("flood_zone"),
                 )
                 response_results.append(
                     HouseWithScore(listing=listing, family_metrics=metrics)
