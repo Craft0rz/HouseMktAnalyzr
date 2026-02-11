@@ -2,9 +2,11 @@ frontend/
 tests/
 data/
 .git/
+.planning/
 *.md
 __pycache__/
 *.pyc
 .env
 .venv/
 node_modules/
+nul
