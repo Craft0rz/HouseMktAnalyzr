@@ -167,7 +167,8 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
   const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
-  const [downPaymentPctInput, setDownPaymentPctInput] = useState<string>('20');
+  const [downPaymentValue, setDownPaymentValue] = useState<string>('20');
+  const [downPaymentMode, setDownPaymentMode] = useState<'pct' | 'dollar'>('pct');
   const [interestRateInput, setInterestRateInput] = useState<string>('5');
 
   const intlLocale = locale === 'fr' ? 'fr-CA' : 'en-CA';
@@ -272,7 +273,13 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
   // Calculate mortgage estimates (user-configurable down payment & rate, 30 years)
   // Uses Canadian semi-annual compounding to match backend calculator
-  const downPaymentPct = Math.max(0.05, Math.min(1, (parseFloat(downPaymentPctInput) || 20) / 100));
+  const downPaymentPct = Math.max(0.05, Math.min(1,
+    downPaymentMode === 'pct'
+      ? (parseFloat(downPaymentValue) || 20) / 100
+      : listing.price > 0
+        ? (parseFloat(downPaymentValue) || 0) / listing.price
+        : 0.2
+  ));
   const interestRate = Math.max(0.001, Math.min(0.25, (parseFloat(interestRateInput) || 5) / 100));
   const amortizationYears = 30;
   const downPayment = listing.price * downPaymentPct;
@@ -306,6 +313,31 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
     ? 0 // taxes are bundled in "operating" when using actual Centris data
     : (monthlyExpenses as any).taxes ?? 0;
   const grossCashFlow = monthlyIncome - monthlyMortgage - monthlyTaxes;
+
+  // Rent upside analysis — "at market" KPIs when rent is 5%+ below CMHC zone average
+  const showRentUpside = metrics.rent_source === 'declared'
+    && metrics.rent_vs_market_pct != null
+    && metrics.rent_vs_market_pct < -5
+    && metrics.cmhc_estimated_rent != null;
+  let marketRent = 0, marketGrossCashFlow = 0, marketNetCashFlow = 0, marketCapRate = 0, marketCoCReturn = 0;
+  let currentCapRateCalc = 0, currentCoCReturn = 0;
+  if (showRentUpside) {
+    marketRent = metrics.cmhc_estimated_rent! * listing.units;
+    const mktMonthlyTaxes = hasActualExpenses ? 0 : (listing.annual_taxes || listing.price * 0.012) / 12;
+    const mktTotalExpenses = hasActualExpenses
+      ? monthlyMortgage + listing.total_expenses! / 12
+      : monthlyMortgage + mktMonthlyTaxes
+        + listing.price * 0.005 / 12
+        + marketRent * 0.10 + marketRent * 0.03 + marketRent * 0.05 + marketRent * 0.05;
+    marketGrossCashFlow = marketRent - monthlyMortgage - mktMonthlyTaxes;
+    marketNetCashFlow = marketRent - mktTotalExpenses;
+    const mktOpEx = mktTotalExpenses - monthlyMortgage;
+    marketCapRate = ((marketRent - mktOpEx) * 12) / listing.price * 100;
+    marketCoCReturn = ((marketNetCashFlow * 12) / downPayment) * 100;
+    const curOpEx = totalExpenses - monthlyMortgage;
+    currentCapRateCalc = ((monthlyIncome - curOpEx) * 12) / listing.price * 100;
+    currentCoCReturn = ((netCashFlow * 12) / downPayment) * 100;
+  }
 
   const isInComparison = selectedProperties.some(p => p.listing.id === listing.id);
 
@@ -620,27 +652,27 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                         <span className="text-muted-foreground">
                           {listing.annual_taxes ? t('detail.propertyTaxes') : t('detail.propertyTaxesEst')}
                         </span>
-                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).taxes, locale)}</span>
+                        <span className={listing.annual_taxes ? 'text-red-600' : 'text-orange-500'}>-{formatPrice((monthlyExpenses as any).taxes, locale)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('detail.insurance')}</span>
-                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).insurance, locale)}</span>
+                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).insurance, locale)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('detail.maintenance')}</span>
-                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).maintenance, locale)}</span>
+                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).maintenance, locale)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('detail.vacancy')}</span>
-                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).vacancy, locale)}</span>
+                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).vacancy, locale)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('detail.management')}</span>
-                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).management, locale)}</span>
+                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).management, locale)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{t('detail.capexReserve')}</span>
-                        <span className="text-red-600">-{formatPrice((monthlyExpenses as any).capex, locale)}</span>
+                        <span className="text-orange-500">-{formatPrice((monthlyExpenses as any).capex, locale)}</span>
                       </div>
                     </>
                   )}
@@ -655,7 +687,7 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
               {/* Gross Cash Flow — only listing-specific costs */}
               {!hasActualExpenses && (
-                <div className="flex justify-between items-center p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
+                <div className="flex justify-between items-center p-3 rounded-lg">
                   <div>
                     <span className="font-semibold text-sm">{t('detail.grossMonthlyCashFlow')}</span>
                     <div className="text-[10px] text-muted-foreground">{t('detail.grossCashFlowHint')}</div>
@@ -681,6 +713,69 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </CardContent>
           </Card>
 
+          {/* Rent Upside Analysis — appears when rent is significantly below market */}
+          {showRentUpside && (
+            <Card className="border-green-200 dark:border-green-900">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-green-600" />
+                  {t('detail.rentUpsideTitle')}
+                </CardTitle>
+                <p className="text-[11px] text-muted-foreground">
+                  {t('detail.rentUpsideDesc', { pct: Math.abs(metrics.rent_vs_market_pct!).toFixed(0) })}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-hidden rounded-lg border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        <th className="text-left px-3 py-2 font-medium"></th>
+                        <th className="text-right px-3 py-2 font-medium">{t('detail.rentUpsideCurrent')}</th>
+                        <th className="text-right px-3 py-2 font-medium text-green-600">{t('detail.rentUpsideAtMarket')}</th>
+                        <th className="text-right px-3 py-2 font-medium text-green-600">{t('detail.rentUpsideDelta')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.rentalIncome')}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(monthlyIncome, locale)}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(marketRent, locale)}</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{formatPrice(marketRent - monthlyIncome, locale)}</td>
+                      </tr>
+                      {!hasActualExpenses && (
+                        <tr>
+                          <td className="px-3 py-2 text-muted-foreground">{t('detail.grossMonthlyCashFlow')}</td>
+                          <td className="px-3 py-2 text-right">{formatPrice(grossCashFlow, locale)}</td>
+                          <td className="px-3 py-2 text-right">{formatPrice(marketGrossCashFlow, locale)}</td>
+                          <td className="px-3 py-2 text-right text-green-600">+{formatPrice(marketGrossCashFlow - grossCashFlow, locale)}</td>
+                        </tr>
+                      )}
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.netMonthlyCashFlow')}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(netCashFlow, locale)}</td>
+                        <td className="px-3 py-2 text-right">{formatPrice(marketNetCashFlow, locale)}</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{formatPrice(marketNetCashFlow - netCashFlow, locale)}</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.capRate')}</td>
+                        <td className="px-3 py-2 text-right">{currentCapRateCalc.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right">{marketCapRate.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{(marketCapRate - currentCapRateCalc).toFixed(1)}%</td>
+                      </tr>
+                      <tr>
+                        <td className="px-3 py-2 text-muted-foreground">{t('detail.rentUpsideCoCReturn')}</td>
+                        <td className="px-3 py-2 text-right">{currentCoCReturn.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right">{marketCoCReturn.toFixed(1)}%</td>
+                        <td className="px-3 py-2 text-right text-green-600">+{(marketCoCReturn - currentCoCReturn).toFixed(1)}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Mortgage Details */}
           <Card>
             <CardHeader className="pb-3">
@@ -692,18 +787,56 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             <CardContent className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-muted-foreground">{t('detail.downPayment')} (%)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-muted-foreground">{t('detail.downPayment')}</label>
+                    <div className="flex rounded-md border overflow-hidden">
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant={downPaymentMode === 'pct' ? 'default' : 'ghost'}
+                        className="rounded-none h-5 px-1.5 text-[10px]"
+                        onClick={() => {
+                          if (downPaymentMode === 'dollar' && listing.price > 0) {
+                            const pct = ((parseFloat(downPaymentValue) || 0) / listing.price * 100).toFixed(1);
+                            setDownPaymentValue(pct);
+                          }
+                          setDownPaymentMode('pct');
+                        }}
+                      >
+                        %
+                      </Button>
+                      <Button
+                        type="button"
+                        size="xs"
+                        variant={downPaymentMode === 'dollar' ? 'default' : 'ghost'}
+                        className="rounded-none h-5 px-1.5 text-[10px]"
+                        onClick={() => {
+                          if (downPaymentMode === 'pct' && listing.price > 0) {
+                            const dollars = Math.round(listing.price * (parseFloat(downPaymentValue) || 20) / 100);
+                            setDownPaymentValue(String(dollars));
+                          }
+                          setDownPaymentMode('dollar');
+                        }}
+                      >
+                        $
+                      </Button>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-1 mt-1">
                     <Input
                       type="number"
-                      min="5"
-                      max="100"
-                      step="1"
-                      value={downPaymentPctInput}
-                      onChange={(e) => setDownPaymentPctInput(e.target.value)}
-                      className="h-8 text-sm w-20"
+                      min={downPaymentMode === 'pct' ? '5' : '0'}
+                      max={downPaymentMode === 'pct' ? '100' : undefined}
+                      step={downPaymentMode === 'pct' ? '1' : '1000'}
+                      value={downPaymentValue}
+                      onChange={(e) => setDownPaymentValue(e.target.value)}
+                      className="h-8 text-sm w-24"
                     />
-                    <span className="text-sm text-muted-foreground">= {formatPrice(downPayment, locale)}</span>
+                    <span className="text-sm text-muted-foreground">
+                      = {downPaymentMode === 'pct'
+                        ? formatPrice(downPayment, locale)
+                        : `${(downPaymentPct * 100).toFixed(1)}%`}
+                    </span>
                   </div>
                 </div>
                 <div>

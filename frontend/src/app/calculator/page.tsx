@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Calculator, DollarSign, Percent, Home, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { LoadingCard } from '@/components/LoadingCard';
@@ -16,14 +17,19 @@ export default function CalculatorPage() {
   const [price, setPrice] = useState<string>('500000');
   const [monthlyRent, setMonthlyRent] = useState<string>('3500');
   const [units, setUnits] = useState<string>('3');
-  const [downPaymentPct, setDownPaymentPct] = useState<string>('20');
+  const [downPaymentValue, setDownPaymentValue] = useState<string>('20');
+  const [downPaymentMode, setDownPaymentMode] = useState<'pct' | 'dollar'>('pct');
   const [interestRate, setInterestRate] = useState<string>('5');
   const [expenseRatio, setExpenseRatio] = useState<string>('45');
 
   const priceNum = parseInt(price) || 0;
   const rentNum = parseInt(monthlyRent) || 0;
   const unitsNum = parseInt(units) || 1;
-  const downPct = (parseFloat(downPaymentPct) || 20) / 100;
+  const downPct = downPaymentMode === 'pct'
+    ? (parseFloat(downPaymentValue) || 20) / 100
+    : priceNum > 0
+      ? (parseFloat(downPaymentValue) || 0) / priceNum
+      : 0.2;
   const intRate = (parseFloat(interestRate) || 5) / 100;
   const expRatio = (parseFloat(expenseRatio) || 45) / 100;
 
@@ -107,15 +113,50 @@ export default function CalculatorPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="calc-down-payment" className="text-sm font-medium">{t('calculator.downPayment')}</label>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="calc-down-payment" className="text-sm font-medium">{t('calculator.downPayment')}</label>
+                  <div className="flex rounded-md border overflow-hidden">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={downPaymentMode === 'pct' ? 'default' : 'ghost'}
+                      className="rounded-none"
+                      onClick={() => {
+                        if (downPaymentMode === 'dollar' && priceNum > 0) {
+                          const pct = ((parseFloat(downPaymentValue) || 0) / priceNum * 100).toFixed(1);
+                          setDownPaymentValue(pct);
+                        }
+                        setDownPaymentMode('pct');
+                      }}
+                    >
+                      %
+                    </Button>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant={downPaymentMode === 'dollar' ? 'default' : 'ghost'}
+                      className="rounded-none"
+                      onClick={() => {
+                        if (downPaymentMode === 'pct' && priceNum > 0) {
+                          const dollars = Math.round(priceNum * (parseFloat(downPaymentValue) || 20) / 100);
+                          setDownPaymentValue(String(dollars));
+                        }
+                        setDownPaymentMode('dollar');
+                      }}
+                    >
+                      $
+                    </Button>
+                  </div>
+                </div>
                 <Input
                   id="calc-down-payment"
                   type="number"
-                  value={downPaymentPct}
-                  onChange={(e) => setDownPaymentPct(e.target.value)}
-                  placeholder="20"
-                  min="5"
-                  max="100"
+                  value={downPaymentValue}
+                  onChange={(e) => setDownPaymentValue(e.target.value)}
+                  placeholder={downPaymentMode === 'pct' ? '20' : '100000'}
+                  min={downPaymentMode === 'pct' ? '5' : '0'}
+                  max={downPaymentMode === 'pct' ? '100' : undefined}
+                  step={downPaymentMode === 'pct' ? '1' : '1000'}
                 />
               </div>
               <div className="space-y-2">
