@@ -173,49 +173,53 @@ function AdminDashboard() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Button
-              variant="outline"
-              className="h-auto py-3 flex flex-col items-center gap-1.5"
+            <button
+              className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               disabled={scrapeMutation.isPending}
               onClick={() => scrapeMutation.mutate()}
             >
-              {scrapeMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
-              <span className="text-sm font-medium">{t('admin.triggerScrape')}</span>
+              <div className="rounded-full bg-primary/10 p-2">
+                {scrapeMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Play className="h-5 w-5 text-primary" />}
+              </div>
+              <span className="text-sm font-semibold">{t('admin.triggerScrape')}</span>
               <span className="text-xs text-muted-foreground">{t('admin.triggerScrapeDesc')}</span>
-            </Button>
+            </button>
 
-            <Button
-              variant="outline"
-              className="h-auto py-3 flex flex-col items-center gap-1.5"
+            <button
+              className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               disabled={revalidateListingsMutation.isPending}
               onClick={() => revalidateListingsMutation.mutate()}
             >
-              {revalidateListingsMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
-              <span className="text-sm font-medium">{t('admin.revalidateListings')}</span>
+              <div className="rounded-full bg-primary/10 p-2">
+                {revalidateListingsMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <RefreshCw className="h-5 w-5 text-primary" />}
+              </div>
+              <span className="text-sm font-semibold">{t('admin.revalidateListings')}</span>
               <span className="text-xs text-muted-foreground">{t('admin.revalidateListingsDesc')}</span>
-            </Button>
+            </button>
 
-            <Button
-              variant="outline"
-              className="h-auto py-3 flex flex-col items-center gap-1.5"
+            <button
+              className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               disabled={revalidateGeoMutation.isPending}
               onClick={() => revalidateGeoMutation.mutate()}
             >
-              {revalidateGeoMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <MapPinCheck className="h-5 w-5" />}
-              <span className="text-sm font-medium">{t('admin.revalidateGeo')}</span>
+              <div className="rounded-full bg-primary/10 p-2">
+                {revalidateGeoMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <MapPinCheck className="h-5 w-5 text-primary" />}
+              </div>
+              <span className="text-sm font-semibold">{t('admin.revalidateGeo')}</span>
               <span className="text-xs text-muted-foreground">{t('admin.revalidateGeoDesc')}</span>
-            </Button>
+            </button>
 
-            <Button
-              variant="outline"
-              className="h-auto py-3 flex flex-col items-center gap-1.5"
+            <button
+              className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               disabled={checkAlertsMutation.isPending}
               onClick={() => checkAlertsMutation.mutate()}
             >
-              {checkAlertsMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" /> : <Bell className="h-5 w-5" />}
-              <span className="text-sm font-medium">{t('admin.checkAlerts')}</span>
+              <div className="rounded-full bg-primary/10 p-2">
+                {checkAlertsMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Bell className="h-5 w-5 text-primary" />}
+              </div>
+              <span className="text-sm font-semibold">{t('admin.checkAlerts')}</span>
               <span className="text-xs text-muted-foreground">{t('admin.checkAlertsDesc')}</span>
-            </Button>
+            </button>
           </div>
         </CardContent>
       </Card>
