@@ -541,10 +541,17 @@ async def get_cached_listings(
     if limit > 0:
         params.append(limit)
 
-    query = (
-        f"SELECT DISTINCT p.data FROM properties p{join_clause}"
-        f" WHERE {where} ORDER BY p.price{limit_clause}"
-    )
+    if price_drops_only:
+        # JOIN may produce duplicates; DISTINCT needs ORDER BY cols in SELECT
+        query = (
+            f"SELECT DISTINCT p.data, p.price FROM properties p{join_clause}"
+            f" WHERE {where} ORDER BY p.price{limit_clause}"
+        )
+    else:
+        query = (
+            f"SELECT p.data FROM properties p"
+            f" WHERE {where} ORDER BY p.price{limit_clause}"
+        )
 
     async with pool.acquire() as conn:
         rows = await conn.fetch(query, *params)
