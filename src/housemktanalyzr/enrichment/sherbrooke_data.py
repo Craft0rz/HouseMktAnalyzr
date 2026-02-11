@@ -359,6 +359,20 @@ class SherbrookeCrimeClient:
         # Fetch CMA-level building permits from StatCan
         permits_cma = await self._fetch_statcan_permits(year)
 
+        # Fetch CMHC housing starts (city-wide, distributed by population)
+        starts_city: dict | None = None
+        try:
+            from .cmhc_starts import CMHCStartsClient
+
+            starts_client = CMHCStartsClient()
+            try:
+                starts_data = await starts_client.get_starts_data()
+                starts_city = starts_data.get("Sherbrooke")
+            finally:
+                await starts_client.close()
+        except Exception:
+            logger.warning("CMHC starts fetch failed (non-blocking)", exc_info=True)
+
         # Build output rows
         rows: list[dict] = []
         for short_name, _rings in polygons:
@@ -411,13 +425,25 @@ class SherbrookeCrimeClient:
                     permits_cma["total_value"] * fraction
                 )
 
+            # Distribute city-wide CMHC housing starts by population
+            if starts_city and _TOTAL_POP:
+                pop = _ARROND_POP_2021.get(short_name, 0)
+                fraction = pop / _TOTAL_POP
+                row["housing_starts"] = round(starts_city["housing_starts"] * fraction)
+                row["starts_single"] = round(starts_city["starts_single"] * fraction)
+                row["starts_semi"] = round(starts_city["starts_semi"] * fraction)
+                row["starts_row"] = round(starts_city["starts_row"] * fraction)
+                row["starts_apartment"] = round(starts_city["starts_apartment"] * fraction)
+
             rows.append(row)
 
         permit_total = sum(r.get("permit_count", 0) for r in rows)
+        starts_total = sum(r.get("housing_starts", 0) for r in rows)
         logger.info(
             f"Sherbrooke: {len(rows)} arrondissements, "
             f"{sum(r['crime_count'] for r in rows)} incidents"
             + (f" + {permit_total} permits" if permits_cma else "")
+            + (f" + {starts_total} starts" if starts_city else "")
             + f" for {year}"
             + (f", tax rate {tax_rate}/100$" if tax_rate else "")
         )

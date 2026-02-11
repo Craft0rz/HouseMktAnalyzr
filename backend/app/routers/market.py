@@ -600,6 +600,14 @@ class PermitStatsResponse(BaseModel):
     total_cost: float
 
 
+class HousingStartsResponse(BaseModel):
+    total: int
+    single: int
+    semi: int
+    row: int
+    apartment: int
+
+
 class TaxRateHistoryPoint(BaseModel):
     year: int
     residential_rate: float
@@ -623,6 +631,7 @@ class NeighbourhoodResponse(BaseModel):
     year: int
     crime: CrimeStatsResponse | None
     permits: PermitStatsResponse | None
+    housing_starts: HousingStartsResponse | None = None
     tax: TaxRateResponse | None
     safety_score: float | None
     gentrification_signal: str | None
@@ -681,6 +690,16 @@ async def get_neighbourhood(
                         transform_permits=_decimal_to_num(stats.get("permit_transform_count")) or 0,
                         demolition_permits=_decimal_to_num(stats.get("permit_demolition_count")) or 0,
                         total_cost=_decimal_to_num(stats.get("permit_total_cost")) or 0,
+                    )
+
+                starts_resp = None
+                if stats.get("housing_starts") is not None:
+                    starts_resp = HousingStartsResponse(
+                        total=_decimal_to_num(stats["housing_starts"]) or 0,
+                        single=_decimal_to_num(stats.get("starts_single")) or 0,
+                        semi=_decimal_to_num(stats.get("starts_semi")) or 0,
+                        row=_decimal_to_num(stats.get("starts_row")) or 0,
+                        apartment=_decimal_to_num(stats.get("starts_apartment")) or 0,
                     )
 
                 tax_resp = None
@@ -744,6 +763,7 @@ async def get_neighbourhood(
                     year=stats["year"],
                     crime=crime_resp,
                     permits=permit_resp,
+                    housing_starts=starts_resp,
                     tax=tax_resp,
                     safety_score=_decimal_to_num(stats.get("safety_score")),
                     gentrification_signal=stats.get("gentrification_signal"),

@@ -977,6 +977,34 @@ class ScraperWorker:
         except Exception:
             logger.exception("Quebec City neighbourhood data refresh failed")
 
+        try:
+            await self._refresh_longueuil_neighbourhood()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Longueuil neighbourhood data refresh failed")
+
+        try:
+            await self._refresh_laval_neighbourhood()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Laval neighbourhood data refresh failed")
+
+        try:
+            await self._refresh_gatineau_neighbourhood()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Gatineau neighbourhood data refresh failed")
+
+        try:
+            await self._refresh_generic_municipalities()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Generic municipality neighbourhood data refresh failed")
+
         self._status["refresh_progress"]["neighbourhood"]["status"] = "done"
 
         # Check for stale hardcoded data that needs manual update.
@@ -1046,6 +1074,90 @@ class ScraperWorker:
                 })
         except Exception:
             logger.debug("Could not check Sherbrooke data staleness", exc_info=True)
+
+        # Longueuil: SPAL crime data (hardcoded, updated manually)
+        try:
+            from housemktanalyzr.enrichment.longueuil_data import (
+                SPAL_CRIME_DATA,
+                _TAX_RATES_FALLBACK as LG_TAX_FALLBACK,
+            )
+            latest_spal = max(SPAL_CRIME_DATA.keys()) if SPAL_CRIME_DATA else 0
+            if latest_spal < current_year - 1:
+                msg = (
+                    f"Longueuil SPAL crime data latest year is {latest_spal}, "
+                    f"expected {current_year - 1}"
+                )
+                logger.warning(f"STALE DATA: {msg}")
+                warnings.append({
+                    "source": "Longueuil crime (SPAL)",
+                    "message": msg,
+                    "action": "Update SPAL_CRIME_DATA in longueuil_data.py from SPAL bilan annuel",
+                })
+            latest_lg_tax = max(LG_TAX_FALLBACK.keys()) if LG_TAX_FALLBACK else 0
+            if latest_lg_tax < current_year:
+                warnings.append({
+                    "source": "Longueuil tax rates (fallback)",
+                    "message": f"Fallback latest year is {latest_lg_tax} (MAMH is automated)",
+                    "action": "Update _TAX_RATES_FALLBACK in longueuil_data.py (low priority)",
+                })
+        except Exception:
+            logger.debug("Could not check Longueuil data staleness", exc_info=True)
+
+        # Laval: SPL crime data (hardcoded, updated manually)
+        try:
+            from housemktanalyzr.enrichment.laval_data import (
+                SPL_CRIME_DATA,
+                _TAX_RATES_FALLBACK as LV_TAX_FALLBACK,
+            )
+            latest_spl = max(SPL_CRIME_DATA.keys()) if SPL_CRIME_DATA else 0
+            if latest_spl < current_year - 1:
+                msg = (
+                    f"Laval SPL crime data latest year is {latest_spl}, "
+                    f"expected {current_year - 1}"
+                )
+                logger.warning(f"STALE DATA: {msg}")
+                warnings.append({
+                    "source": "Laval crime (SPL)",
+                    "message": msg,
+                    "action": "Update SPL_CRIME_DATA in laval_data.py from SPL bilan annuel",
+                })
+            latest_lv_tax = max(LV_TAX_FALLBACK.keys()) if LV_TAX_FALLBACK else 0
+            if latest_lv_tax < current_year:
+                warnings.append({
+                    "source": "Laval tax rates (fallback)",
+                    "message": f"Fallback latest year is {latest_lv_tax} (MAMH is automated)",
+                    "action": "Update _TAX_RATES_FALLBACK in laval_data.py (low priority)",
+                })
+        except Exception:
+            logger.debug("Could not check Laval data staleness", exc_info=True)
+
+        # Gatineau: SPVG crime data (hardcoded, updated manually)
+        try:
+            from housemktanalyzr.enrichment.gatineau_data import (
+                SPVG_CRIME_DATA as GT_CRIME,
+                _TAX_RATES_FALLBACK as GT_TAX_FALLBACK,
+            )
+            latest_spvg = max(GT_CRIME.keys()) if GT_CRIME else 0
+            if latest_spvg < current_year - 1:
+                msg = (
+                    f"Gatineau SPVG crime data latest year is {latest_spvg}, "
+                    f"expected {current_year - 1}"
+                )
+                logger.warning(f"STALE DATA: {msg}")
+                warnings.append({
+                    "source": "Gatineau crime (SPVG)",
+                    "message": msg,
+                    "action": "Update SPVG_CRIME_DATA in gatineau_data.py from SPVG bilan annuel",
+                })
+            latest_gt_tax = max(GT_TAX_FALLBACK.keys()) if GT_TAX_FALLBACK else 0
+            if latest_gt_tax < current_year:
+                warnings.append({
+                    "source": "Gatineau tax rates (fallback)",
+                    "message": f"Fallback latest year is {latest_gt_tax} (MAMH is automated)",
+                    "action": "Update _TAX_RATES_FALLBACK in gatineau_data.py (low priority)",
+                })
+        except Exception:
+            logger.debug("Could not check Gatineau data staleness", exc_info=True)
 
         self._status["data_warnings"] = warnings
         if warnings:
@@ -1152,5 +1264,69 @@ class ScraperWorker:
                 logger.info(f"Quebec City neighbourhood: upserted {count} arrondissement stats")
             else:
                 logger.warning("Quebec City neighbourhood: no results")
+        finally:
+            await client.close()
+
+    async def _refresh_longueuil_neighbourhood(self):
+        """Fetch Longueuil neighbourhood data (SPAL crime + MAMH tax)."""
+        from housemktanalyzr.enrichment.longueuil_data import LongueuilNeighbourhoodClient
+
+        logger.info("Longueuil neighbourhood: fetching crime + tax data")
+        client = LongueuilNeighbourhoodClient()
+        try:
+            rows = await client.get_neighbourhood_rows()
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Longueuil neighbourhood: upserted {count} stats")
+            else:
+                logger.warning("Longueuil neighbourhood: no results")
+        finally:
+            await client.close()
+
+    async def _refresh_laval_neighbourhood(self):
+        """Fetch Laval neighbourhood data (SPL crime + MAMH tax + permits)."""
+        from housemktanalyzr.enrichment.laval_data import LavalNeighbourhoodClient
+
+        logger.info("Laval neighbourhood: fetching crime + tax + permit data")
+        client = LavalNeighbourhoodClient()
+        try:
+            rows = await client.get_neighbourhood_rows()
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Laval neighbourhood: upserted {count} stats")
+            else:
+                logger.warning("Laval neighbourhood: no results")
+        finally:
+            await client.close()
+
+    async def _refresh_gatineau_neighbourhood(self):
+        """Fetch Gatineau neighbourhood data (SPVG crime + MAMH tax)."""
+        from housemktanalyzr.enrichment.gatineau_data import GatineauNeighbourhoodClient
+
+        logger.info("Gatineau neighbourhood: fetching crime + tax data")
+        client = GatineauNeighbourhoodClient()
+        try:
+            rows = await client.get_neighbourhood_rows()
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Gatineau neighbourhood: upserted {count} stats")
+            else:
+                logger.warning("Gatineau neighbourhood: no results")
+        finally:
+            await client.close()
+
+    async def _refresh_generic_municipalities(self):
+        """Fetch MAMH tax rates + StatCan crime for smaller municipalities."""
+        from housemktanalyzr.enrichment.generic_municipality_data import GenericMunicipalityClient
+
+        logger.info("Generic municipalities: fetching MAMH tax rates + StatCan crime")
+        client = GenericMunicipalityClient()
+        try:
+            rows = await client.get_neighbourhood_rows()
+            if rows:
+                count = await upsert_neighbourhood_stats_batch(rows)
+                logger.info(f"Generic municipalities: upserted {count} stats")
+            else:
+                logger.warning("Generic municipalities: no results")
         finally:
             await client.close()

@@ -351,6 +351,14 @@ export interface PermitStats {
   total_cost: number;
 }
 
+export interface HousingStarts {
+  total: number;
+  single: number;
+  semi: number;
+  row: number;
+  apartment: number;
+}
+
 export interface TaxRateHistoryPoint {
   year: number;
   residential_rate: number;
@@ -374,6 +382,7 @@ export interface NeighbourhoodResponse {
   year: number;
   crime: CrimeStats | null;
   permits: PermitStats | null;
+  housing_starts: HousingStarts | null;
   tax: TaxRate | null;
   safety_score: number | null;
   gentrification_signal: string | null;

@@ -488,6 +488,8 @@
   "detail.permits": "Permis",
   "detail.reno": "{count} réno",
   "detail.newConstruction": "{count} neufs",
+  "detail.housingStarts": "Mises en chantier",
+  "detail.startsBreakdown": "{single} indiv. | {semi} jumelé | {row} rangée | {apartment} app.",
   "detail.taxRate": "Taux de taxe : {rate}/100 $ (résidentiel)",
   "detail.taxRate_label": "Taux de taxe résidentiel",
   "detail.estAnnualTax": "Taxe annuelle est. : {amount}",

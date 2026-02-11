@@ -488,6 +488,8 @@
   "detail.permits": "Permits",
   "detail.reno": "{count} reno",
   "detail.newConstruction": "{count} new",
+  "detail.housingStarts": "Housing Starts",
+  "detail.startsBreakdown": "{single} single | {semi} semi | {row} row | {apartment} apt",
   "detail.taxRate": "Tax rate: {rate}/$100 (residential)",
   "detail.taxRate_label": "Residential Tax Rate",
   "detail.estAnnualTax": "Est. annual tax: {amount}",

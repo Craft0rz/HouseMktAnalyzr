@@ -218,6 +218,11 @@ async def _create_tables():
                 permit_construction_count INT,
                 permit_demolition_count INT,
                 permit_total_cost NUMERIC,
+                housing_starts INT,
+                starts_single INT,
+                starts_semi INT,
+                starts_row INT,
+                starts_apartment INT,
                 tax_rate_residential NUMERIC,
                 tax_rate_total NUMERIC,
                 safety_score NUMERIC,
@@ -227,6 +232,13 @@ async def _create_tables():
                 UNIQUE(borough, year)
             )
         """)
+        # Migrate: add housing starts columns if missing
+        for col in ("housing_starts", "starts_single", "starts_semi",
+                     "starts_row", "starts_apartment"):
+            await conn.execute(f"""
+                ALTER TABLE neighbourhood_stats
+                ADD COLUMN IF NOT EXISTS {col} INT
+            """)
 
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS tax_rate_history (
@@ -1218,9 +1230,10 @@ async def upsert_neighbourhood_stats(stats: dict) -> bool:
                 crime_rate_per_1000, crime_change_pct,
                 permit_count, permit_transform_count, permit_construction_count,
                 permit_demolition_count, permit_total_cost,
+                housing_starts, starts_single, starts_semi, starts_row, starts_apartment,
                 tax_rate_residential, tax_rate_total,
                 safety_score, gentrification_signal, source, fetched_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW())
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22, NOW())
             ON CONFLICT (borough, year) DO UPDATE SET
                 crime_count = COALESCE($3, neighbourhood_stats.crime_count),
                 violent_crimes = COALESCE($4, neighbourhood_stats.violent_crimes),
@@ -1232,10 +1245,15 @@ async def upsert_neighbourhood_stats(stats: dict) -> bool:
                 permit_construction_count = COALESCE($10, neighbourhood_stats.permit_construction_count),
                 permit_demolition_count = COALESCE($11, neighbourhood_stats.permit_demolition_count),
                 permit_total_cost = COALESCE($12, neighbourhood_stats.permit_total_cost),
-                tax_rate_residential = COALESCE($13, neighbourhood_stats.tax_rate_residential),
-                tax_rate_total = COALESCE($14, neighbourhood_stats.tax_rate_total),
-                safety_score = COALESCE($15, neighbourhood_stats.safety_score),
-                gentrification_signal = COALESCE($16, neighbourhood_stats.gentrification_signal),
+                housing_starts = COALESCE($13, neighbourhood_stats.housing_starts),
+                starts_single = COALESCE($14, neighbourhood_stats.starts_single),
+                starts_semi = COALESCE($15, neighbourhood_stats.starts_semi),
+                starts_row = COALESCE($16, neighbourhood_stats.starts_row),
+                starts_apartment = COALESCE($17, neighbourhood_stats.starts_apartment),
+                tax_rate_residential = COALESCE($18, neighbourhood_stats.tax_rate_residential),
+                tax_rate_total = COALESCE($19, neighbourhood_stats.tax_rate_total),
+                safety_score = COALESCE($20, neighbourhood_stats.safety_score),
+                gentrification_signal = COALESCE($21, neighbourhood_stats.gentrification_signal),
                 fetched_at = NOW()
             """,
             stats["borough"], stats["year"],
@@ -1245,6 +1263,9 @@ async def upsert_neighbourhood_stats(stats: dict) -> bool:
             stats.get("permit_count"), stats.get("permit_transform_count"),
             stats.get("permit_construction_count"), stats.get("permit_demolition_count"),
             stats.get("permit_total_cost"),
+            stats.get("housing_starts"), stats.get("starts_single"),
+            stats.get("starts_semi"), stats.get("starts_row"),
+            stats.get("starts_apartment"),
             stats.get("tax_rate_residential"), stats.get("tax_rate_total"),
             stats.get("safety_score"), stats.get("gentrification_signal"),
             stats.get("source", "montreal_open_data"),
