@@ -17,10 +17,18 @@ import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice } from '@/lib/formatters';
 import type { PropertyWithMetrics, BatchAnalysisResponse, RemovedListing } from '@/lib/types';
 
-const PropertyMap = dynamic(
-  () => import('@/components/PropertyMap').then((m) => m.PropertyMap),
-  { ssr: false },
-);
+// Extract so the chunk starts downloading on page load, not on first map click
+const mapImport = () => import('@/components/PropertyMap').then((m) => m.PropertyMap);
+const PropertyMap = dynamic(mapImport, {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-[600px] rounded-md border bg-muted/30">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  ),
+});
+// Trigger prefetch immediately so the JS chunk is cached before user clicks Map
+if (typeof window !== 'undefined') mapImport();
 
 export default function SearchPage() {
   const { t, locale } = useTranslation();

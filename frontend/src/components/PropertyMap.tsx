@@ -1,5 +1,6 @@
 'use client';
 
+import 'leaflet/dist/leaflet.css';
 import { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
@@ -17,21 +18,39 @@ interface PropertyMapProps {
 const MONTREAL_CENTER: [number, number] = [45.5017, -73.5673];
 const DEFAULT_ZOOM = 10;
 
-function getMarkerColor(score: number): string {
-  if (score >= 70) return '#22c55e'; // green-500
-  if (score >= 50) return '#eab308'; // yellow-500
-  return '#ef4444'; // red-500
+// Pre-create one icon per color bucket (cached, not per-marker)
+const ICON_GREEN = L.divIcon({
+  className: '',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -14],
+  html: '<div style="width:24px;height:24px;border-radius:50%;background:#22c55e;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+});
+const ICON_YELLOW = L.divIcon({
+  className: '',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -14],
+  html: '<div style="width:24px;height:24px;border-radius:50%;background:#eab308;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+});
+const ICON_RED = L.divIcon({
+  className: '',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -14],
+  html: '<div style="width:24px;height:24px;border-radius:50%;background:#ef4444;border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>',
+});
+
+function getIcon(score: number): L.DivIcon {
+  if (score >= 70) return ICON_GREEN;
+  if (score >= 50) return ICON_YELLOW;
+  return ICON_RED;
 }
 
-function createCircleIcon(score: number): L.DivIcon {
-  const color = getMarkerColor(score);
-  return L.divIcon({
-    className: '',
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -14],
-    html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>`,
-  });
+function getMarkerColor(score: number): string {
+  if (score >= 70) return '#22c55e';
+  if (score >= 50) return '#eab308';
+  return '#ef4444';
 }
 
 /** Inner component that adjusts bounds when markers change */
@@ -51,7 +70,7 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
   return null;
 }
 
-export function PropertyMap({ data, onMarkerClick, lifecycle, priceChanges }: PropertyMapProps) {
+export function PropertyMap({ data, onMarkerClick }: PropertyMapProps) {
   const { t, locale } = useTranslation();
 
   const geocodedProperties = useMemo(
@@ -87,12 +106,11 @@ export function PropertyMap({ data, onMarkerClick, lifecycle, priceChanges }: Pr
         <FitBounds positions={positions} />
         {geocodedProperties.map((property) => {
           const { listing, metrics } = property;
-          const icon = createCircleIcon(metrics.score);
           return (
             <Marker
               key={listing.id}
               position={[listing.latitude!, listing.longitude!]}
-              icon={icon}
+              icon={getIcon(metrics.score)}
             >
               <Popup>
                 <div className="min-w-[200px] max-w-[260px] text-sm">
