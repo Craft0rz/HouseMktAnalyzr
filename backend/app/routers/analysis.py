@@ -863,7 +863,7 @@ async def family_search(
 
     Queries HOUSE listings directly from the database (no investment scoring
     overhead) and runs the 3-pillar family scoring model. Supports filtering
-    by new listings (first seen within 7 days) and price drops (last 30 days).
+    by new listings (first seen within 48 hours) and price drops (last 30 days).
 
     Returns all matching houses sorted by family_score descending.
     """
@@ -889,35 +889,20 @@ async def family_search(
         house_listings = [PropertyListing(**d) for d in cached]
         logger.info(f"Family search: {len(house_listings)} houses for region={region}")
 
-        # Batch-fetch location data by unique (city, postal_code) pairs
-        unique_keys = list({
-            (listing.city, listing.postal_code)
-            for listing in house_listings if listing.city
-        })
-        location_data_list = await asyncio.gather(
-            *[_fetch_location_data(city, pc) for city, pc in unique_keys]
-        )
-        location_data_map = dict(zip(unique_keys, location_data_list))
-        empty_location = {
-            "safety_score": None, "vacancy_rate": None,
-            "rent_cagr": None, "median_household_income": None,
-        }
-
-        # Read pre-enriched geo data inline — no live API calls during search.
-        # The background enrichment task populates raw_data.geo_enrichment;
-        # search only reads what's already cached.
+        # All scoring data comes from pre-enriched fields on the listing itself.
+        # No additional DB queries or API calls during search.
+        # - geo_enrichment: school_distance, parks, flood zone (background task)
+        # - walk_score/transit_score: already on PropertyListing (walk score enrichment)
+        # - safety_score: read from geo_enrichment if available
         response_results = []
         for listing in house_listings:
             try:
                 raw = listing.raw_data or {}
                 geo = raw.get("geo_enrichment") or {}
 
-                key = (listing.city, listing.postal_code)
-                location_data = location_data_map.get(key, empty_location)
-
                 metrics = family_scorer.score_property(
                     listing=listing,
-                    safety_score=location_data.get("safety_score"),
+                    safety_score=geo.get("safety_score"),
                     school_distance_m=geo.get("nearest_elementary_m"),
                     park_count_1km=geo.get("park_count_1km"),
                     flood_zone=geo.get("flood_zone"),

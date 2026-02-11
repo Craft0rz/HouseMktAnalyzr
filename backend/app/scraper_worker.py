@@ -16,6 +16,7 @@ from .db import (
     get_listings_without_photos, update_photo_urls,
     get_listings_without_condition_score, update_condition_score,
     get_houses_without_geo_enrichment, update_geo_enrichment,
+    get_neighbourhood_stats_for_borough,
     upsert_market_data, get_market_data_age,
     upsert_rent_data_batch, get_rent_data_age,
     upsert_demographics_batch, get_demographics_age,
@@ -770,6 +771,18 @@ class ScraperWorker:
                     fetch_nearby_parks(lat, lon),
                 )
 
+                # Fetch safety_score from neighbourhood stats (DB only, no API)
+                safety_score = None
+                try:
+                    from .geo_mapping import resolve_borough
+                    borough = resolve_borough(item.get("city"), item.get("postal_code"))
+                    if borough:
+                        stats = await get_neighbourhood_stats_for_borough(borough)
+                        if stats and stats.get("safety_score") is not None:
+                            safety_score = float(stats["safety_score"])
+                except Exception:
+                    pass  # Non-critical — score with None if unavailable
+
                 # Build the geo enrichment data structure
                 geo_result: dict = {
                     "schools": None,
@@ -778,6 +791,7 @@ class ScraperWorker:
                     "flood_zone_type": None,
                     "park_count_1km": 0,
                     "nearest_park_m": None,
+                    "safety_score": safety_score,
                     "enriched_at": datetime.now(timezone.utc).isoformat(),
                 }
 
