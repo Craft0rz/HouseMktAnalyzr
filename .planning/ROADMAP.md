@@ -132,7 +132,7 @@ Plans:
 
 Plans:
 - [x] 09-01: Family Home Scoring Engine — FamilyHomeMetrics model, FamilyHomeScorer class, API endpoints
-- [ ] 09-02: Frontend Houses Section — /houses page, HouseDetail component, family score visualization, i18n
+- [x] 09-02: Frontend Houses Section — /houses page, HouseDetail component, family score visualization, i18n
 - [ ] 09-03: Quebec Geo Data Enrichment — School proximity (WFS), flood zones (CEHQ), parks (Montreal open data), scraper integration
 
 ### Next Steps
