@@ -397,6 +397,8 @@
   "detail.capexReserve": "CapEx Reserve (5%)",
   "detail.operatingExpenses": "Operating Expenses (Centris)",
   "detail.totalExpenses": "Total Expenses",
+  "detail.grossMonthlyCashFlow": "Gross Monthly Cash Flow",
+  "detail.grossCashFlowHint": "Income minus mortgage & taxes only",
   "detail.netMonthlyCashFlow": "Net Monthly Cash Flow",
   "detail.roiOnDownPayment": "ROI: {pct}% on down payment",
   "detail.mortgageEstimate": "Mortgage Estimate",

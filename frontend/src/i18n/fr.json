@@ -397,6 +397,8 @@
   "detail.capexReserve": "Réserve CapEx (5%)",
   "detail.operatingExpenses": "Dépenses d'exploitation (Centris)",
   "detail.totalExpenses": "Dépenses totales",
+  "detail.grossMonthlyCashFlow": "Flux de trésorerie brut mensuel",
+  "detail.grossCashFlowHint": "Revenus moins hypothèque et taxes seulement",
   "detail.netMonthlyCashFlow": "Flux de trésorerie net mensuel",
   "detail.roiOnDownPayment": "RCI : {pct}% sur la mise de fonds",
   "detail.mortgageEstimate": "Estimation hypothécaire",

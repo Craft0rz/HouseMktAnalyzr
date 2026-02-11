@@ -653,6 +653,19 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
               <Separator />
 
+              {/* Gross Cash Flow — only listing-specific costs */}
+              {!hasActualExpenses && (
+                <div className="flex justify-between items-center p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
+                  <div>
+                    <span className="font-semibold text-sm">{t('detail.grossMonthlyCashFlow')}</span>
+                    <div className="text-[10px] text-muted-foreground">{t('detail.grossCashFlowHint')}</div>
+                  </div>
+                  <span className={`text-lg font-bold ${grossCashFlow >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {grossCashFlow >= 0 ? '+' : ''}{formatPrice(grossCashFlow, locale)}
+                  </span>
+                </div>
+              )}
+
               {/* Net Cash Flow */}
               <div className="flex justify-between items-center p-3 rounded-lg bg-muted/50">
                 <span className="font-semibold">{t('detail.netMonthlyCashFlow')}</span>
