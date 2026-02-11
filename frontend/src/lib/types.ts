@@ -648,3 +648,56 @@ export interface AdminRemovedListingsResponse {
   page: number;
   page_size: number;
 }
+
+// Family Home Scoring types
+export interface FamilyHomeMetrics {
+  property_id: string;
+  purchase_price: number;
+  family_score: number;
+  score_breakdown: Record<string, number>;
+
+  // Pillar scores
+  livability_score: number;
+  walk_score_pts: number | null;
+  transit_score_pts: number | null;
+  safety_pts: number | null;
+  school_proximity_pts: number | null;
+  parks_pts: number | null;
+
+  value_score: number;
+  price_vs_assessment_pts: number | null;
+  price_per_sqft: number | null;
+  price_per_sqft_pts: number | null;
+  monthly_cost_estimate: number | null;
+  affordability_pts: number | null;
+  market_trajectory_pts: number | null;
+
+  space_score: number;
+  lot_size_pts: number | null;
+  bedroom_pts: number | null;
+  condition_pts: number | null;
+  age_pts: number | null;
+
+  // Cost of ownership
+  estimated_monthly_mortgage: number | null;
+  estimated_monthly_taxes: number | null;
+  estimated_annual_energy: number | null;
+  estimated_annual_insurance: number | null;
+  welcome_tax: number | null;
+  total_cash_needed: number | null;
+
+  // Risk flags
+  flood_zone: boolean | null;
+  contaminated_nearby: boolean | null;
+}
+
+export interface HouseWithScore {
+  listing: PropertyListing;
+  family_metrics: FamilyHomeMetrics;
+}
+
+export interface FamilyBatchResponse {
+  results: HouseWithScore[];
+  count: number;
+  summary: Record<string, number>;
+}

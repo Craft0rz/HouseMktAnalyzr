@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Building2, BarChart3, Bell, Calculator, Briefcase, Activity, Menu, Sun, Moon, LogOut, Shield } from 'lucide-react';
+import { Building2, BarChart3, Bell, Calculator, Briefcase, Activity, Menu, Sun, Moon, LogOut, Shield, Home } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/lib/auth-context';
 import { useTranslation } from '@/i18n/LanguageContext';
@@ -37,6 +37,7 @@ export function Header() {
 
   const navigation = [
     { name: t('header.search'), href: '/search', icon: Building2 },
+    { name: t('header.houses'), href: '/houses', icon: Home },
     { name: t('header.compare'), href: '/compare', icon: BarChart3 },
     { name: t('header.calculator'), href: '/calculator', icon: Calculator },
     { name: t('header.alerts'), href: '/alerts', icon: Bell },
