@@ -12,6 +12,11 @@ from pydantic import BaseModel, Field
 from housemktanalyzr.analysis.calculator import InvestmentCalculator
 from housemktanalyzr.analysis.family_scorer import FamilyHomeScorer
 from housemktanalyzr.analysis.ranker import PropertyRanker
+from housemktanalyzr.enrichment.quebec_geo import (
+    check_flood_zone,
+    fetch_nearby_parks,
+    fetch_nearby_schools,
+)
 from housemktanalyzr.models.property import (
     FamilyHomeMetrics,
     InvestmentMetrics,
@@ -642,6 +647,77 @@ async def get_top_opportunities(
 # Family Home Scoring Endpoints
 # =========================================================================
 
+# Semaphore to limit concurrent geo API calls in batch scoring
+_geo_semaphore = asyncio.Semaphore(10)
+
+
+async def _fetch_geo_data(listing: PropertyListing) -> dict:
+    """Fetch geo enrichment data for a listing.
+
+    Checks the listing's raw_data for pre-enriched geo data first.
+    If not available and coordinates exist, fetches live from Quebec APIs.
+
+    Returns dict with keys: school_distance_m, park_count_1km, flood_zone,
+    nearest_park_m, schools. All values may be None if unavailable.
+    """
+    result: dict = {
+        "school_distance_m": None,
+        "park_count_1km": None,
+        "flood_zone": None,
+        "nearest_park_m": None,
+        "schools": None,
+    }
+
+    # Check for pre-enriched geo data in raw_data
+    raw = listing.raw_data or {}
+    geo = raw.get("geo_enrichment")
+    if geo:
+        result["school_distance_m"] = geo.get("nearest_elementary_m")
+        result["park_count_1km"] = geo.get("park_count_1km")
+        result["flood_zone"] = geo.get("flood_zone")
+        result["nearest_park_m"] = geo.get("nearest_park_m")
+        result["schools"] = geo.get("schools")
+        return result
+
+    # No pre-enriched data — fetch live if coordinates are available
+    if listing.latitude is None or listing.longitude is None:
+        return result
+
+    try:
+        async with _geo_semaphore:
+            schools_data, flood_data, parks_data = await asyncio.gather(
+                fetch_nearby_schools(listing.latitude, listing.longitude),
+                check_flood_zone(listing.latitude, listing.longitude),
+                fetch_nearby_parks(listing.latitude, listing.longitude),
+            )
+
+        # Extract nearest elementary school distance
+        if schools_data:
+            result["schools"] = schools_data
+            elementary = [
+                s for s in schools_data
+                if s.get("type") == "elementary" and s.get("distance_m") is not None
+            ]
+            if elementary:
+                result["school_distance_m"] = elementary[0]["distance_m"]
+            elif schools_data and schools_data[0].get("distance_m") is not None:
+                # Fall back to nearest school of any type
+                result["school_distance_m"] = schools_data[0]["distance_m"]
+
+        # Extract flood zone
+        if flood_data:
+            result["flood_zone"] = flood_data.get("in_flood_zone", False)
+
+        # Extract park data
+        if parks_data:
+            result["park_count_1km"] = parks_data.get("park_count", 0)
+            result["nearest_park_m"] = parks_data.get("nearest_park_m")
+
+    except Exception as e:
+        logger.warning(f"Geo data fetch failed for {listing.id}: {e}")
+
+    return result
+
 
 @router.post("/family-score", response_model=FamilyHomeMetrics)
 async def family_score_property(request: AnalyzeRequest) -> FamilyHomeMetrics:
@@ -653,16 +729,24 @@ async def family_score_property(request: AnalyzeRequest) -> FamilyHomeMetrics:
     - Space & Comfort (0-25): lot size, bedrooms, condition, age
 
     The listing should be property_type=HOUSE for meaningful results.
+    Enriches with Quebec geo data (schools, flood zones, parks) when
+    coordinates are available.
     """
     try:
-        # Fetch location data for safety score
-        location_data = await _fetch_location_data(
-            request.listing.city, request.listing.postal_code
+        # Fetch location data and geo data in parallel
+        location_data, geo_data = await asyncio.gather(
+            _fetch_location_data(
+                request.listing.city, request.listing.postal_code
+            ),
+            _fetch_geo_data(request.listing),
         )
 
         metrics = family_scorer.score_property(
             listing=request.listing,
             safety_score=location_data.get("safety_score"),
+            school_distance_m=geo_data.get("school_distance_m"),
+            park_count_1km=geo_data.get("park_count_1km"),
+            flood_zone=geo_data.get("flood_zone"),
         )
         return metrics
 
@@ -678,6 +762,7 @@ async def family_score_batch(request: AnalyzeBatchRequest) -> FamilyBatchRespons
 
     Filters to HOUSE-type listings only, scores each on the 3-pillar family
     model, and returns results sorted by family_score descending.
+    Enriches with Quebec geo data using parallel queries with concurrency limiting.
     """
     try:
         # Filter to only HOUSE type listings
@@ -703,9 +788,14 @@ async def family_score_batch(request: AnalyzeBatchRequest) -> FamilyBatchRespons
             "rent_cagr": None, "median_household_income": None,
         }
 
+        # Batch-fetch geo data for all houses in parallel (semaphore-limited)
+        geo_data_list = await asyncio.gather(
+            *[_fetch_geo_data(listing) for listing in house_listings]
+        )
+
         # Score each house
         response_results = []
-        for listing in house_listings:
+        for listing, geo_data in zip(house_listings, geo_data_list):
             try:
                 key = (listing.city, listing.postal_code)
                 location_data = location_data_map.get(key, empty_location)
@@ -713,6 +803,9 @@ async def family_score_batch(request: AnalyzeBatchRequest) -> FamilyBatchRespons
                 metrics = family_scorer.score_property(
                     listing=listing,
                     safety_score=location_data.get("safety_score"),
+                    school_distance_m=geo_data.get("school_distance_m"),
+                    park_count_1km=geo_data.get("park_count_1km"),
+                    flood_zone=geo_data.get("flood_zone"),
                 )
                 response_results.append(
                     HouseWithScore(listing=listing, family_metrics=metrics)

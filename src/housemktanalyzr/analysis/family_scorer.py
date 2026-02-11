@@ -232,21 +232,22 @@ class FamilyHomeScorer:
             breakdown["safety_pts"] = pts
             total += pts
 
-        # School Proximity (0-10 pts) — placeholder for 09-03 geo enrichment
+        # School Proximity (0-10 pts) — uses Quebec geo enrichment data
         if school_distance_m is not None:
             if school_distance_m <= 500:
                 pts = 10.0
             elif school_distance_m <= 1000:
                 pts = 7.0
-            elif school_distance_m <= 2000:
+            elif school_distance_m <= 1500:
                 pts = 4.0
+            elif school_distance_m <= 2000:
+                pts = 2.0
             else:
                 pts = 0.0
             breakdown["school_proximity_pts"] = pts
             total += pts
 
-        # Parks Nearby (0-6 pts) — placeholder for 09-03 geo enrichment
-        # park_count_1km is not scored yet; hook exists for future use
+        # Parks Nearby (0-6 pts) — uses Quebec geo enrichment data
         if park_count_1km is not None:
             # Simple scoring: 3+ parks = 6, 2 = 4, 1 = 2, 0 = 0
             if park_count_1km >= 3:

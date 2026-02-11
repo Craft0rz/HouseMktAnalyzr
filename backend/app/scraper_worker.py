@@ -15,6 +15,7 @@ from .db import (
     get_listings_without_walk_score, update_walk_scores,
     get_listings_without_photos, update_photo_urls,
     get_listings_without_condition_score, update_condition_score,
+    get_houses_without_geo_enrichment, update_geo_enrichment,
     upsert_market_data, get_market_data_age,
     upsert_rent_data_batch, get_rent_data_age,
     upsert_demographics_batch, get_demographics_age,
@@ -57,6 +58,7 @@ class ScraperWorker:
                 "walk_scores": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
                 "photos": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
                 "conditions": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+                "geo_enrichment": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
                 "validation": {"total": 0, "corrected": 0, "flagged": 0, "phase": "pending"},
             },
             "refresh_progress": {
@@ -274,6 +276,11 @@ class ScraperWorker:
         self._status["enrichment_progress"]["conditions"]["phase"] = "running"
         await self._enrich_condition_scores()
 
+        # Enrich HOUSE listings with Quebec geo data (schools, flood zones, parks)
+        self._status["current_phase"] = "enriching_geo"
+        self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "running"
+        await self._enrich_geo_data()
+
         # Validate and score data quality (runs LAST so all enrichment fields are available)
         self._status["current_phase"] = "validating_data"
         self._status["enrichment_progress"]["validation"]["phase"] = "running"
@@ -288,6 +295,7 @@ class ScraperWorker:
                 "walk_scores": round(ep["walk_scores"]["done"] / max(ep["walk_scores"]["total"], 1) * 100, 1),
                 "photos": round(ep["photos"]["done"] / max(ep["photos"]["total"], 1) * 100, 1),
                 "conditions": round(ep["conditions"]["done"] / max(ep["conditions"]["total"], 1) * 100, 1),
+                "geo_enrichment": round(ep["geo_enrichment"]["done"] / max(ep["geo_enrichment"]["total"], 1) * 100, 1),
             }
         except Exception:
             logger.warning("Failed to capture quality snapshot", exc_info=True)
@@ -296,7 +304,7 @@ class ScraperWorker:
         # Persist job history to database
         total_enriched = sum(
             self._status["enrichment_progress"][k]["done"]
-            for k in ("details", "walk_scores", "photos", "conditions")
+            for k in ("details", "walk_scores", "photos", "conditions", "geo_enrichment")
         )
         final_status = "failed" if errors else "completed"
         try:
@@ -713,6 +721,101 @@ class ScraperWorker:
 
         self._status["enrichment_progress"]["conditions"]["phase"] = "done"
         logger.info(f"Condition scoring done: {scored} scored, {failed} failed")
+
+    async def _enrich_geo_data(self):
+        """Enrich HOUSE listings with Quebec geo data (schools, flood zones, parks).
+
+        Processes up to 50 houses per cycle with 1-second delay between API calls
+        to be respectful of external services. Stores results in the listing's
+        raw_data under a 'geo_enrichment' key.
+        """
+        from housemktanalyzr.enrichment.quebec_geo import (
+            fetch_nearby_schools,
+            check_flood_zone,
+            fetch_nearby_parks,
+        )
+
+        batch_size = int(os.environ.get("GEO_ENRICH_BATCH_SIZE", 50))
+        delay = float(os.environ.get("GEO_ENRICH_DELAY", 1.0))
+
+        try:
+            listings = await get_houses_without_geo_enrichment(limit=batch_size)
+        except Exception:
+            logger.exception("Failed to query houses for geo enrichment")
+            self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "done"
+            return
+
+        if not listings:
+            logger.info("Geo enrichment: all houses already enriched")
+            self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "done"
+            return
+
+        self._status["enrichment_progress"]["geo_enrichment"]["total"] = len(listings)
+        logger.info(
+            f"Geo enrichment: processing {len(listings)} houses "
+            f"(delay={delay}s, ~{len(listings) * delay / 60:.1f}min)"
+        )
+        enriched = 0
+        failed = 0
+
+        for item in listings:
+            lat = item["latitude"]
+            lon = item["longitude"]
+
+            try:
+                # Fetch all three geo data sources in parallel
+                schools_data, flood_data, parks_data = await asyncio.gather(
+                    fetch_nearby_schools(lat, lon),
+                    check_flood_zone(lat, lon),
+                    fetch_nearby_parks(lat, lon),
+                )
+
+                # Build the geo enrichment data structure
+                geo_result: dict = {
+                    "schools": None,
+                    "nearest_elementary_m": None,
+                    "flood_zone": False,
+                    "flood_zone_type": None,
+                    "park_count_1km": 0,
+                    "nearest_park_m": None,
+                    "enriched_at": datetime.now(timezone.utc).isoformat(),
+                }
+
+                if schools_data:
+                    geo_result["schools"] = schools_data
+                    elementary = [
+                        s for s in schools_data
+                        if s.get("type") == "elementary" and s.get("distance_m") is not None
+                    ]
+                    if elementary:
+                        geo_result["nearest_elementary_m"] = elementary[0]["distance_m"]
+                    elif schools_data and schools_data[0].get("distance_m") is not None:
+                        geo_result["nearest_elementary_m"] = schools_data[0]["distance_m"]
+
+                if flood_data:
+                    geo_result["flood_zone"] = flood_data.get("in_flood_zone", False)
+                    geo_result["flood_zone_type"] = flood_data.get("zone_type")
+
+                if parks_data:
+                    geo_result["park_count_1km"] = parks_data.get("park_count", 0)
+                    geo_result["nearest_park_m"] = parks_data.get("nearest_park_m")
+
+                await update_geo_enrichment(item["id"], geo_result)
+                enriched += 1
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.warning(f"Geo enrichment failed for {item['id']}: {e}")
+                failed += 1
+
+            self._status["enrichment_progress"]["geo_enrichment"]["done"] = enriched
+            self._status["enrichment_progress"]["geo_enrichment"]["failed"] = failed
+
+            await asyncio.sleep(delay)
+
+        self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "done"
+        logger.info(f"Geo enrichment done: {enriched} enriched, {failed} failed")
 
     async def _refresh_market_data(self):
         """Fetch latest market rates from Bank of Canada if data is stale."""
