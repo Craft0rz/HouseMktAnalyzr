@@ -1967,3 +1967,71 @@ async def get_data_quality_summary() -> dict:
             "corrected": row["corrected"],
         }
     return {}
+
+
+async def get_batch_price_drops(property_ids: list[str]) -> dict[str, list[dict]]:
+    """Get price history for multiple listings in a single query.
+
+    Returns a dict mapping property_id → list of price change dicts.
+    Only includes listings that had at least one price change.
+    """
+    if not property_ids:
+        return {}
+
+    pool = get_pool()
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT property_id, old_price, new_price, recorded_at
+            FROM price_history
+            WHERE property_id = ANY($1::text[])
+            ORDER BY property_id, recorded_at DESC
+            """,
+            property_ids,
+        )
+
+    result: dict[str, list[dict]] = {}
+    for r in rows:
+        pid = r["property_id"]
+        if pid not in result:
+            result[pid] = []
+        result[pid].append({
+            "old_price": r["old_price"],
+            "new_price": r["new_price"],
+            "change": r["new_price"] - r["old_price"],
+            "change_pct": round(
+                (r["new_price"] - r["old_price"]) / r["old_price"] * 100, 1
+            ) if r["old_price"] else 0,
+            "recorded_at": r["recorded_at"].isoformat(),
+        })
+    return result
+
+
+async def get_batch_days_on_market(property_ids: list[str]) -> dict[str, int]:
+    """Get days on market for multiple listings in a single query.
+
+    Returns a dict mapping property_id → days on market (int).
+    """
+    if not property_ids:
+        return {}
+
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, first_seen_at
+            FROM properties
+            WHERE id = ANY($1::text[])
+              AND first_seen_at IS NOT NULL
+            """,
+            property_ids,
+        )
+
+    return {
+        r["id"]: (now - r["first_seen_at"]).days
+        for r in rows
+        if r["first_seen_at"]
+    }

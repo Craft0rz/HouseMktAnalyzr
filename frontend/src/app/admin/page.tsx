@@ -90,6 +90,12 @@ function AdminDashboard() {
     onError: () => toast.error(t('admin.checkAlertsFailed')),
   });
 
+  const resetGeoMutation = useMutation({
+    mutationFn: () => adminApi.resetGeocodingFailures(),
+    onSuccess: (data) => toast.success(data.message),
+    onError: () => toast.error(t('admin.resetGeoFailed')),
+  });
+
   if (statsLoading) {
     return (
       <div className="space-y-6">
@@ -172,7 +178,7 @@ function AdminDashboard() {
           <CardDescription>{t('admin.actionsDesc')}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <button
               className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
               disabled={scrapeMutation.isPending}
@@ -207,6 +213,18 @@ function AdminDashboard() {
               </div>
               <span className="text-sm font-semibold">{t('admin.revalidateGeo')}</span>
               <span className="text-xs text-muted-foreground">{t('admin.revalidateGeoDesc')}</span>
+            </button>
+
+            <button
+              className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              disabled={resetGeoMutation.isPending}
+              onClick={() => resetGeoMutation.mutate()}
+            >
+              <div className="rounded-full bg-primary/10 p-2">
+                {resetGeoMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <MapPin className="h-5 w-5 text-primary" />}
+              </div>
+              <span className="text-sm font-semibold">{t('admin.resetGeo')}</span>
+              <span className="text-xs text-muted-foreground">{t('admin.resetGeoDesc')}</span>
             </button>
 
             <button

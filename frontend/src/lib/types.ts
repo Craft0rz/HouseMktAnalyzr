@@ -691,6 +691,9 @@ export interface FamilyHomeMetrics {
   // Risk flags
   flood_zone: boolean | null;
   contaminated_nearby: boolean | null;
+
+  // Data completeness — which data fields had real data available
+  data_completeness: Record<string, boolean>;
 }
 
 export interface HouseWithScore {

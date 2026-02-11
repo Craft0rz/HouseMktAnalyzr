@@ -394,3 +394,64 @@ async def _run_geocoding_revalidation(listings: list[dict]):
             await asyncio.sleep(1.1)
 
     logger.info(f"Geocoding revalidation done: {fixed} fixed, {failed} failed out of {len(listings)}")
+
+
+@router.post("/reset-geocoding-failures", status_code=200)
+async def reset_geocoding_failures(
+    _admin: dict = Depends(get_admin_user),
+):
+    """Clear geocode_failed_at and walk_score_attempted_at on all listings.
+
+    This allows previously failed geocoding attempts to be retried
+    (e.g. after improving the geocoding logic). The next scraper cycle
+    or manual revalidation will re-attempt these listings.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        # Clear geocode_failed_at
+        geo_result = await conn.execute(
+            """
+            UPDATE properties
+            SET data = data - 'geocode_failed_at'
+            WHERE expires_at > $1
+              AND (data->>'geocode_failed_at') IS NOT NULL
+            """,
+            now,
+        )
+        geo_count = int(geo_result.split()[-1])
+
+        # Clear walk_score_attempted_at for listings that still lack coordinates
+        # so the walk score enrichment retries geocoding
+        ws_result = await conn.execute(
+            """
+            UPDATE properties
+            SET data = data - 'walk_score_attempted_at'
+            WHERE expires_at > $1
+              AND (data->>'walk_score_attempted_at') IS NOT NULL
+              AND (
+                (data->>'latitude') IS NULL
+                OR NOT (
+                  (data->>'latitude') ~ E'^-?[0-9]+\\.?[0-9]*$'
+                  AND (data->>'latitude')::float BETWEEN 44.0 AND 63.0
+                )
+              )
+            """,
+            now,
+        )
+        ws_count = int(ws_result.split()[-1])
+
+    logger.info(
+        f"Reset geocoding failures: {geo_count} geocode_failed_at cleared, "
+        f"{ws_count} walk_score_attempted_at cleared"
+    )
+    return {
+        "status": "ok",
+        "geocode_failed_cleared": geo_count,
+        "walk_score_attempted_cleared": ws_count,
+        "message": (
+            f"Cleared {geo_count} geocode failures and {ws_count} walk score sentinels. "
+            "Run 'Revalidate Geocoding' or wait for next scraper cycle to retry."
+        ),
+    }

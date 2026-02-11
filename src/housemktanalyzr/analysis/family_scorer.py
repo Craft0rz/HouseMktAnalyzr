@@ -6,6 +6,8 @@ Evaluates houses on three pillars:
 - Space & Comfort (0-25): lot size, bedrooms, condition, property age
 
 Also calculates cost of ownership: mortgage, taxes, energy, insurance, welcome tax.
+
+Thresholds are calibrated for the Quebec/Montreal real estate market (2024-2026).
 """
 
 import logging
@@ -92,35 +94,47 @@ class FamilyHomeScorer:
         park_count_1km: int | None = None,
         flood_zone: bool | None = None,
         contaminated_nearby: bool | None = None,
+        price_drops: list[dict] | None = None,
+        days_on_market: int | None = None,
     ) -> FamilyHomeMetrics:
         """Score a house listing for family livability.
 
         Args:
             listing: PropertyListing to score (should be property_type=HOUSE).
             safety_score: Neighbourhood safety score (0-10) from open data.
-            school_distance_m: Distance to nearest elementary school in metres (future).
-            park_count_1km: Number of parks within 1km (future).
-            flood_zone: Whether property is in a flood zone (future: CEHQ API).
-            contaminated_nearby: Whether contaminated site is nearby (future: ESRI API).
+            school_distance_m: Distance to nearest elementary school in metres.
+            park_count_1km: Number of parks within 1km.
+            flood_zone: Whether property is in a flood zone.
+            contaminated_nearby: Whether contaminated site is nearby.
+            price_drops: List of price change dicts with change_pct and recorded_at.
+            days_on_market: Number of days the listing has been on market.
 
         Returns:
-            FamilyHomeMetrics with all scores and cost breakdown.
+            FamilyHomeMetrics with all scores, cost breakdown, and data completeness.
         """
         breakdown = {}
+        completeness: dict[str, bool] = {}
 
         # --- Livability Pillar (0-40) ---
-        livability_score, livability_breakdown = self._score_livability(
-            listing, safety_score, school_distance_m, park_count_1km
+        livability_score, livability_breakdown, livability_completeness = (
+            self._score_livability(
+                listing, safety_score, school_distance_m, park_count_1km
+            )
         )
         breakdown.update(livability_breakdown)
+        completeness.update(livability_completeness)
 
         # --- Value Pillar (0-35) ---
-        value_score, value_breakdown, cost_data = self._score_value(listing)
+        value_score, value_breakdown, cost_data, value_completeness = (
+            self._score_value(listing, price_drops, days_on_market)
+        )
         breakdown.update(value_breakdown)
+        completeness.update(value_completeness)
 
         # --- Space & Comfort Pillar (0-25) ---
-        space_score, space_breakdown = self._score_space(listing)
+        space_score, space_breakdown, space_completeness = self._score_space(listing)
         breakdown.update(space_breakdown)
+        completeness.update(space_completeness)
 
         # --- Total ---
         family_score = round(livability_score + value_score + space_score, 1)
@@ -168,6 +182,8 @@ class FamilyHomeScorer:
             # Risk flags
             flood_zone=flood_zone,
             contaminated_nearby=contaminated_nearby,
+            # Data completeness
+            data_completeness=completeness,
         )
 
     # =========================================================================
@@ -180,20 +196,22 @@ class FamilyHomeScorer:
         safety_score: float | None,
         school_distance_m: float | None,
         park_count_1km: int | None,
-    ) -> tuple[float, dict[str, float]]:
+    ) -> tuple[float, dict[str, float], dict[str, bool]]:
         """Score livability pillar (0-40 pts).
 
         Components:
         - Walk Score (0-8): from listing.walk_score
         - Transit Score (0-8): from listing.transit_score
         - Safety (0-8): from neighbourhood safety data
-        - School Proximity (0-10): placeholder for geo enrichment
-        - Parks Nearby (0-6): placeholder for geo enrichment
+        - School Proximity (0-10): from geo enrichment
+        - Parks Nearby (0-6): from geo enrichment
         """
         breakdown: dict[str, float] = {}
+        completeness: dict[str, bool] = {}
         total = 0.0
 
         # Walk Score (0-8 pts)
+        completeness["walk_score"] = listing.walk_score is not None
         if listing.walk_score is not None:
             if listing.walk_score >= 70:
                 pts = 8.0
@@ -207,6 +225,7 @@ class FamilyHomeScorer:
             total += pts
 
         # Transit Score (0-8 pts)
+        completeness["transit_score"] = listing.transit_score is not None
         if listing.transit_score is not None:
             if listing.transit_score >= 70:
                 pts = 8.0
@@ -220,6 +239,7 @@ class FamilyHomeScorer:
             total += pts
 
         # Safety (0-8 pts)
+        completeness["safety"] = safety_score is not None
         if safety_score is not None:
             if safety_score >= 7:
                 pts = 8.0
@@ -233,14 +253,16 @@ class FamilyHomeScorer:
             total += pts
 
         # School Proximity (0-10 pts) — uses Quebec geo enrichment data
+        # Widened radius thresholds for Quebec (many suburban areas)
+        completeness["school_proximity"] = school_distance_m is not None
         if school_distance_m is not None:
-            if school_distance_m <= 500:
+            if school_distance_m <= 800:
                 pts = 10.0
-            elif school_distance_m <= 1000:
+            elif school_distance_m <= 1200:
                 pts = 7.0
-            elif school_distance_m <= 1500:
+            elif school_distance_m <= 1800:
                 pts = 4.0
-            elif school_distance_m <= 2000:
+            elif school_distance_m <= 2500:
                 pts = 2.0
             else:
                 pts = 0.0
@@ -248,8 +270,8 @@ class FamilyHomeScorer:
             total += pts
 
         # Parks Nearby (0-6 pts) — uses Quebec geo enrichment data
+        completeness["parks"] = park_count_1km is not None
         if park_count_1km is not None:
-            # Simple scoring: 3+ parks = 6, 2 = 4, 1 = 2, 0 = 0
             if park_count_1km >= 3:
                 pts = 6.0
             elif park_count_1km >= 2:
@@ -263,31 +285,39 @@ class FamilyHomeScorer:
 
         # Cap at 40
         total = min(40.0, total)
-        return total, breakdown
+        return total, breakdown, completeness
 
     # =========================================================================
     # Value Pillar (0-35)
     # =========================================================================
 
     def _score_value(
-        self, listing: PropertyListing
-    ) -> tuple[float, dict[str, float], dict]:
+        self,
+        listing: PropertyListing,
+        price_drops: list[dict] | None = None,
+        days_on_market: int | None = None,
+    ) -> tuple[float, dict[str, float], dict, dict[str, bool]]:
         """Score value pillar (0-35 pts) and compute cost data.
 
         Components:
         - Price vs Municipal Assessment (0-10)
         - Price per sqft (0-8)
         - Affordability / Monthly Cost (0-10)
-        - Market Trajectory (0-7): placeholder
+        - Market Trajectory (0-7): price drops + days on market
 
         Returns:
-            (score, breakdown, cost_data) where cost_data has mortgage, taxes, etc.
+            (score, breakdown, cost_data, completeness)
         """
         breakdown: dict[str, float] = {}
         cost_data: dict = {}
+        completeness: dict[str, bool] = {}
         total = 0.0
 
         # --- Price vs Municipal Assessment (0-10 pts) ---
+        completeness["municipal_assessment"] = (
+            listing.municipal_assessment is not None
+            and listing.municipal_assessment > 0
+        )
         if listing.municipal_assessment and listing.municipal_assessment > 0:
             ratio = listing.price / listing.municipal_assessment
             if ratio <= 0.90:
@@ -304,17 +334,19 @@ class FamilyHomeScorer:
             total += pts
 
         # --- Price per sqft (0-8 pts) ---
+        # Thresholds adjusted for Quebec market (Montreal avg ~$350-450/sqft)
+        completeness["sqft"] = listing.sqft is not None and listing.sqft > 0
         if listing.sqft and listing.sqft > 0:
             price_per_sqft = listing.price / listing.sqft
             cost_data["price_per_sqft"] = round(price_per_sqft, 2)
 
-            if price_per_sqft < 200:
+            if price_per_sqft < 300:
                 pts = 8.0
-            elif price_per_sqft < 300:
-                pts = 6.0
             elif price_per_sqft < 400:
-                pts = 4.0
+                pts = 6.0
             elif price_per_sqft < 500:
+                pts = 4.0
+            elif price_per_sqft < 600:
                 pts = 2.0
             else:
                 pts = 0.0
@@ -362,28 +394,74 @@ class FamilyHomeScorer:
         )
         cost_data["monthly_cost_estimate"] = monthly_cost
 
-        # Affordability scoring
-        if monthly_cost < 2500:
+        # Affordability scoring — adjusted for Quebec market (2024-2026 rates)
+        if monthly_cost < 3000:
             pts = 10.0
-        elif monthly_cost < 3000:
-            pts = 8.0
         elif monthly_cost < 3500:
-            pts = 6.0
+            pts = 8.0
         elif monthly_cost < 4000:
+            pts = 6.0
+        elif monthly_cost < 4500:
             pts = 4.0
-        elif monthly_cost < 5000:
+        elif monthly_cost < 5500:
             pts = 2.0
         else:
             pts = 0.0
         breakdown["affordability_pts"] = pts
         total += pts
 
-        # --- Market Trajectory (0-7 pts) — placeholder ---
-        # Would use price history trend data; returns None for now
+        # --- Market Trajectory (0-7 pts) ---
+        # Price drops and extended days on market signal buyer-favorable conditions
+        trajectory_pts = self._score_market_trajectory(price_drops, days_on_market)
+        completeness["market_trajectory"] = (
+            price_drops is not None or days_on_market is not None
+        )
+        if trajectory_pts > 0:
+            breakdown["market_trajectory_pts"] = trajectory_pts
+            total += trajectory_pts
 
         # Cap at 35
         total = min(35.0, total)
-        return total, breakdown, cost_data
+        return total, breakdown, cost_data, completeness
+
+    @staticmethod
+    def _score_market_trajectory(
+        price_drops: list[dict] | None,
+        days_on_market: int | None,
+    ) -> float:
+        """Score market trajectory (0-7 pts).
+
+        Buyer-favorable signals:
+        - Price drops indicate seller motivation (0-4 pts)
+        - Extended time on market suggests negotiating room (0-3 pts)
+        """
+        pts = 0.0
+
+        # Price drop signals (0-4 pts)
+        if price_drops:
+            # Count meaningful drops (> 1% reduction)
+            drops = [d for d in price_drops if d.get("change_pct", 0) < -1.0]
+            total_drop_pct = sum(abs(d.get("change_pct", 0)) for d in drops)
+
+            if total_drop_pct >= 10:
+                pts += 4.0  # Major reduction (10%+)
+            elif total_drop_pct >= 5:
+                pts += 3.0  # Significant reduction (5-10%)
+            elif total_drop_pct >= 2:
+                pts += 2.0  # Moderate reduction (2-5%)
+            elif drops:
+                pts += 1.0  # At least one drop
+
+        # Days on market signals (0-3 pts)
+        if days_on_market is not None:
+            if days_on_market >= 90:
+                pts += 3.0  # Very stale — strong negotiating position
+            elif days_on_market >= 60:
+                pts += 2.0  # Getting stale
+            elif days_on_market >= 30:
+                pts += 1.0  # Some leverage
+
+        return min(7.0, pts)
 
     # =========================================================================
     # Space & Comfort Pillar (0-25)
@@ -391,7 +469,7 @@ class FamilyHomeScorer:
 
     def _score_space(
         self, listing: PropertyListing
-    ) -> tuple[float, dict[str, float]]:
+    ) -> tuple[float, dict[str, float], dict[str, bool]]:
         """Score space & comfort pillar (0-25 pts).
 
         Components:
@@ -401,9 +479,11 @@ class FamilyHomeScorer:
         - Property Age (0-4)
         """
         breakdown: dict[str, float] = {}
+        completeness: dict[str, bool] = {}
         total = 0.0
 
         # Lot Size (0-8 pts)
+        completeness["lot_sqft"] = listing.lot_sqft is not None
         if listing.lot_sqft is not None:
             if listing.lot_sqft >= 8000:
                 pts = 8.0
@@ -431,6 +511,7 @@ class FamilyHomeScorer:
         total += pts
 
         # Condition (0-6 pts) from AI condition_score
+        completeness["condition_score"] = listing.condition_score is not None
         if listing.condition_score is not None:
             if listing.condition_score >= 8:
                 pts = 6.0
@@ -444,6 +525,8 @@ class FamilyHomeScorer:
             total += pts
 
         # Property Age (0-4 pts)
+        # Adjusted for Quebec: many heritage homes are well-maintained
+        completeness["year_built"] = listing.year_built is not None
         if listing.year_built is not None:
             current_year = date.today().year
             age = current_year - listing.year_built
@@ -453,7 +536,7 @@ class FamilyHomeScorer:
                 pts = 3.0
             elif age <= 50:
                 pts = 2.0
-            elif age <= 75:
+            elif age <= 100:
                 pts = 1.0
             else:
                 pts = 0.0
@@ -462,7 +545,7 @@ class FamilyHomeScorer:
 
         # Cap at 25
         total = min(25.0, total)
-        return total, breakdown
+        return total, breakdown, completeness
 
     # =========================================================================
     # Cost of Ownership Helpers

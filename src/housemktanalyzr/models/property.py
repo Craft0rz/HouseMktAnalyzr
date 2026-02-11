@@ -159,6 +159,15 @@ class FamilyHomeMetrics(BaseModel):
     flood_zone: bool | None = None            # future: CEHQ API
     contaminated_nearby: bool | None = None   # future: ESRI API
 
+    # Data completeness — shows which scores have real data vs are missing
+    data_completeness: dict[str, bool] = Field(
+        default_factory=dict,
+        description=(
+            "Map of data field → whether real data was available. "
+            "Fields with False were scored as 0 (no fallback guessing)."
+        ),
+    )
+
     model_config = {
         "validate_assignment": True,
     }

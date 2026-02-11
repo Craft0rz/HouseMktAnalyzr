@@ -293,6 +293,28 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Data completeness indicator */}
+            {fm.data_completeness && (() => {
+              const fields = Object.entries(fm.data_completeness);
+              const available = fields.filter(([, v]) => v).length;
+              const total = fields.length;
+              const pct = total > 0 ? Math.round((available / total) * 100) : 0;
+              const missing = fields.filter(([, v]) => !v).map(([k]) => k);
+              if (pct >= 100) return null;
+              return (
+                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2">
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    {t('houses.dataCompleteness', { pct: String(pct), available: String(available), total: String(total) })}
+                  </p>
+                  {missing.length > 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+                      {t('houses.missingData')}: {missing.map(k => t(`houses.field_${k}`)).join(', ')}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           <Separator />

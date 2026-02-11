@@ -41,6 +41,44 @@ class WalkScoreResult:
     postal_code: str | None = None
 
 
+def _normalize_address_for_geocoding(address: str, city: str) -> tuple[str, str]:
+    """Pre-process Centris-style addresses for better Nominatim matching.
+
+    Handles:
+    - Multi-number ranges: "3878 - 3882, Rue La Fontaine" → "3878 Rue La Fontaine"
+    - Unit/apt prefixes: "App. 3, 123 Rue Example" → "123 Rue Example"
+    - French abbreviations: Boul. → Boulevard, Ave. → Avenue, Ch. → Chemin
+    - Borough in city: "Montréal (Mercier/Hochelaga)" → "Montréal"
+    - Trailing commas and extra whitespace
+    """
+    # Strip apartment/unit prefixes
+    addr = re.sub(r"(?i)^(app\.?|apt\.?|unit[eé]?|suite|#)\s*\d+[a-zA-Z]?\s*[,\-]\s*", "", address)
+    # Multi-number ranges: keep first number only
+    addr = re.sub(r"(\d+)\s*[-–]\s*\d+", r"\1", addr)
+    # Remove leading commas after stripping
+    addr = re.sub(r"^\s*,\s*", "", addr)
+    # Expand common French street abbreviations
+    abbreviations = [
+        (r"\bBoul\.?\b", "Boulevard"),
+        (r"\bAve?\.?\b", "Avenue"),
+        (r"\bCh\.?\b", "Chemin"),
+        (r"\bSte?\.?\b", "Sainte" if "Ste-" in addr or "Ste " in addr else "Saint"),
+        (r"\bMtée\.?\b", "Montée"),
+        (r"\bPl\.?\b", "Place"),
+    ]
+    for pattern, replacement in abbreviations:
+        addr = re.sub(pattern, replacement, addr, flags=re.IGNORECASE)
+    # Strip borough/neighbourhood from city name
+    clean_city = re.sub(r"\s*\(.*?\)", "", city).strip()
+    # Remove double-encoded UTF-8 (Ã© -> é)
+    for text_ref in [addr, clean_city]:
+        try:
+            text_ref = text_ref.encode("latin-1").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+    return addr.strip(), clean_city
+
+
 async def geocode_address(
     address: str,
     city: str,
@@ -48,35 +86,82 @@ async def geocode_address(
 ) -> Optional[tuple[float, float, str | None]]:
     """Geocode an address using Nominatim (OpenStreetMap).
 
+    Uses a two-pass strategy:
+    1. Structured query (street + city + state) for best matching
+    2. Free-form query as fallback
+
     Returns (latitude, longitude, postal_code) or None if geocoding fails.
     """
-    query = f"{address}, {city}, QC, Canada"
-    params = {
-        "q": query,
+    clean_addr, clean_city = _normalize_address_for_geocoding(address, city)
+    headers = {"User-Agent": "HouseMktAnalyzr/1.0"}
+
+    # --- Pass 1: structured search (most reliable for Nominatim) ---
+    structured_params = {
+        "street": clean_addr,
+        "city": clean_city,
+        "state": "Quebec",
+        "country": "Canada",
+        "format": "json",
+        "limit": 1,
+        "addressdetails": 1,
+    }
+
+    result = await _try_nominatim(client, structured_params, headers)
+    if result:
+        return result
+
+    # --- Pass 2: free-form query (broader matching) ---
+    freeform_query = f"{clean_addr}, {clean_city}, QC, Canada"
+    freeform_params = {
+        "q": freeform_query,
         "format": "json",
         "limit": 1,
         "countrycodes": "ca",
         "addressdetails": 1,
     }
-    headers = {"User-Agent": "HouseMktAnalyzr/1.0"}
 
+    result = await _try_nominatim(client, freeform_params, headers)
+    if result:
+        return result
+
+    # --- Pass 3: city-only fallback (gets approximate location) ---
+    city_params = {
+        "city": clean_city,
+        "state": "Quebec",
+        "country": "Canada",
+        "format": "json",
+        "limit": 1,
+        "addressdetails": 1,
+    }
+
+    result = await _try_nominatim(client, city_params, headers)
+    if result:
+        lat, lon, postal_code = result
+        logger.info(f"Geocoding: city-level fallback for '{address}' in {city}")
+        return lat, lon, postal_code
+
+    logger.warning(f"Geocoding failed all passes for: {clean_addr}, {clean_city}")
+    return None
+
+
+async def _try_nominatim(
+    client: httpx.AsyncClient,
+    params: dict,
+    headers: dict,
+) -> Optional[tuple[float, float, str | None]]:
+    """Execute a single Nominatim query and validate the result."""
     try:
         resp = await client.get(NOMINATIM_URL, params=params, headers=headers)
         resp.raise_for_status()
         results = resp.json()
 
         if not results:
-            logger.warning(f"Geocoding returned no results for: {query}")
             return None
 
         lat = float(results[0]["lat"])
         lon = float(results[0]["lon"])
 
         if not is_valid_quebec_coords(lat, lon):
-            logger.warning(
-                f"Geocoding result outside Quebec bounds for: {query} "
-                f"(lat={lat}, lon={lon})"
-            )
             return None
 
         postal_code = None
@@ -85,7 +170,7 @@ async def geocode_address(
             postal_code = addr_details["postcode"].strip().upper()
         return lat, lon, postal_code
     except Exception as e:
-        logger.error(f"Geocoding failed for {query}: {e}")
+        logger.debug(f"Nominatim query failed: {e}")
         return None
 
 

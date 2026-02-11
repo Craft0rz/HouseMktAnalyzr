@@ -872,7 +872,7 @@ async def family_search(
         return FamilyBatchResponse(results=[], count=0, summary={})
 
     try:
-        from ..db import get_cached_listings
+        from ..db import get_cached_listings, get_batch_price_drops, get_batch_days_on_market
 
         cached = await get_cached_listings(
             property_types=["HOUSE"],
@@ -890,11 +890,19 @@ async def family_search(
         house_listings = [PropertyListing(**d) for d in cached]
         logger.info(f"Family search: {len(house_listings)} houses for region={region}")
 
+        # Batch-fetch price drops and days on market for market_trajectory scoring
+        all_ids = [l.id for l in house_listings]
+        price_drops_map, dom_map = await asyncio.gather(
+            get_batch_price_drops(all_ids),
+            get_batch_days_on_market(all_ids),
+        )
+
         # All scoring data comes from pre-enriched fields on the listing itself.
         # No additional DB queries or API calls during search.
         # - geo_enrichment: school_distance, parks, flood zone (background task)
         # - walk_score/transit_score: already on PropertyListing (walk score enrichment)
         # - safety_score: read from geo_enrichment if available
+        # - price_drops + days_on_market: batch-fetched above for market_trajectory
         response_results = []
         for listing in house_listings:
             try:
@@ -907,6 +915,8 @@ async def family_search(
                     school_distance_m=geo.get("nearest_elementary_m"),
                     park_count_1km=geo.get("park_count_1km"),
                     flood_zone=geo.get("flood_zone"),
+                    price_drops=price_drops_map.get(listing.id),
+                    days_on_market=dom_map.get(listing.id),
                 )
                 response_results.append(
                     HouseWithScore(listing=listing, family_metrics=metrics)

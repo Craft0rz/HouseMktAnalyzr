@@ -543,6 +543,10 @@ export const adminApi = {
   checkAlerts: (): Promise<{ alerts_checked: number; total_new_matches: number; notifications_sent: number }> => {
     return fetchApi('/api/alerts/check-now', { method: 'POST' });
   },
+
+  resetGeocodingFailures: (): Promise<{ status: string; geocode_failed_cleared: number; walk_score_attempted_cleared: number; message: string }> => {
+    return fetchApi('/api/admin/reset-geocoding-failures', { method: 'POST' });
+  },
 };
 
 export { ApiError, TOKEN_KEY, REFRESH_KEY, attemptTokenRefresh };
