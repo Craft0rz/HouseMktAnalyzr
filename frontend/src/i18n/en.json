@@ -132,7 +132,7 @@
   "search.daysOnMarket": "{days}d on market",
   "search.lastSeen": "Last seen {date}",
   "search.filterAll": "All",
-  "search.filterNew": "New (≤7d)",
+  "search.filterNew": "New (≤48h)",
   "search.filterPriceDrops": "Price Drops",
   "search.filterStale": "Stale",
   "search.filterRemoved": "Removed",

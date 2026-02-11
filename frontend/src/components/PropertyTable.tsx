@@ -88,7 +88,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
         case 'active':
           return !lc || lc.status === 'active';
         case 'new':
-          return lc && lc.days_on_market !== null && lc.days_on_market <= 7;
+          return lc && lc.days_on_market !== null && lc.days_on_market <= 2;
         case 'stale':
           return lc?.status === 'stale';
         case 'delisted':

@@ -132,7 +132,7 @@
   "search.daysOnMarket": "{days}j sur le marché",
   "search.lastSeen": "Dernière vue le {date}",
   "search.filterAll": "Tout",
-  "search.filterNew": "Nouveau (≤7j)",
+  "search.filterNew": "Nouveau (≤48h)",
   "search.filterPriceDrops": "Baisses de prix",
   "search.filterStale": "Périmé",
   "search.filterRemoved": "Retiré",
