@@ -12,15 +12,13 @@ Data sources:
 
 import logging
 import math
-from datetime import datetime, timezone
-from typing import Any
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 # HTTP timeout for all external API calls (seconds)
-_API_TIMEOUT = 5.0
+_API_TIMEOUT = 8.0
 
 # In-memory cache keyed by (round(lat,3), round(lon,3)) to avoid
 # repeated calls for nearby properties (within ~111m)
@@ -173,8 +171,8 @@ async def fetch_nearby_schools(
 async def check_flood_zone(lat: float, lon: float) -> dict | None:
     """Check if coordinates fall within a Quebec flood zone.
 
-    Uses the CEHQ (Centre d'expertise hydrique du Quebec) ESRI REST API
-    to determine if a property is located in a designated flood zone.
+    Uses the Donnees Quebec public themes MapServer (layer 22 = flood zone
+    polygons) to determine if a property is in a designated flood zone.
 
     Args:
         lat: Latitude of the property.
@@ -189,13 +187,14 @@ async def check_flood_zone(lat: float, lon: float) -> dict | None:
         return _flood_cache[key]
 
     url = (
-        "https://servicesgeo.enviroweb.gouv.qc.ca/arcgis/rest/services/"
-        "CEHQ/ZonesInondables/MapServer/0/query"
+        "https://www.servicesgeo.enviroweb.gouv.qc.ca/donnees/rest/services/"
+        "Public/Themes_publics/MapServer/22/query"
     )
     params = {
         "geometry": f"{lon},{lat}",
         "geometryType": "esriGeometryPoint",
         "spatialRel": "esriSpatialRelIntersects",
+        "inSR": "4326",
         "outFields": "*",
         "f": "json",
     }
@@ -206,16 +205,18 @@ async def check_flood_zone(lat: float, lon: float) -> dict | None:
             resp.raise_for_status()
             data = resp.json()
 
+        if data.get("error"):
+            logger.warning(f"Flood zone API error response: {data['error']}")
+            return None
+
         features = data.get("features", [])
 
         if features:
-            # Property is in a flood zone
             attrs = features[0].get("attributes", {})
             zone_type = (
-                attrs.get("TYPE_ZONE")
-                or attrs.get("ZONE_INOND")
-                or attrs.get("DESCRIPTION")
-                or attrs.get("NOM")
+                attrs.get("Description")
+                or attrs.get("TYPE_ZONE")
+                or attrs.get("Nm_rapport")
             )
             result = {
                 "in_flood_zone": True,
@@ -241,10 +242,10 @@ async def check_flood_zone(lat: float, lon: float) -> dict | None:
 async def fetch_nearby_parks(
     lat: float, lon: float, radius_m: int = 1000
 ) -> dict | None:
-    """Fetch nearby parks and playgrounds.
+    """Fetch nearby parks and playgrounds using OpenStreetMap Overpass API.
 
-    For Montreal area: uses Montreal Open Data API.
-    For other areas: falls back to OpenStreetMap Overpass API.
+    Works for all Quebec regions (Montreal, Laval, Longueuil, etc.)
+    without needing region-specific data sources.
 
     Args:
         lat: Latitude of the property.
@@ -259,90 +260,11 @@ async def fetch_nearby_parks(
     if key in _parks_cache:
         return _parks_cache[key]
 
-    # Determine if coordinates are in Montreal area (rough bounding box)
-    is_montreal = (45.40 <= lat <= 45.70) and (-73.97 <= lon <= -73.47)
-
-    result = None
-    if is_montreal:
-        result = await _fetch_parks_montreal(lat, lon, radius_m)
-
-    # Fall back to OSM Overpass if Montreal API failed or not in Montreal
-    if result is None:
-        result = await _fetch_parks_osm(lat, lon, radius_m)
+    result = await _fetch_parks_osm(lat, lon, radius_m)
 
     if result is not None:
         _parks_cache[key] = result
     return result
-
-
-async def _fetch_parks_montreal(
-    lat: float, lon: float, radius_m: int
-) -> dict | None:
-    """Fetch parks from Montreal Open Data CKAN API.
-
-    Montreal publishes park data through their CKAN data portal.
-    We search the grands-parcs resource for nearby parks.
-    """
-    url = "https://donnees.montreal.ca/api/3/action/datastore_search"
-    # The exact resource_id may change; we attempt with the known park resource
-    # and fall back to OSM if this fails.
-    params: dict[str, Any] = {
-        "resource_id": "2e9e4d2f-173a-4c3d-a5e3-565d79e1a5c6",
-        "limit": 100,
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-
-        records = data.get("result", {}).get("records", [])
-        if not records:
-            return None
-
-        park_count = 0
-        playground_count = 0
-        nearest_park_m: float | None = None
-
-        for record in records:
-            # Try to extract lat/lon from record
-            record_lat = record.get("LATITUDE") or record.get("latitude")
-            record_lon = record.get("LONGITUDE") or record.get("longitude")
-
-            if record_lat is None or record_lon is None:
-                continue
-
-            try:
-                record_lat = float(record_lat)
-                record_lon = float(record_lon)
-            except (ValueError, TypeError):
-                continue
-
-            distance = haversine_distance(lat, lon, record_lat, record_lon)
-
-            if distance <= radius_m:
-                park_count += 1
-                if nearest_park_m is None or distance < nearest_park_m:
-                    nearest_park_m = round(distance)
-
-                # Check if it has playground facilities
-                parc_type = str(record.get("TYPE", "") or "").lower()
-                if "jeux" in parc_type or "playground" in parc_type:
-                    playground_count += 1
-
-        return {
-            "park_count": park_count,
-            "playground_count": playground_count,
-            "nearest_park_m": nearest_park_m,
-        }
-
-    except httpx.TimeoutException:
-        logger.warning(f"Montreal parks API timeout for ({lat}, {lon})")
-        return None
-    except Exception as e:
-        logger.warning(f"Montreal parks API error for ({lat}, {lon}): {e}")
-        return None
 
 
 async def _fetch_parks_osm(
@@ -355,7 +277,7 @@ async def _fetch_parks_osm(
     """
     url = "https://overpass-api.de/api/interpreter"
     query = f"""
-    [out:json][timeout:5];
+    [out:json][timeout:8];
     (
       node["leisure"="park"](around:{radius_m},{lat},{lon});
       way["leisure"="park"](around:{radius_m},{lat},{lon});

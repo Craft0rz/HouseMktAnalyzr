@@ -596,6 +596,7 @@ async def get_listings_without_walk_score(limit: int = 50) -> list[dict]:
     """Get cached listings that don't have walk scores yet.
 
     Returns list of dicts with id, address, city, latitude, longitude.
+    Skips listings already marked with walk_score_attempted_at (already tried).
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -606,6 +607,7 @@ async def get_listings_without_walk_score(limit: int = 50) -> list[dict]:
             SELECT id, data FROM properties
             WHERE expires_at > $1
               AND (data->>'walk_score') IS NULL
+              AND (data->>'walk_score_attempted_at') IS NULL
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
@@ -634,7 +636,12 @@ async def update_walk_scores(
     longitude: float | None,
     postal_code: str | None = None,
 ) -> bool:
-    """Update walk scores in a listing's JSONB data."""
+    """Update walk scores and coordinates in a listing's JSONB data.
+
+    Always stores coordinates and marks the attempt timestamp so the listing
+    is not re-queried. Walk scores may be None if scraping failed but
+    geocoding succeeded.
+    """
     pool = get_pool()
 
     async with pool.acquire() as conn:
@@ -645,9 +652,12 @@ async def update_walk_scores(
             return False
 
         data = json.loads(row["data"])
-        data["walk_score"] = walk_score
-        data["transit_score"] = transit_score
-        data["bike_score"] = bike_score
+        if walk_score is not None:
+            data["walk_score"] = walk_score
+        if transit_score is not None:
+            data["transit_score"] = transit_score
+        if bike_score is not None:
+            data["bike_score"] = bike_score
         if latitude:
             data["latitude"] = latitude
         if longitude:
@@ -655,6 +665,8 @@ async def update_walk_scores(
         # Only fill postal_code if listing doesn't already have one
         if postal_code and not data.get("postal_code"):
             data["postal_code"] = postal_code
+        # Mark as attempted so we don't retry listings where scraping failed
+        data["walk_score_attempted_at"] = datetime.now(timezone.utc).isoformat()
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",

@@ -858,6 +858,7 @@ async def family_search(
     max_price: Optional[int] = Query(default=None),
     new_only: bool = Query(default=False),
     price_drops_only: bool = Query(default=False),
+    limit: int = Query(default=100, ge=1, le=5000),
 ) -> FamilyBatchResponse:
     """Search houses and score them for family livability.
 
@@ -918,7 +919,12 @@ async def family_search(
             key=lambda x: x.family_metrics.family_score, reverse=True
         )
 
-        # Summary statistics
+        total_scored = len(response_results)
+
+        # Apply limit after sorting so we return the top N by score
+        response_results = response_results[:limit]
+
+        # Summary statistics (computed on returned results)
         scores = [r.family_metrics.family_score for r in response_results]
         monthly_costs = [
             r.family_metrics.monthly_cost_estimate
@@ -934,7 +940,7 @@ async def family_search(
                 round(sum(monthly_costs) / len(monthly_costs))
                 if monthly_costs else 0
             ),
-            "total_houses_scored": len(response_results),
+            "total_houses_scored": total_scored,
         }
 
         return FamilyBatchResponse(

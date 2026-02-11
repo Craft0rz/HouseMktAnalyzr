@@ -419,6 +419,7 @@ export const housesApi = {
     if (params.region) searchParams.set('region', params.region);
     if (params.min_price) searchParams.set('min_price', String(params.min_price));
     if (params.max_price) searchParams.set('max_price', String(params.max_price));
+    if (params.limit) searchParams.set('limit', String(params.limit));
     if (params.new_only) searchParams.set('new_only', 'true');
     if (params.price_drops_only) searchParams.set('price_drops_only', 'true');
 

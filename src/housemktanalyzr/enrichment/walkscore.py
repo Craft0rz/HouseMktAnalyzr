@@ -200,13 +200,16 @@ async def enrich_with_walk_score(
                 longitude = None
 
         scores = await scrape_walk_score(address, city, client)
-        if not scores:
+
+        # Return result even if walk scores failed — coordinates are valuable
+        # for downstream geo enrichment (schools, flood zones, parks)
+        if not scores and latitude is None:
             return None
 
         return WalkScoreResult(
-            walk_score=scores["walk_score"],
-            transit_score=scores["transit_score"],
-            bike_score=scores["bike_score"],
+            walk_score=scores["walk_score"] if scores else None,
+            transit_score=scores["transit_score"] if scores else None,
+            bike_score=scores["bike_score"] if scores else None,
             latitude=latitude,
             longitude=longitude,
             postal_code=postal_code,
