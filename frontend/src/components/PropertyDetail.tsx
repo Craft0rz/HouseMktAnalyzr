@@ -6,6 +6,7 @@ import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -166,6 +167,8 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
   const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
+  const [downPaymentPctInput, setDownPaymentPctInput] = useState<string>('20');
+  const [interestRateInput, setInterestRateInput] = useState<string>('5');
 
   const intlLocale = locale === 'fr' ? 'fr-CA' : 'en-CA';
 
@@ -267,10 +270,10 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
   // Use enriched listing if available, otherwise fall back to search data
   const listing = enrichedListing || property.listing;
 
-  // Calculate mortgage estimates (20% down, 5% rate, 30 years)
+  // Calculate mortgage estimates (user-configurable down payment & rate, 30 years)
   // Uses Canadian semi-annual compounding to match backend calculator
-  const downPaymentPct = 0.20;
-  const interestRate = 0.05;
+  const downPaymentPct = Math.max(0.05, Math.min(1, (parseFloat(downPaymentPctInput) || 20) / 100));
+  const interestRate = Math.max(0.001, Math.min(0.25, (parseFloat(interestRateInput) || 5) / 100));
   const amortizationYears = 30;
   const downPayment = listing.price * downPaymentPct;
   const principal = listing.price - downPayment;
@@ -298,6 +301,11 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
       };
   const totalExpenses = Object.values(monthlyExpenses).reduce((a, b) => a + b, 0);
   const netCashFlow = monthlyIncome - totalExpenses;
+  // Gross cash flow: income minus only listing-specific costs (mortgage + taxes)
+  const monthlyTaxes = hasActualExpenses
+    ? 0 // taxes are bundled in "operating" when using actual Centris data
+    : (monthlyExpenses as any).taxes ?? 0;
+  const grossCashFlow = monthlyIncome - monthlyMortgage - monthlyTaxes;
 
   const isInComparison = selectedProperties.some(p => p.listing.id === listing.id);
 
@@ -669,11 +677,39 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <div className="text-muted-foreground">{t('detail.downPayment')}</div>
-                  <div className="font-medium">{formatPrice(downPayment, locale)}</div>
+                  <label className="text-xs text-muted-foreground">{t('detail.downPayment')} (%)</label>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Input
+                      type="number"
+                      min="5"
+                      max="100"
+                      step="1"
+                      value={downPaymentPctInput}
+                      onChange={(e) => setDownPaymentPctInput(e.target.value)}
+                      className="h-8 text-sm w-20"
+                    />
+                    <span className="text-sm text-muted-foreground">= {formatPrice(downPayment, locale)}</span>
+                  </div>
                 </div>
+                <div>
+                  <label className="text-xs text-muted-foreground">{t('detail.interestRate')} (%)</label>
+                  <div className="flex items-center gap-1 mt-1">
+                    <Input
+                      type="number"
+                      min="0.1"
+                      max="25"
+                      step="0.1"
+                      value={interestRateInput}
+                      onChange={(e) => setInterestRateInput(e.target.value)}
+                      className="h-8 text-sm w-20"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4 text-sm pt-1">
                 <div>
                   <div className="text-muted-foreground">{t('detail.loanAmount')}</div>
                   <div className="font-medium">{formatPrice(principal, locale)}</div>
@@ -681,10 +717,6 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
                 <div>
                   <div className="text-muted-foreground">{t('detail.monthlyPayment')}</div>
                   <div className="font-medium">{formatPrice(monthlyMortgage, locale)}</div>
-                </div>
-                <div>
-                  <div className="text-muted-foreground">{t('detail.interestRate')}</div>
-                  <div className="font-medium">{(interestRate * 100).toFixed(1)}%</div>
                 </div>
               </div>
               <div className="text-xs text-muted-foreground">
