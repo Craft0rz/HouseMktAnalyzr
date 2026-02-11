@@ -177,6 +177,17 @@ async def create_alert(
         raise HTTPException(status_code=500, detail=f"Failed to create alert: {str(e)}")
 
 
+@router.post("/check-now")
+async def check_alerts_now(user: dict = Depends(get_current_user)):
+    """Manually trigger alert checking against current DB listings (no scrape needed)."""
+    try:
+        from ..alert_checker import check_all_alerts
+        result = await check_all_alerts()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Alert check failed: {str(e)}")
+
+
 @router.get("/{alert_id}", response_model=AlertResponse)
 async def get_alert(alert_id: str, user: dict = Depends(get_current_user)) -> AlertResponse:
     """Get a specific alert by ID (must belong to current user)."""
@@ -318,6 +329,43 @@ async def delete_alert(alert_id: str, user: dict = Depends(get_current_user)) ->
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete alert: {str(e)}")
+
+
+@router.post("/{alert_id}/test-email")
+async def test_alert_email(alert_id: str, user: dict = Depends(get_current_user)):
+    """Send a test email for an alert to verify SMTP is working."""
+    try:
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM alerts WHERE id = $1 AND user_id = $2",
+                alert_id, user["id"],
+            )
+        if not row:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        if not row["notify_email"]:
+            raise HTTPException(status_code=400, detail="No notify_email configured on this alert")
+
+        from ..email_sender import send_alert_email
+        await send_alert_email(
+            to_email=row["notify_email"],
+            alert_name=f"[TEST] {row['name']}",
+            new_listings=[],
+            price_drops=[{
+                "address": "123 Test Street, Montreal",
+                "old_price": 500000,
+                "new_price": 475000,
+                "drop_amount": 25000,
+                "drop_pct": 5.0,
+            }],
+        )
+        return {"status": "sent", "to": row["notify_email"]}
+    except HTTPException:
+        raise
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send test email: {str(e)}")
 
 
 @router.post("/{alert_id}/toggle", response_model=AlertResponse)
