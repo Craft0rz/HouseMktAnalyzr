@@ -20,8 +20,8 @@ import {
 } from '@/components/ui/sheet';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice, formatNumber } from '@/lib/formatters';
-import { propertiesApi, marketApi } from '@/lib/api';
-import type { HouseWithScore, PropertyListing, PriceHistoryResponse, DemographicProfile, NeighbourhoodResponse } from '@/lib/types';
+import { propertiesApi, marketApi, housesApi } from '@/lib/api';
+import type { HouseWithScore, PropertyListing, FamilyHomeMetrics, PriceHistoryResponse, DemographicProfile, NeighbourhoodResponse } from '@/lib/types';
 
 interface HouseDetailProps {
   house: HouseWithScore | null;
@@ -147,6 +147,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
   const { t, locale } = useTranslation();
   const [photoIndex, setPhotoIndex] = useState(0);
   const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
+  const [enrichedMetrics, setEnrichedMetrics] = useState<FamilyHomeMetrics | null>(null);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
   const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
@@ -156,6 +157,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
   useEffect(() => {
     if (!house) {
       setEnrichedListing(null);
+      setEnrichedMetrics(null);
       setPriceHistory(null);
       setDemographics(null);
       setNeighbourhood(null);
@@ -167,7 +169,13 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
 
     // Fetch full details (triggers on-demand condition scoring + walk score)
     propertiesApi.getDetails(listing.id).then((detail) => {
-      if (!cancelled) setEnrichedListing(detail);
+      if (!cancelled) {
+        setEnrichedListing(detail);
+        // Re-score with enriched listing + live geo/safety data
+        housesApi.scoreHouse(detail).then((metrics) => {
+          if (!cancelled) setEnrichedMetrics(metrics);
+        }).catch(() => {});
+      }
     }).catch(() => {});
 
     propertiesApi.getPriceHistory(listing.id).then((data) => {
@@ -190,7 +198,8 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
 
   if (!house) return null;
 
-  const { family_metrics: fm } = house;
+  // Use enriched metrics (with live geo/safety/market data) when available
+  const fm = enrichedMetrics ?? house.family_metrics;
   // Use enriched listing (with condition score, walk score, photos) when available
   const listing = enrichedListing ?? house.listing;
   const photos = listing.photo_urls ?? [];

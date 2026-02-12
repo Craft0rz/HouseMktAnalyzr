@@ -677,9 +677,12 @@ async def _fetch_geo_data(listing: PropertyListing) -> dict:
         result["flood_zone"] = geo.get("flood_zone")
         result["nearest_park_m"] = geo.get("nearest_park_m")
         result["schools"] = geo.get("schools")
-        return result
+        # Only trust pre-enriched data if at least schools or parks were populated;
+        # otherwise fall through to live fetch for a more complete result
+        if result["school_distance_m"] is not None or result["park_count_1km"] is not None:
+            return result
 
-    # No pre-enriched data — fetch live if coordinates are available
+    # No usable pre-enriched data — fetch live if coordinates are available
     if listing.latitude is None or listing.longitude is None:
         return result
 
@@ -733,12 +736,16 @@ async def family_score_property(request: AnalyzeRequest) -> FamilyHomeMetrics:
     coordinates are available.
     """
     try:
-        # Fetch location data and geo data in parallel
-        location_data, geo_data = await asyncio.gather(
+        from ..db import get_batch_price_drops, get_batch_days_on_market
+
+        # Fetch location data, geo data, price drops, and days on market in parallel
+        location_data, geo_data, price_drops_map, dom_map = await asyncio.gather(
             _fetch_location_data(
                 request.listing.city, request.listing.postal_code
             ),
             _fetch_geo_data(request.listing),
+            get_batch_price_drops([request.listing.id]),
+            get_batch_days_on_market([request.listing.id]),
         )
 
         metrics = family_scorer.score_property(
@@ -747,6 +754,8 @@ async def family_score_property(request: AnalyzeRequest) -> FamilyHomeMetrics:
             school_distance_m=geo_data.get("school_distance_m"),
             park_count_1km=geo_data.get("park_count_1km"),
             flood_zone=geo_data.get("flood_zone"),
+            price_drops=price_drops_map.get(request.listing.id),
+            days_on_market=dom_map.get(request.listing.id),
         )
         return metrics
 
@@ -897,24 +906,38 @@ async def family_search(
             get_batch_days_on_market(all_ids),
         )
 
-        # All scoring data comes from pre-enriched fields on the listing itself.
-        # No additional DB queries or API calls during search.
-        # - geo_enrichment: school_distance, parks, flood zone (background task)
-        # - walk_score/transit_score: already on PropertyListing (walk score enrichment)
-        # - safety_score: read from geo_enrichment if available
-        # - price_drops + days_on_market: batch-fetched above for market_trajectory
+        # Batch-fetch location data (safety scores) by unique (city, postal_code)
+        # so listings without geo_enrichment still get safety scoring
+        unique_loc_keys = list({
+            (l.city, l.postal_code)
+            for l in house_listings if l.city
+        })
+        location_data_list = await asyncio.gather(
+            *[_fetch_location_data(city, pc) for city, pc in unique_loc_keys]
+        )
+        location_data_map = dict(zip(unique_loc_keys, location_data_list))
+
+        # Score each house using pre-enriched geo data + batch-fetched location/market data
         response_results = []
         for listing in house_listings:
             try:
                 raw = listing.raw_data or {}
                 geo = raw.get("geo_enrichment") or {}
+                loc_key = (listing.city, listing.postal_code)
+                location_data = location_data_map.get(loc_key, {})
+
+                # Use geo_enrichment safety_score if available, fall back to DB lookup
+                safety = geo.get("safety_score")
+                if safety is None:
+                    safety = location_data.get("safety_score")
 
                 metrics = family_scorer.score_property(
                     listing=listing,
-                    safety_score=geo.get("safety_score"),
+                    safety_score=safety,
                     school_distance_m=geo.get("nearest_elementary_m"),
                     park_count_1km=geo.get("park_count_1km"),
                     flood_zone=geo.get("flood_zone"),
+                    contaminated_nearby=geo.get("contaminated_nearby"),
                     price_drops=price_drops_map.get(listing.id),
                     days_on_market=dom_map.get(listing.id),
                 )

@@ -413,12 +413,11 @@ class FamilyHomeScorer:
         # --- Market Trajectory (0-7 pts) ---
         # Price drops and extended days on market signal buyer-favorable conditions
         trajectory_pts = self._score_market_trajectory(price_drops, days_on_market)
-        completeness["market_trajectory"] = (
-            price_drops is not None or days_on_market is not None
-        )
-        if trajectory_pts > 0:
+        has_market_data = price_drops is not None or days_on_market is not None
+        completeness["market_trajectory"] = has_market_data
+        if has_market_data:
             breakdown["market_trajectory_pts"] = trajectory_pts
-            total += trajectory_pts
+        total += trajectory_pts
 
         # Cap at 35
         total = min(35.0, total)
