@@ -422,6 +422,18 @@ async def reset_geocoding_failures(
         )
         geo_count = int(geo_result.split()[-1])
 
+        # Clear walk_score_failed_at so the cooldown is bypassed
+        wf_result = await conn.execute(
+            """
+            UPDATE properties
+            SET data = data - 'walk_score_failed_at'
+            WHERE expires_at > $1
+              AND (data->>'walk_score_failed_at') IS NOT NULL
+            """,
+            now,
+        )
+        wf_count = int(wf_result.split()[-1])
+
         # Clear walk_score_attempted_at for listings that still lack coordinates
         # so the walk score enrichment retries geocoding
         ws_result = await conn.execute(
@@ -443,15 +455,17 @@ async def reset_geocoding_failures(
         ws_count = int(ws_result.split()[-1])
 
     logger.info(
-        f"Reset geocoding failures: {geo_count} geocode_failed_at cleared, "
-        f"{ws_count} walk_score_attempted_at cleared"
+        f"Reset geocoding failures: {geo_count} geocode_failed_at, "
+        f"{wf_count} walk_score_failed_at, {ws_count} walk_score_attempted_at cleared"
     )
     return {
         "status": "ok",
         "geocode_failed_cleared": geo_count,
+        "walk_score_failed_cleared": wf_count,
         "walk_score_attempted_cleared": ws_count,
         "message": (
-            f"Cleared {geo_count} geocode failures and {ws_count} walk score sentinels. "
+            f"Cleared {geo_count} geocode failures, {wf_count} walk score failures, "
+            f"and {ws_count} walk score sentinels. "
             "Run 'Revalidate Geocoding' or wait for next scraper cycle to retry."
         ),
     }

@@ -598,6 +598,7 @@
   "status.geoParks": "Parks",
   "status.geoFlood": "Flood Zones",
   "status.geoNoCoords": "{count} houses have no coordinates and cannot be geo-enriched",
+  "status.geoGeocodingFailed": "{count} failed geocoding (will retry in 7 days or use Reset Geocoding)",
   "status.dataRefreshes": "Data Refreshes",
   "status.marketData": "Market Data",
   "status.rentData": "Rent Data",

@@ -598,6 +598,7 @@
   "status.geoParks": "Parcs",
   "status.geoFlood": "Zones inondables",
   "status.geoNoCoords": "{count} maisons n'ont pas de coordonnées et ne peuvent pas être enrichies",
+  "status.geoGeocodingFailed": "{count} échecs de géocodage (nouvel essai dans 7 jours ou via Réinitialiser géocodage)",
   "status.dataRefreshes": "Mises à jour des données",
   "status.marketData": "Données de marché",
   "status.rentData": "Données de loyer",

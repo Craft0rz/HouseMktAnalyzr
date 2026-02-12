@@ -596,7 +596,8 @@ async def get_listings_without_walk_score(limit: int = 50) -> list[dict]:
     """Get cached listings that don't have walk scores yet.
 
     Returns list of dicts with id, address, city, latitude, longitude.
-    Skips listings already marked with walk_score_attempted_at (already tried).
+    Skips listings where walk_score_attempted_at is set (success) or where
+    geocoding was attempted within the last 7 days (failure cooldown).
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -608,6 +609,10 @@ async def get_listings_without_walk_score(limit: int = 50) -> list[dict]:
             WHERE expires_at > $1
               AND (data->>'walk_score') IS NULL
               AND (data->>'walk_score_attempted_at') IS NULL
+              AND (
+                (data->>'walk_score_failed_at') IS NULL
+                OR (data->>'walk_score_failed_at')::timestamptz < ($1 - interval '7 days')
+              )
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
@@ -673,6 +678,26 @@ async def update_walk_scores(
             json.dumps(data), listing_id,
         )
     return True
+
+
+async def mark_walk_score_failed(listing_id: str) -> None:
+    """Mark a listing's geocoding/walk-score attempt as failed with a timestamp.
+
+    The get_listings_without_walk_score query skips listings where this
+    timestamp is less than 7 days old, preventing the same failing addresses
+    from consuming the batch budget every cycle.
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE properties
+            SET data = jsonb_set(data, '{walk_score_failed_at}', to_jsonb($1::text))
+            WHERE id = $2
+            """,
+            datetime.now(timezone.utc).isoformat(),
+            listing_id,
+        )
 
 
 async def get_listings_with_bad_coordinates() -> list[dict]:
@@ -2063,7 +2088,12 @@ async def get_geo_enrichment_stats() -> dict:
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
                       AND (data->'raw_data'->'geo_enrichment'->>'nearest_elementary_m') IS NULL
                       AND COALESCE((data->'raw_data'->'geo_enrichment'->>'park_count_1km')::int, 0) = 0
-                ) as incomplete
+                ) as incomplete,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NULL
+                      AND (data->>'walk_score_failed_at') IS NOT NULL
+                ) as geocoding_failed
             FROM properties
             WHERE expires_at > $1
             """,
@@ -2080,6 +2110,7 @@ async def get_geo_enrichment_stats() -> dict:
         "total_houses": total,
         "with_coords": with_coords,
         "no_coords": no_coords,
+        "geocoding_failed": row["geocoding_failed"],
         "enriched": enriched,
         "pending": max(0, pending),
         "incomplete": row["incomplete"],

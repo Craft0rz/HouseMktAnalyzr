@@ -516,10 +516,15 @@ function StatusContent() {
 
               {/* Warnings */}
               {g.no_coords > 0 && (
-                <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2">
+                <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2 space-y-1">
                   <p className="text-xs text-amber-700 dark:text-amber-400">
                     {t('status.geoNoCoords', { count: String(g.no_coords) })}
                   </p>
+                  {g.geocoding_failed > 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-500">
+                      {t('status.geoGeocodingFailed', { count: String(g.geocoding_failed) })}
+                    </p>
+                  )}
                 </div>
               )}
             </CardContent>

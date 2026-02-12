@@ -12,7 +12,7 @@ from datetime import timedelta
 from .db import (
     cache_listings, get_pool,
     get_listings_without_details, update_listing_details,
-    get_listings_without_walk_score, update_walk_scores,
+    get_listings_without_walk_score, update_walk_scores, mark_walk_score_failed,
     get_listings_without_photos, update_photo_urls,
     get_listings_without_condition_score, update_condition_score,
     get_houses_without_geo_enrichment, update_geo_enrichment,
@@ -602,11 +602,17 @@ class ScraperWorker:
                         )
                         total_enriched += 1
                     else:
+                        # Mark failed so we don't retry every cycle (7-day cooldown)
+                        await mark_walk_score_failed(item["id"])
                         total_failed += 1
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     logger.warning(f"Walk Score failed for {item['id']}: {e}")
+                    try:
+                        await mark_walk_score_failed(item["id"])
+                    except Exception:
+                        pass
                     total_failed += 1
                 self._status["enrichment_progress"]["walk_scores"]["done"] = total_enriched
                 self._status["enrichment_progress"]["walk_scores"]["failed"] = total_failed

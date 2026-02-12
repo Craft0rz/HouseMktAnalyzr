@@ -499,6 +499,7 @@ export interface GeoEnrichmentStats {
   total_houses: number;
   with_coords: number;
   no_coords: number;
+  geocoding_failed: number;
   enriched: number;
   pending: number;
   incomplete: number;
