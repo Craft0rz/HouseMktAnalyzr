@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   ExternalLink, AlertTriangle, Footprints, Bus, Bike, ChevronLeft, ChevronRight,
   DollarSign, Shield, Users, Sparkles, Hammer, Building, TrendingUp, TrendingDown, Minus,
+  MapPin, Home, Landmark, Calculator,
 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { Badge } from '@/components/ui/badge';
@@ -32,6 +33,32 @@ function getBadgeColor(score: number): string {
   if (score >= 70) return 'bg-green-500';
   if (score >= 50) return 'bg-yellow-500';
   return 'bg-red-500';
+}
+
+function getScoreHexColor(s: number) {
+  if (s >= 70) return '#22c55e';
+  if (s >= 50) return '#eab308';
+  return '#ef4444';
+}
+
+function ScoreGauge({ score, size = 100 }: { score: number; size?: number }) {
+  const radius = (size - 12) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const progress = Math.min(score / 100, 1) * circumference;
+  const strokeWidth = 8;
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg className="transform -rotate-90" width={size} height={size}>
+        <circle cx={size / 2} cy={size / 2} r={radius} stroke="currentColor" strokeWidth={strokeWidth} fill="none" className="text-muted/20" />
+        <circle cx={size / 2} cy={size / 2} r={radius} stroke={getScoreHexColor(score)} strokeWidth={strokeWidth} fill="none" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={circumference - progress} className="transition-all duration-500" />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold" style={{ color: getScoreHexColor(score) }}>{score.toFixed(0)}</span>
+        <span className="text-[10px] text-muted-foreground">/ 100</span>
+      </div>
+    </div>
+  );
 }
 
 function getWalkScoreColor(score: number | null): string {
@@ -199,13 +226,19 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-xl md:max-w-2xl overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle className="text-left">{listing.address}</SheetTitle>
-          <SheetDescription className="text-left">{listing.city}</SheetDescription>
+      <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+        <SheetHeader className="px-6 pt-6">
+          <SheetTitle className="text-left flex items-center gap-2">
+            <MapPin className="h-5 w-5" />
+            {listing.address}
+          </SheetTitle>
+          <SheetDescription className="text-left">
+            {listing.city}
+            {listing.postal_code && <> &middot; {listing.postal_code}</>}
+          </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-4 space-y-6">
+        <div className="mt-4 px-6 pb-8 space-y-5">
           {/* 1. Header: Photo + Price + Score */}
           <div className="space-y-3">
             {photos.length > 0 ? (
@@ -241,13 +274,49 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
               </div>
             )}
 
-            <div className="flex items-center justify-between">
-              <span className="text-2xl font-bold">{formatPrice(listing.price, locale as 'en' | 'fr')}</span>
-              <div className={`rounded-full w-14 h-14 flex items-center justify-center text-lg font-bold text-white shadow-lg ${getBadgeColor(fm.family_score)}`}>
-                {fm.family_score.toFixed(0)}
+            {/* Score + Price hero */}
+            <div className="rounded-lg bg-muted/50 p-4">
+              <div className="flex items-center gap-4">
+                <ScoreGauge score={fm.family_score} />
+                <div className="flex-1 space-y-1">
+                  <Badge className={`${getBadgeColor(fm.family_score)} text-white`}>
+                    {t('houses.familyScore')}
+                  </Badge>
+                  <div className="text-2xl font-bold">{formatPrice(listing.price, locale as 'en' | 'fr')}</div>
+                </div>
+              </div>
+
+              {/* Pillar summary bars */}
+              <div className="mt-3 space-y-2">
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">{t('houses.livability')}</span>
+                    <span className="font-medium tabular-nums">{fm.livability_score.toFixed(0)} / 40</span>
+                  </div>
+                  <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-blue-500 transition-all" style={{ width: `${(fm.livability_score / 40) * 100}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">{t('houses.value')}</span>
+                    <span className="font-medium tabular-nums">{fm.value_score.toFixed(0)} / 35</span>
+                  </div>
+                  <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-green-500 transition-all" style={{ width: `${(fm.value_score / 35) * 100}%` }} />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="text-muted-foreground">{t('houses.spaceComfort')}</span>
+                    <span className="font-medium tabular-nums">{fm.space_score.toFixed(0)} / 25</span>
+                  </div>
+                  <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-purple-500 transition-all" style={{ width: `${(fm.space_score / 25) * 100}%` }} />
+                  </div>
+                </div>
               </div>
             </div>
-            <p className="text-sm text-muted-foreground">{t('houses.familyScore')}</p>
 
             {/* Quick Actions */}
             <div className="flex gap-2">
@@ -260,11 +329,12 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             </div>
           </div>
 
-          <Separator />
-
           {/* 2. Score Breakdown */}
           <div>
-            <h3 className="text-sm font-semibold mb-3">{t('detail.scoreBreakdown')}</h3>
+            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+              <Calculator className="h-4 w-4" />
+              {t('detail.scoreBreakdown')}
+            </h3>
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <CardContent className="p-3 space-y-2">
@@ -327,12 +397,13 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             })()}
           </div>
 
-          <Separator />
-
           {/* 3. Cost of Ownership */}
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('houses.costOfOwnership')}</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Landmark className="h-4 w-4" />
+                {t('houses.costOfOwnership')}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <CostRow label={t('houses.monthlyMortgage')} value={fm.estimated_monthly_mortgage} locale={locale} />
@@ -349,110 +420,121 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
 
           {/* 4. Property Details */}
           <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">{t('detail.propertyDetails')}</CardTitle>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                {t('detail.propertyDetails')}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('houses.bedrooms')}</span>
-                  <span className="font-medium">{listing.bedrooms}</span>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground mb-1">{t('houses.bedrooms')}</div>
+                  <div className="text-lg font-bold">{listing.bedrooms ?? '-'}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('common.baths')}</span>
-                  <span className="font-medium">{listing.bathrooms}</span>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground mb-1">{t('common.baths')}</div>
+                  <div className="text-lg font-bold">{listing.bathrooms ?? '-'}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('common.sqft')}</span>
-                  <span className="font-medium">{listing.sqft ? formatNumber(listing.sqft, locale as 'en' | 'fr') : '-'}</span>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground mb-1">{t('common.sqft')}</div>
+                  <div className="text-lg font-bold">{listing.sqft ? formatNumber(listing.sqft, locale as 'en' | 'fr') : '-'}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('houses.lotSize')}</span>
-                  <span className="font-medium">{listing.lot_sqft ? formatNumber(listing.lot_sqft, locale as 'en' | 'fr') : '-'}</span>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground mb-1">{t('houses.lotSize')}</div>
+                  <div className="text-lg font-bold">{listing.lot_sqft ? formatNumber(listing.lot_sqft, locale as 'en' | 'fr') : '-'}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('common.built')}</span>
-                  <span className="font-medium">{listing.year_built ?? '-'}</span>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground mb-1">{t('common.built')}</div>
+                  <div className="text-lg font-bold">{listing.year_built ?? '-'}</div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">{t('detail.assessment')}</span>
-                  <span className="font-medium">{listing.municipal_assessment ? formatPrice(listing.municipal_assessment, locale as 'en' | 'fr') : '-'}</span>
+                <div className="text-center p-3 rounded-lg bg-muted/50">
+                  <div className="text-xs text-muted-foreground mb-1">{t('detail.assessment')}</div>
+                  <div className="text-lg font-bold">{listing.municipal_assessment ? formatPrice(listing.municipal_assessment, locale as 'en' | 'fr') : '-'}</div>
                 </div>
                 {fm.price_per_sqft != null && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('houses.pricePerSqft')}</span>
-                    <span className="font-medium">{formatPrice(fm.price_per_sqft, locale as 'en' | 'fr')}/{t('common.sqft')}</span>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <div className="text-xs text-muted-foreground mb-1">{t('houses.pricePerSqft')}</div>
+                    <div className="text-lg font-bold">{formatPrice(fm.price_per_sqft, locale as 'en' | 'fr')}</div>
                   </div>
                 )}
               </div>
-
-              {/* Walk / Transit / Bike scores with labels + progress bars */}
-              {(listing.walk_score != null || listing.transit_score != null || listing.bike_score != null) && (
-                <div className="mt-4 space-y-3">
-                  {listing.walk_score != null && (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Footprints className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{t('detail.walkScore')}</span>
-                        </div>
-                        <span className={`text-sm font-bold ${getWalkScoreColor(listing.walk_score)}`}>
-                          {listing.walk_score}
-                        </span>
-                      </div>
-                      <div className="relative h-2 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`absolute inset-y-0 left-0 rounded-full transition-all ${getWalkScoreBg(listing.walk_score)}`}
-                          style={{ width: `${listing.walk_score}%` }}
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">{getWalkLabel(listing.walk_score)}</p>
-                    </div>
-                  )}
-                  {listing.transit_score != null && (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Bus className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{t('detail.transitScore')}</span>
-                        </div>
-                        <span className={`text-sm font-bold ${getWalkScoreColor(listing.transit_score)}`}>
-                          {listing.transit_score}
-                        </span>
-                      </div>
-                      <div className="relative h-2 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`absolute inset-y-0 left-0 rounded-full transition-all ${getWalkScoreBg(listing.transit_score)}`}
-                          style={{ width: `${listing.transit_score}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {listing.bike_score != null && (
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-sm">
-                          <Bike className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{t('detail.bikeScore')}</span>
-                        </div>
-                        <span className={`text-sm font-bold ${getWalkScoreColor(listing.bike_score)}`}>
-                          {listing.bike_score}
-                        </span>
-                      </div>
-                      <div className="relative h-2 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`absolute inset-y-0 left-0 rounded-full transition-all ${getWalkScoreBg(listing.bike_score)}`}
-                          style={{ width: `${listing.bike_score}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
             </CardContent>
           </Card>
 
-          {/* 5. AI Condition Score */}
+          {/* 5. Walkability */}
+          {(listing.walk_score != null || listing.transit_score != null || listing.bike_score != null) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Footprints className="h-4 w-4" />
+                  {t('detail.walkability')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {listing.walk_score != null && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Footprints className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{t('detail.walkScore')}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${getWalkScoreColor(listing.walk_score)}`}>
+                        {listing.walk_score}
+                      </span>
+                    </div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`absolute inset-y-0 left-0 rounded-full transition-all ${getWalkScoreBg(listing.walk_score)}`}
+                        style={{ width: `${listing.walk_score}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{getWalkLabel(listing.walk_score)}</p>
+                  </div>
+                )}
+                {listing.transit_score != null && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Bus className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{t('detail.transitScore')}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${getWalkScoreColor(listing.transit_score)}`}>
+                        {listing.transit_score}
+                      </span>
+                    </div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`absolute inset-y-0 left-0 rounded-full transition-all ${getWalkScoreBg(listing.transit_score)}`}
+                        style={{ width: `${listing.transit_score}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+                {listing.bike_score != null && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Bike className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{t('detail.bikeScore')}</span>
+                      </div>
+                      <span className={`text-sm font-bold ${getWalkScoreColor(listing.bike_score)}`}>
+                        {listing.bike_score}
+                      </span>
+                    </div>
+                    <div className="relative h-2 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className={`absolute inset-y-0 left-0 rounded-full transition-all ${getWalkScoreBg(listing.bike_score)}`}
+                        style={{ width: `${listing.bike_score}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 6. AI Condition Score */}
           {listing.condition_score != null && listing.condition_details && (
             <Card>
               <CardHeader className="pb-3">
@@ -543,10 +625,10 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             </Card>
           )}
 
-          {/* 6. Price History */}
+          {/* 7. Price History */}
           {priceHistory && priceHistory.changes.length > 0 && (
             <Card>
-              <CardHeader className="pb-2">
+              <CardHeader className="pb-3">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
                   {t('detail.priceHistory')}
@@ -611,7 +693,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             </Card>
           )}
 
-          {/* 7. Neighbourhood Profile */}
+          {/* 8. Neighbourhood Profile */}
           {demographics && (
             <Card>
               <CardHeader className="pb-3">
@@ -725,7 +807,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             </Card>
           )}
 
-          {/* 8. Safety & Development */}
+          {/* 9. Safety & Development */}
           {neighbourhood && (neighbourhood.crime || neighbourhood.permits || neighbourhood.housing_starts || neighbourhood.tax) && (
             <Card>
               <CardHeader className="pb-3">
@@ -869,7 +951,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             </Card>
           )}
 
-          {/* 9. Risk Flags */}
+          {/* 10. Risk Flags */}
           {(fm.flood_zone || fm.contaminated_nearby) && (
             <div className="space-y-2">
               {fm.flood_zone && (
@@ -884,12 +966,6 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                   <span className="text-sm text-red-800 dark:text-red-300">{t('houses.contaminatedWarning')}</span>
                 </div>
               )}
-            </div>
-          )}
-
-          {fm.flood_zone == null && fm.contaminated_nearby == null && (
-            <div className="rounded-md bg-muted/50 border p-3">
-              <span className="text-sm text-muted-foreground">{t('houses.dataNotAvailable')}</span>
             </div>
           )}
 
