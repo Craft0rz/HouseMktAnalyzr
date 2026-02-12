@@ -519,10 +519,24 @@ function HouseCard({
       </div>
 
       <CardContent className="p-4 space-y-3">
-        {/* Address */}
-        <div>
-          <h3 className="font-semibold text-sm truncate">{listing.address}</h3>
-          <p className="text-xs text-muted-foreground">{listing.city}</p>
+        {/* Address + Centris link */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-sm truncate">{listing.address}</h3>
+            <p className="text-xs text-muted-foreground">{listing.city}</p>
+          </div>
+          {listing.url && (
+            <a
+              href={listing.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+              title={t('houses.viewOnCentris')}
+            >
+              <ExternalLink className="h-4 w-4" />
+            </a>
+          )}
         </div>
 
         {/* Price */}

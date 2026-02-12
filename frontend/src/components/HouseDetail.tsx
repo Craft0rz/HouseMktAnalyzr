@@ -248,6 +248,16 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
               </div>
             </div>
             <p className="text-sm text-muted-foreground">{t('houses.familyScore')}</p>
+
+            {/* Quick Actions */}
+            <div className="flex gap-2">
+              <Button asChild variant="outline" className="flex-1">
+                <a href={listing.url && /^https?:\/\//.test(listing.url) ? listing.url : '#'} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  {t('houses.viewOnCentris')}
+                </a>
+              </Button>
+            </div>
           </div>
 
           <Separator />
@@ -883,15 +893,6 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             </div>
           )}
 
-          {/* 10. Action buttons */}
-          <div className="flex gap-3">
-            <Button asChild className="flex-1">
-              <a href={listing.url} target="_blank" rel="noopener noreferrer">
-                <ExternalLink className="mr-2 h-4 w-4" />
-                {t('houses.viewOnCentris')}
-              </a>
-            </Button>
-          </div>
         </div>
       </SheetContent>
     </Sheet>
