@@ -10,11 +10,41 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import type { ScrapeJob } from '@/lib/types';
+import type { ScrapeJob, DataQualityStats } from '@/lib/types';
 import { useTranslation } from '@/i18n/LanguageContext';
+
+type QualityFilter = 'all' | 'investment' | 'houses';
+
+const INVESTMENT_TYPES = ['DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX'];
+
+function getFilteredSnapshot(
+  snapshot: DataQualityStats & { by_type?: Record<string, DataQualityStats> },
+  filter: QualityFilter,
+): DataQualityStats {
+  if (filter === 'all' || !snapshot.by_type) return snapshot;
+  if (filter === 'houses') {
+    return snapshot.by_type['HOUSE'] ?? { total: 0, avg_score: 0, high_quality: 0, low_quality: 0, flagged: 0, corrected: 0 };
+  }
+  const result: DataQualityStats = { total: 0, avg_score: 0, high_quality: 0, low_quality: 0, flagged: 0, corrected: 0 };
+  let weightedScore = 0;
+  for (const type of INVESTMENT_TYPES) {
+    const s = snapshot.by_type[type];
+    if (s) {
+      result.total += s.total;
+      result.high_quality += s.high_quality;
+      result.low_quality += s.low_quality;
+      result.flagged += s.flagged;
+      result.corrected += s.corrected;
+      weightedScore += s.total * s.avg_score;
+    }
+  }
+  result.avg_score = result.total > 0 ? Math.round(weightedScore / result.total * 10) / 10 : 0;
+  return result;
+}
 
 interface QualityTrendProps {
   jobs: ScrapeJob[];
+  qualityFilter?: QualityFilter;
 }
 
 const tooltipStyle = {
@@ -37,18 +67,21 @@ function formatDate(dateStr: string | null, locale: string): string {
   });
 }
 
-export function QualityTrendChart({ jobs }: QualityTrendProps) {
+export function QualityTrendChart({ jobs, qualityFilter = 'all' }: QualityTrendProps) {
   const { t, locale } = useTranslation();
 
   const data = jobs
     .filter((j) => j.status === 'completed' && j.quality_snapshot)
     .sort((a, b) => new Date(a.completed_at!).getTime() - new Date(b.completed_at!).getTime())
-    .map((j) => ({
-      date: formatDate(j.completed_at, locale),
-      avg_score: j.quality_snapshot!.avg_score,
-      high_quality: j.quality_snapshot!.high_quality,
-      low_quality: j.quality_snapshot!.low_quality,
-    }));
+    .map((j) => {
+      const filtered = getFilteredSnapshot(j.quality_snapshot!, qualityFilter);
+      return {
+        date: formatDate(j.completed_at, locale),
+        avg_score: filtered.avg_score,
+        high_quality: filtered.high_quality,
+        low_quality: filtered.low_quality,
+      };
+    });
 
   if (data.length < 2) return null;
 

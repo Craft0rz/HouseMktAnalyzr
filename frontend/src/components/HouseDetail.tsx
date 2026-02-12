@@ -235,6 +235,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
           <SheetDescription className="text-left">
             {listing.city}
             {listing.postal_code && <> &middot; {listing.postal_code}</>}
+            {' '}&middot; MLS {listing.id}
           </SheetDescription>
         </SheetHeader>
 

@@ -523,7 +523,7 @@ function HouseCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="font-semibold text-sm truncate">{listing.address}</h3>
-            <p className="text-xs text-muted-foreground">{listing.city}</p>
+            <p className="text-xs text-muted-foreground">{listing.city} &middot; MLS {listing.id}</p>
           </div>
           {listing.url && (
             <a

@@ -94,14 +94,19 @@ function EnrichmentBar({ label, progress }: { label: string; progress: Enrichmen
 
 const INVESTMENT_TYPES = ['DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX'];
 
+type QualityFilter = 'all' | 'investment' | 'houses';
+
 function DataQualityCard({
   dataQuality,
+  qualityFilter,
+  onFilterChange,
   t,
 }: {
   dataQuality: DataQuality;
+  qualityFilter: QualityFilter;
+  onFilterChange: (filter: QualityFilter) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const [qualityFilter, setQualityFilter] = useState<'all' | 'investment' | 'houses'>('all');
 
   // Compute the stats to display based on the selected filter
   const getFilteredStats = (): DataQualityStats => {
@@ -144,7 +149,7 @@ function DataQualityCard({
             <CardDescription>{t('status.dataQualityDesc')}</CardDescription>
           </div>
           {hasBreakdown && (
-            <Tabs value={qualityFilter} onValueChange={(v) => setQualityFilter(v as typeof qualityFilter)}>
+            <Tabs value={qualityFilter} onValueChange={(v) => onFilterChange(v as QualityFilter)}>
               <TabsList>
                 <TabsTrigger value="all">{t('status.qualityAll')}</TabsTrigger>
                 <TabsTrigger value="investment">{t('status.qualityInvestment')}</TabsTrigger>
@@ -236,6 +241,7 @@ function StatusContent() {
   const { data: history } = useScraperHistory(30);
   const { data: freshness } = useDataFreshness();
   const triggerMutation = useTriggerScrape();
+  const [qualityFilter, setQualityFilter] = useState<QualityFilter>('all');
 
   const handleTrigger = async () => {
     try {
@@ -440,7 +446,7 @@ function StatusContent() {
 
       {/* Data Quality Summary */}
       {status?.data_quality && status.data_quality.total > 0 && (
-        <DataQualityCard dataQuality={status.data_quality} t={t} />
+        <DataQualityCard dataQuality={status.data_quality} qualityFilter={qualityFilter} onFilterChange={setQualityFilter} t={t} />
       )}
 
       {/* Quality Score Trend */}
@@ -451,7 +457,7 @@ function StatusContent() {
             <CardDescription>{t('status.qualityTrendDesc')}</CardDescription>
           </CardHeader>
           <CardContent>
-            <QualityTrendChart jobs={history.jobs} />
+            <QualityTrendChart jobs={history.jobs} qualityFilter={qualityFilter} />
           </CardContent>
         </Card>
       )}

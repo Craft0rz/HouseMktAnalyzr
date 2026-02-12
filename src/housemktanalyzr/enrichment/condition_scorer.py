@@ -93,12 +93,44 @@ Be calibrated: 5 = average/functional but dated. 7 = good condition with minor w
 9-10 = recently renovated/new."""
 
 
+def _select_diverse_photos(photo_urls: list[str], max_photos: int) -> list[str]:
+    """Select evenly-spaced photos from the full set for maximum room diversity.
+
+    Centris listings typically order photos: exterior(s), kitchen, living room,
+    bedrooms, bathrooms. Taking only the first N gives mostly exterior shots.
+    Evenly sampling across the full set maximizes the chance of seeing different
+    rooms (kitchen, bathroom, floors, exterior).
+
+    Always includes the first photo (exterior) and then picks evenly-spaced
+    photos from the remainder.
+    """
+    total = len(photo_urls)
+    if total <= max_photos:
+        return photo_urls
+
+    # Always include the first photo (typically the main exterior shot)
+    indices = [0]
+    # Spread remaining picks evenly across the rest of the photos
+    remaining = max_photos - 1
+    # Sample from index 1..total-1
+    step = (total - 1) / remaining
+    for i in range(remaining):
+        idx = int(1 + i * step)
+        if idx not in indices:
+            indices.append(idx)
+        else:
+            # Avoid duplicates by nudging forward
+            indices.append(min(idx + 1, total - 1))
+
+    return [photo_urls[i] for i in sorted(set(indices))]
+
+
 async def score_property_condition(
     photo_urls: list[str],
     property_type: str = "property",
     city: str = "Montreal",
     year_built: int | None = None,
-    max_photos: int = 5,
+    max_photos: int = 8,
 ) -> Optional[ConditionScoreResult]:
     """Analyze property photos with Gemini and return condition scores.
 
@@ -107,7 +139,7 @@ async def score_property_condition(
         property_type: Type of property for context
         city: City name for context
         year_built: Year built for context, or None
-        max_photos: Maximum photos to send (default 5)
+        max_photos: Maximum photos to send (default 8)
 
     Returns:
         ConditionScoreResult or None if scoring fails
@@ -124,7 +156,7 @@ async def score_property_condition(
 
     from google.genai import types
 
-    selected_urls = photo_urls[:max_photos]
+    selected_urls = _select_diverse_photos(photo_urls, max_photos)
     year_str = str(year_built) if year_built else "unknown year"
 
     prompt = CONDITION_PROMPT.format(
