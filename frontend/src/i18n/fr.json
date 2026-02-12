@@ -631,6 +631,9 @@
   "status.flagged": "Signalées",
   "status.corrected": "Auto-corrigées",
   "status.totalValidated": "Total validées",
+  "status.qualityAll": "Tout",
+  "status.qualityInvestment": "Investissement",
+  "status.qualityHouses": "Maisons",
 
   "status.qualityTrend": "Tendance du score de qualité",
   "status.qualityTrendDesc": "Score moyen et distribution de qualité sur les cycles récents",

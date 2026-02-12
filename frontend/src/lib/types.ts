@@ -472,13 +472,17 @@ export interface DataWarning {
   action: string;
 }
 
-export interface DataQuality {
+export interface DataQualityStats {
   total: number;
   avg_score: number;
   high_quality: number;
   low_quality: number;
   flagged: number;
   corrected: number;
+}
+
+export interface DataQuality extends DataQualityStats {
+  by_type?: Record<string, DataQualityStats>;
 }
 
 export interface QualitySnapshot extends DataQuality {

@@ -1930,14 +1930,15 @@ async def get_data_freshness() -> dict:
 
 
 async def get_data_quality_summary() -> dict:
-    """Get aggregate data quality stats across all active listings."""
+    """Get aggregate data quality stats across all active listings, with per-type breakdown."""
     pool = get_pool()
     now = datetime.now(timezone.utc)
 
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
+        rows = await conn.fetch(
             """
             SELECT
+                property_type,
                 COUNT(*) as total,
                 COALESCE(AVG((data->'_quality'->>'score')::int), 0) as avg_score,
                 COUNT(*) FILTER (
@@ -1955,20 +1956,42 @@ async def get_data_quality_summary() -> dict:
             FROM properties
             WHERE expires_at > $1
               AND data->'_quality' IS NOT NULL
+            GROUP BY property_type
             """,
             now,
         )
 
-    if row and row["total"] > 0:
+    if not rows:
+        return {}
+
+    def _row_to_dict(r) -> dict:
         return {
-            "total": row["total"],
-            "avg_score": round(float(row["avg_score"]), 1),
-            "high_quality": row["high_quality"],
-            "low_quality": row["low_quality"],
-            "flagged": row["flagged"],
-            "corrected": row["corrected"],
+            "total": r["total"],
+            "avg_score": round(float(r["avg_score"]), 1),
+            "high_quality": r["high_quality"],
+            "low_quality": r["low_quality"],
+            "flagged": r["flagged"],
+            "corrected": r["corrected"],
         }
-    return {}
+
+    # Per-type breakdown
+    by_type = {}
+    for r in rows:
+        by_type[r["property_type"]] = _row_to_dict(r)
+
+    # Compute aggregate totals
+    total = sum(r["total"] for r in rows)
+    avg_score = sum(r["total"] * float(r["avg_score"]) for r in rows) / total if total else 0
+    result = {
+        "total": total,
+        "avg_score": round(avg_score, 1),
+        "high_quality": sum(r["high_quality"] for r in rows),
+        "low_quality": sum(r["low_quality"] for r in rows),
+        "flagged": sum(r["flagged"] for r in rows),
+        "corrected": sum(r["corrected"] for r in rows),
+        "by_type": by_type,
+    }
+    return result
 
 
 async def get_batch_price_drops(property_ids: list[str]) -> dict[str, list[dict]]:

@@ -1,11 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { Play, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { LoadingCard } from '@/components/LoadingCard';
 import { AdminGuard } from '@/components/AdminGuard';
@@ -13,7 +15,7 @@ import { QualityTrendChart, EnrichmentTrendChart } from '@/components/charts/Qua
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
-import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality } from '@/lib/types';
+import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality, DataQualityStats } from '@/lib/types';
 
 const PHASE_LABELS: Record<string, string> = {
   scraping: 'status.phaseScraping',
@@ -87,6 +89,104 @@ function EnrichmentBar({ label, progress }: { label: string; progress: Enrichmen
         <Progress value={progress.phase === 'done' ? 100 : pct} className="h-1.5" />
       )}
     </div>
+  );
+}
+
+const INVESTMENT_TYPES = ['DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX'];
+
+function DataQualityCard({
+  dataQuality,
+  t,
+}: {
+  dataQuality: DataQuality;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const [qualityFilter, setQualityFilter] = useState<'all' | 'investment' | 'houses'>('all');
+
+  // Compute the stats to display based on the selected filter
+  const getFilteredStats = (): DataQualityStats => {
+    if (qualityFilter === 'all' || !dataQuality.by_type) {
+      return dataQuality;
+    }
+    if (qualityFilter === 'houses') {
+      return dataQuality.by_type['HOUSE'] ?? { total: 0, avg_score: 0, high_quality: 0, low_quality: 0, flagged: 0, corrected: 0 };
+    }
+    // Investment: sum all plex types
+    const empty: DataQualityStats = { total: 0, avg_score: 0, high_quality: 0, low_quality: 0, flagged: 0, corrected: 0 };
+    let weightedScore = 0;
+    for (const type of INVESTMENT_TYPES) {
+      const s = dataQuality.by_type[type];
+      if (s) {
+        empty.total += s.total;
+        empty.high_quality += s.high_quality;
+        empty.low_quality += s.low_quality;
+        empty.flagged += s.flagged;
+        empty.corrected += s.corrected;
+        weightedScore += s.total * s.avg_score;
+      }
+    }
+    empty.avg_score = empty.total > 0 ? Math.round(weightedScore / empty.total * 10) / 10 : 0;
+    return empty;
+  };
+
+  const stats = getFilteredStats();
+  const hasBreakdown = dataQuality.by_type && Object.keys(dataQuality.by_type).length > 1;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 text-blue-500" />
+              {t('status.dataQuality')}
+            </CardTitle>
+            <CardDescription>{t('status.dataQualityDesc')}</CardDescription>
+          </div>
+          {hasBreakdown && (
+            <Tabs value={qualityFilter} onValueChange={(v) => setQualityFilter(v as typeof qualityFilter)}>
+              <TabsList>
+                <TabsTrigger value="all">{t('status.qualityAll')}</TabsTrigger>
+                <TabsTrigger value="investment">{t('status.qualityInvestment')}</TabsTrigger>
+                <TabsTrigger value="houses">{t('status.qualityHouses')}</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {stats.total > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            <div>
+              <p className="text-2xl font-bold">{stats.avg_score}</p>
+              <p className="text-xs text-muted-foreground">{t('status.avgScore')}</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-green-600">{stats.high_quality}</p>
+              <p className="text-xs text-muted-foreground">{t('status.highQuality')}</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-red-500">{stats.low_quality}</p>
+              <p className="text-xs text-muted-foreground">{t('status.lowQuality')}</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-amber-500">{stats.flagged}</p>
+              <p className="text-xs text-muted-foreground">{t('status.flagged')}</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-blue-500">{stats.corrected}</p>
+              <p className="text-xs text-muted-foreground">{t('status.corrected')}</p>
+            </div>
+            <div>
+              <p className="text-2xl font-bold">{stats.total}</p>
+              <p className="text-xs text-muted-foreground">{t('status.totalValidated')}</p>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No data for this category</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -340,43 +440,7 @@ function StatusContent() {
 
       {/* Data Quality Summary */}
       {status?.data_quality && status.data_quality.total > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5 text-blue-500" />
-              {t('status.dataQuality')}
-            </CardTitle>
-            <CardDescription>{t('status.dataQualityDesc')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div>
-                <p className="text-2xl font-bold">{status.data_quality.avg_score}</p>
-                <p className="text-xs text-muted-foreground">{t('status.avgScore')}</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-green-600">{status.data_quality.high_quality}</p>
-                <p className="text-xs text-muted-foreground">{t('status.highQuality')}</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-red-500">{status.data_quality.low_quality}</p>
-                <p className="text-xs text-muted-foreground">{t('status.lowQuality')}</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-amber-500">{status.data_quality.flagged}</p>
-                <p className="text-xs text-muted-foreground">{t('status.flagged')}</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-blue-500">{status.data_quality.corrected}</p>
-                <p className="text-xs text-muted-foreground">{t('status.corrected')}</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold">{status.data_quality.total}</p>
-                <p className="text-xs text-muted-foreground">{t('status.totalValidated')}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <DataQualityCard dataQuality={status.data_quality} t={t} />
       )}
 
       {/* Quality Score Trend */}

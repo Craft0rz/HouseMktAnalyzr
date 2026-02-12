@@ -631,6 +631,9 @@
   "status.flagged": "Flagged",
   "status.corrected": "Auto-Corrected",
   "status.totalValidated": "Total Validated",
+  "status.qualityAll": "All",
+  "status.qualityInvestment": "Investment",
+  "status.qualityHouses": "Houses",
 
   "status.qualityTrend": "Quality Score Trend",
   "status.qualityTrendDesc": "Average score and quality distribution over recent scrape cycles",
