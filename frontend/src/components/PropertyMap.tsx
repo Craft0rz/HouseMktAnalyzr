@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { useTranslation } from '@/i18n/LanguageContext';
-import { formatPrice, formatPercent } from '@/lib/formatters';
+import { formatPrice, formatPercent, formatNumber } from '@/lib/formatters';
 import type { PropertyWithMetrics, LifecycleMap, PriceChangeMap } from '@/lib/types';
 
 interface PropertyMapProps {
@@ -72,6 +72,12 @@ function FitBounds({ positions }: { positions: [number, number][] }) {
 export function PropertyMap({ data, onMarkerClick }: PropertyMapProps) {
   const { t, locale } = useTranslation();
 
+  // Keep a ref to avoid stale closures inside Leaflet Popup content
+  const onMarkerClickRef = useRef(onMarkerClick);
+  useEffect(() => { onMarkerClickRef.current = onMarkerClick; }, [onMarkerClick]);
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
+
   const geocodedProperties = useMemo(
     () => data.filter((p) => p.listing.latitude != null && p.listing.longitude != null),
     [data],
@@ -105,6 +111,7 @@ export function PropertyMap({ data, onMarkerClick }: PropertyMapProps) {
         <FitBounds positions={positions} />
         {geocodedProperties.map((property) => {
           const { listing, metrics } = property;
+          const photoUrl = listing.photo_urls?.[0];
           return (
             <Marker
               key={listing.id}
@@ -112,31 +119,97 @@ export function PropertyMap({ data, onMarkerClick }: PropertyMapProps) {
               icon={getIcon(metrics.score)}
             >
               <Popup>
-                <div className="min-w-[200px] max-w-[260px] text-sm">
-                  <div className="font-semibold text-base leading-tight mb-1">
-                    {listing.address}
-                  </div>
-                  <div className="text-muted-foreground text-xs mb-2">{listing.city}</div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium">{formatPrice(listing.price, locale)}</span>
-                    <span
-                      className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium text-white"
-                      style={{ backgroundColor: getMarkerColor(metrics.score) }}
+                <div style={{ minWidth: 240, maxWidth: 280, fontSize: 13, lineHeight: 1.4 }}>
+                  {/* Photo */}
+                  {photoUrl && (
+                    <div style={{ margin: '-1px -1px 8px -1px', borderRadius: '4px 4px 0 0', overflow: 'hidden' }}>
+                      <img
+                        src={photoUrl}
+                        alt={listing.address}
+                        style={{ width: '100%', height: 120, objectFit: 'cover', display: 'block' }}
+                        loading="lazy"
+                      />
+                    </div>
+                  )}
+
+                  {/* Address + Score badge */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 4 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.3 }}>
+                        {listing.address}
+                      </div>
+                      <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>
+                        {listing.city} · MLS {listing.id}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        flexShrink: 0,
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        backgroundColor: getMarkerColor(metrics.score),
+                        color: 'white',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontWeight: 700,
+                        fontSize: 13,
+                      }}
                     >
                       {metrics.score.toFixed(0)}
-                    </span>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground space-y-0.5">
-                    {metrics.cap_rate != null && (
-                      <div>Cap rate: {formatPercent(metrics.cap_rate)}</div>
+
+                  {/* Price */}
+                  <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>
+                    {formatPrice(listing.price, locale)}
+                  </div>
+
+                  {/* Key stats row */}
+                  <div style={{ display: 'flex', gap: 10, fontSize: 11, color: '#666', marginBottom: 4 }}>
+                    <span>{listing.bedrooms} {t('houses.bedrooms')}</span>
+                    <span>{listing.bathrooms} {t('common.baths')}</span>
+                    {listing.sqft != null && (
+                      <span>{formatNumber(listing.sqft, locale as 'en' | 'fr')} {t('common.sqft')}</span>
                     )}
-                    <div>{t('propertyTypes.' + listing.property_type)}</div>
                   </div>
+
+                  {/* Walk / Transit scores + Cap rate */}
+                  <div style={{ display: 'flex', gap: 10, fontSize: 11, color: '#666', flexWrap: 'wrap' }}>
+                    {listing.walk_score != null && (
+                      <span>Walk {listing.walk_score}</span>
+                    )}
+                    {listing.transit_score != null && (
+                      <span>Transit {listing.transit_score}</span>
+                    )}
+                    {metrics.cap_rate != null && (
+                      <span>Cap {formatPercent(metrics.cap_rate)}</span>
+                    )}
+                    {listing.lot_sqft != null && (
+                      <span>Lot {formatNumber(listing.lot_sqft, locale as 'en' | 'fr')}</span>
+                    )}
+                  </div>
+
+                  {/* View Details button */}
                   <button
-                    className="mt-2 w-full text-center text-xs font-medium text-primary hover:underline cursor-pointer bg-transparent border-0 p-0"
+                    style={{
+                      marginTop: 8,
+                      width: '100%',
+                      padding: '6px 0',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#2563eb',
+                      backgroundColor: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                    }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onMarkerClick?.(property);
+                      // Use ref to avoid stale closure
+                      const current = dataRef.current.find((p) => p.listing.id === listing.id);
+                      onMarkerClickRef.current?.(current ?? property);
                     }}
                   >
                     {t('search.viewDetails')}
