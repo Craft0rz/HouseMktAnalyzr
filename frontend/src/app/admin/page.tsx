@@ -79,7 +79,13 @@ function AdminDashboard() {
   });
 
   const revalidateGeoMutation = useMutation({
-    mutationFn: () => adminApi.revalidateGeocoding(),
+    mutationFn: async () => {
+      // Step 1: Reset failure markers so previously failed listings are retried
+      const reset = await adminApi.resetGeocodingFailures();
+      toast.success(reset.message);
+      // Step 2: Kick off re-geocoding on all listings with bad/missing coordinates
+      return adminApi.revalidateGeocoding();
+    },
     onSuccess: (data) => toast.success(data.message || t('admin.revalidateGeoSuccess', { count: data.total_queued })),
     onError: () => toast.error(t('admin.revalidateGeoFailed')),
   });
@@ -88,12 +94,6 @@ function AdminDashboard() {
     mutationFn: () => adminApi.checkAlerts(),
     onSuccess: (data) => toast.success(t('admin.checkAlertsSuccess', { matches: data.total_new_matches, sent: data.notifications_sent })),
     onError: () => toast.error(t('admin.checkAlertsFailed')),
-  });
-
-  const resetGeoMutation = useMutation({
-    mutationFn: () => adminApi.resetGeocodingFailures(),
-    onSuccess: (data) => toast.success(data.message),
-    onError: () => toast.error(t('admin.resetGeoFailed')),
   });
 
   if (statsLoading) {
@@ -213,18 +213,6 @@ function AdminDashboard() {
               </div>
               <span className="text-sm font-semibold">{t('admin.revalidateGeo')}</span>
               <span className="text-xs text-muted-foreground">{t('admin.revalidateGeoDesc')}</span>
-            </button>
-
-            <button
-              className="rounded-lg border-2 border-border bg-muted/50 px-4 py-4 flex flex-col items-center gap-2 hover:bg-accent hover:border-primary/50 transition-colors disabled:opacity-50 disabled:pointer-events-none"
-              disabled={resetGeoMutation.isPending}
-              onClick={() => resetGeoMutation.mutate()}
-            >
-              <div className="rounded-full bg-primary/10 p-2">
-                {resetGeoMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <MapPin className="h-5 w-5 text-primary" />}
-              </div>
-              <span className="text-sm font-semibold">{t('admin.resetGeo')}</span>
-              <span className="text-xs text-muted-foreground">{t('admin.resetGeoDesc')}</span>
             </button>
 
             <button
