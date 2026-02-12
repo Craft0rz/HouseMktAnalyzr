@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2 } from 'lucide-react';
+import { Play, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, MapPin } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,7 @@ import { QualityTrendChart, EnrichmentTrendChart } from '@/components/charts/Qua
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
-import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality, DataQualityStats } from '@/lib/types';
+import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality, DataQualityStats, GeoEnrichmentStats } from '@/lib/types';
 
 const PHASE_LABELS: Record<string, string> = {
   scraping: 'status.phaseScraping',
@@ -372,6 +372,9 @@ function StatusContent() {
                   <EnrichmentBar label={t('status.walkScores')} progress={status.enrichment_progress.walk_scores} />
                   <EnrichmentBar label={t('status.photos')} progress={status.enrichment_progress.photos} />
                   <EnrichmentBar label={t('status.conditions')} progress={status.enrichment_progress.conditions} />
+                  {status.enrichment_progress.geo_enrichment && (
+                    <EnrichmentBar label={t('status.geoEnrichment')} progress={status.enrichment_progress.geo_enrichment} />
+                  )}
                 </div>
               </div>
             </>
@@ -448,6 +451,81 @@ function StatusContent() {
       {status?.data_quality && status.data_quality.total > 0 && (
         <DataQualityCard dataQuality={status.data_quality} qualityFilter={qualityFilter} onFilterChange={setQualityFilter} t={t} />
       )}
+
+      {/* Geo Enrichment Stats */}
+      {status?.geo_stats && status.geo_stats.total_houses > 0 && (() => {
+        const g = status.geo_stats as GeoEnrichmentStats;
+        const enrichedPct = g.with_coords > 0 ? Math.round(g.enriched / g.with_coords * 100) : 0;
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-emerald-500" />
+                {t('status.geoEnrichment')}
+              </CardTitle>
+              <CardDescription>{t('status.geoEnrichmentDesc')}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Overall progress */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="text-muted-foreground">{t('status.geoOverall')}</span>
+                  <span className="font-medium tabular-nums">{g.enriched} / {g.with_coords} ({enrichedPct}%)</span>
+                </div>
+                <Progress value={enrichedPct} className="h-2" />
+              </div>
+
+              {/* Stat grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-2xl font-bold">{g.total_houses}</p>
+                  <p className="text-xs text-muted-foreground">{t('status.geoTotalHouses')}</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-green-600">{g.enriched}</p>
+                  <p className="text-xs text-muted-foreground">{t('status.geoEnriched')}</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-amber-500">{g.pending}</p>
+                  <p className="text-xs text-muted-foreground">{t('status.geoPending')}</p>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-red-500">{g.incomplete}</p>
+                  <p className="text-xs text-muted-foreground">{t('status.geoIncomplete')}</p>
+                </div>
+              </div>
+
+              {/* Per-source breakdown */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('status.geoSources')}</h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{t('status.geoSchools')}</span>
+                    <span className="font-medium tabular-nums">{g.has_schools}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{t('status.geoParks')}</span>
+                    <span className="font-medium tabular-nums">{g.has_parks}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span>{t('status.geoFlood')}</span>
+                    <span className="font-medium tabular-nums">{g.has_flood}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Warnings */}
+              {g.no_coords > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2">
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    {t('status.geoNoCoords', { count: String(g.no_coords) })}
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Quality Score Trend */}
       {history?.jobs && (

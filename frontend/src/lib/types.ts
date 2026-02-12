@@ -491,7 +491,21 @@ export interface QualitySnapshot extends DataQuality {
     walk_scores: number;
     photos: number;
     conditions: number;
+    geo_enrichment?: number;
   };
+}
+
+export interface GeoEnrichmentStats {
+  total_houses: number;
+  with_coords: number;
+  no_coords: number;
+  enriched: number;
+  pending: number;
+  incomplete: number;
+  has_schools: number;
+  has_parks: number;
+  has_flood: number;
+  success_rate: number;
 }
 
 export interface ScraperStatus {
@@ -505,6 +519,7 @@ export interface ScraperStatus {
   errors: string[];
   data_warnings?: DataWarning[];
   data_quality?: DataQuality;
+  geo_stats?: GeoEnrichmentStats;
   next_run_at: string | null;
   current_phase: string | null;
   current_step: number;
@@ -517,6 +532,7 @@ export interface ScraperStatus {
     walk_scores: EnrichmentPhaseProgress;
     photos: EnrichmentPhaseProgress;
     conditions: EnrichmentPhaseProgress;
+    geo_enrichment?: EnrichmentPhaseProgress;
   };
   refresh_progress: {
     market: RefreshStatus;

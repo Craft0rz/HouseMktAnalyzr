@@ -143,6 +143,7 @@ export function EnrichmentTrendChart({ jobs }: QualityTrendProps) {
         walk_scores: rates.walk_scores,
         photos: rates.photos,
         conditions: rates.conditions,
+        geo_enrichment: rates.geo_enrichment ?? null,
       };
     });
 
@@ -199,6 +200,15 @@ export function EnrichmentTrendChart({ jobs }: QualityTrendProps) {
           stroke="var(--chart-4)"
           strokeWidth={2}
           dot={{ r: 3 }}
+        />
+        <Line
+          type="monotone"
+          dataKey="geo_enrichment"
+          name={t('status.phaseEnrichGeo')}
+          stroke="var(--chart-5)"
+          strokeWidth={2}
+          dot={{ r: 3 }}
+          connectNulls
         />
       </LineChart>
     </ResponsiveContainer>

@@ -2008,6 +2008,88 @@ async def get_data_quality_summary() -> dict:
     return result
 
 
+async def get_geo_enrichment_stats() -> dict:
+    """Get geo enrichment statistics for HOUSE listings.
+
+    Returns counts of total houses, enriched, pending, incomplete, and
+    recently failed (attempted within last 24h but missing key data).
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                ) as total_houses,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND (data->>'longitude') IS NOT NULL
+                ) as with_coords,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+                      AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+                ) as enriched,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+                      AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+                      AND (data->'raw_data'->'geo_enrichment'->>'nearest_elementary_m') IS NOT NULL
+                ) as has_schools,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+                      AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+                      AND COALESCE((data->'raw_data'->'geo_enrichment'->>'park_count_1km')::int, 0) > 0
+                ) as has_parks,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+                      AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+                      AND (data->'raw_data'->'geo_enrichment'->>'flood_zone') IS NOT NULL
+                ) as has_flood,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+                      AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+                      AND (data->'raw_data'->'geo_enrichment'->>'nearest_elementary_m') IS NULL
+                      AND COALESCE((data->'raw_data'->'geo_enrichment'->>'park_count_1km')::int, 0) = 0
+                ) as incomplete
+            FROM properties
+            WHERE expires_at > $1
+            """,
+            now,
+        )
+
+    total = row["total_houses"]
+    enriched = row["enriched"]
+    with_coords = row["with_coords"]
+    pending = with_coords - enriched
+    no_coords = total - with_coords
+
+    return {
+        "total_houses": total,
+        "with_coords": with_coords,
+        "no_coords": no_coords,
+        "enriched": enriched,
+        "pending": max(0, pending),
+        "incomplete": row["incomplete"],
+        "has_schools": row["has_schools"],
+        "has_parks": row["has_parks"],
+        "has_flood": row["has_flood"],
+        "success_rate": round(enriched / with_coords * 100, 1) if with_coords > 0 else 0,
+    }
+
+
 async def get_batch_price_drops(property_ids: list[str]) -> dict[str, list[dict]]:
     """Get price history for multiple listings in a single query.
 
