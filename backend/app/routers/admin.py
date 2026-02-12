@@ -455,3 +455,44 @@ async def reset_geocoding_failures(
             "Run 'Revalidate Geocoding' or wait for next scraper cycle to retry."
         ),
     }
+
+
+@router.post("/reset-geo-enrichment", status_code=200)
+async def reset_geo_enrichment(
+    _admin: dict = Depends(get_admin_user),
+):
+    """Clear geo_enrichment data on HOUSE listings so they are re-enriched.
+
+    This allows all houses with coordinates to be re-processed by the geo
+    enrichment pipeline (schools, flood zones, parks, safety score).
+    Useful after fixing API endpoints or adding new data sources.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE properties
+            SET data = jsonb_set(
+                data,
+                '{raw_data}',
+                (COALESCE(data->'raw_data', '{}'::jsonb) - 'geo_enrichment')
+            )
+            WHERE expires_at > $1
+              AND property_type = 'HOUSE'
+              AND (data->'raw_data'->'geo_enrichment') IS NOT NULL
+            """,
+            now,
+        )
+        cleared_count = int(result.split()[-1])
+
+    logger.info(f"Reset geo enrichment: {cleared_count} houses cleared")
+    return {
+        "status": "ok",
+        "geo_enrichment_cleared": cleared_count,
+        "message": (
+            f"Cleared geo enrichment data on {cleared_count} houses. "
+            "Next scraper cycle will re-enrich all houses with coordinates."
+        ),
+    }

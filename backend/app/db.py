@@ -965,6 +965,8 @@ async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
                 "id": row["id"],
                 "latitude": float(lat),
                 "longitude": float(lon),
+                "city": data.get("city"),
+                "postal_code": data.get("postal_code"),
             })
     return results
 
