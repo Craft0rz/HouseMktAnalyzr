@@ -10,15 +10,21 @@ Data sources:
 - Parks: OpenStreetMap Overpass API (works for all Quebec regions)
 """
 
+import asyncio
 import logging
 import math
+import os
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
-# HTTP timeout for all external API calls (seconds)
-_API_TIMEOUT = 8.0
+# HTTP timeout for all external API calls (seconds) — configurable via env var
+_API_TIMEOUT = float(os.environ.get("GEO_API_TIMEOUT", 15))
+
+# Retry configuration
+_MAX_RETRIES = int(os.environ.get("GEO_API_RETRIES", 2))
+_RETRY_DELAY = 2.0  # seconds between retries
 
 # In-memory cache keyed by (round(lat,3), round(lon,3)) to avoid
 # repeated calls for nearby properties (within ~111m)
@@ -50,6 +56,66 @@ def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     dlambda = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+async def _retry_request(
+    method: str,
+    client: httpx.AsyncClient,
+    url: str,
+    api_name: str,
+    lat: float,
+    lon: float,
+    **kwargs,
+) -> httpx.Response | None:
+    """Execute an HTTP request with retry logic and rate limit handling.
+
+    Retries on timeouts, 429 (rate limited), and 5xx server errors.
+    Returns None if all retries are exhausted.
+    """
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            if method == "GET":
+                resp = await client.get(url, **kwargs)
+            else:
+                resp = await client.post(url, **kwargs)
+
+            if resp.status_code == 429:
+                retry_after = float(resp.headers.get("Retry-After", _RETRY_DELAY * (attempt + 1)))
+                logger.warning(f"{api_name} rate limited (429) for ({lat}, {lon}), retry in {retry_after}s")
+                await asyncio.sleep(retry_after)
+                continue
+
+            if resp.status_code >= 500:
+                logger.warning(f"{api_name} server error {resp.status_code} for ({lat}, {lon}), attempt {attempt + 1}")
+                if attempt < _MAX_RETRIES:
+                    await asyncio.sleep(_RETRY_DELAY * (attempt + 1))
+                    continue
+                return None
+
+            resp.raise_for_status()
+            return resp
+
+        except httpx.TimeoutException:
+            logger.warning(
+                f"{api_name} timeout for ({lat}, {lon}), "
+                f"attempt {attempt + 1}/{_MAX_RETRIES + 1}"
+            )
+            if attempt < _MAX_RETRIES:
+                await asyncio.sleep(_RETRY_DELAY * (attempt + 1))
+                continue
+            return None
+        except httpx.HTTPStatusError:
+            # 4xx errors (other than 429) are not retryable
+            logger.warning(f"{api_name} HTTP error for ({lat}, {lon}): {resp.status_code}")
+            return None
+        except Exception as e:
+            logger.warning(f"{api_name} error for ({lat}, {lon}): {e}")
+            if attempt < _MAX_RETRIES:
+                await asyncio.sleep(_RETRY_DELAY)
+                continue
+            return None
+
+    return None
 
 
 async def fetch_nearby_schools(
@@ -90,6 +156,7 @@ async def fetch_nearby_schools(
     )
 
     schools: list[dict] = []
+    layers_succeeded = 0
 
     try:
         async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
@@ -107,13 +174,20 @@ async def fetch_nearby_schools(
                     "f": "json",
                 }
 
-                resp = await client.get(url, params=params)
-                resp.raise_for_status()
+                resp = await _retry_request(
+                    "GET", client, url, f"School API layer {layer_id}",
+                    lat, lon, params=params,
+                )
+                if resp is None:
+                    continue
+
                 data = resp.json()
 
                 if data.get("error"):
                     logger.warning(f"School API layer {layer_id} error: {data['error']}")
                     continue
+
+                layers_succeeded += 1
 
                 for feature in data.get("features", []):
                     attrs = feature.get("attributes", {})
@@ -154,15 +228,16 @@ async def fetch_nearby_schools(
                         "language": language,
                     })
 
+        # Only cache if at least one layer succeeded
+        if layers_succeeded == 0:
+            return None
+
         # Sort by distance
         schools.sort(key=lambda s: s["distance_m"] if s["distance_m"] is not None else float("inf"))
 
         _schools_cache[key] = schools
         return schools
 
-    except httpx.TimeoutException:
-        logger.warning(f"School API timeout for ({lat}, {lon})")
-        return None
     except Exception as e:
         logger.warning(f"School API error for ({lat}, {lon}): {e}")
         return None
@@ -201,8 +276,13 @@ async def check_flood_zone(lat: float, lon: float) -> dict | None:
 
     try:
         async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
+            resp = await _retry_request(
+                "GET", client, url, "Flood zone API",
+                lat, lon, params=params,
+            )
+            if resp is None:
+                return None
+
             data = resp.json()
 
         if data.get("error"):
@@ -231,9 +311,6 @@ async def check_flood_zone(lat: float, lon: float) -> dict | None:
         _flood_cache[key] = result
         return result
 
-    except httpx.TimeoutException:
-        logger.warning(f"Flood zone API timeout for ({lat}, {lon})")
-        return None
     except Exception as e:
         logger.warning(f"Flood zone API error for ({lat}, {lon}): {e}")
         return None
@@ -277,7 +354,7 @@ async def _fetch_parks_osm(
     """
     url = "https://overpass-api.de/api/interpreter"
     query = f"""
-    [out:json][timeout:8];
+    [out:json][timeout:12];
     (
       node["leisure"="park"](around:{radius_m},{lat},{lon});
       way["leisure"="park"](around:{radius_m},{lat},{lon});
@@ -289,8 +366,13 @@ async def _fetch_parks_osm(
 
     try:
         async with httpx.AsyncClient(timeout=_API_TIMEOUT) as client:
-            resp = await client.post(url, data={"data": query})
-            resp.raise_for_status()
+            resp = await _retry_request(
+                "POST", client, url, "OSM Overpass",
+                lat, lon, data={"data": query},
+            )
+            if resp is None:
+                return None
+
             data = resp.json()
 
         elements = data.get("elements", [])
@@ -325,9 +407,6 @@ async def _fetch_parks_osm(
             "nearest_park_m": nearest_park_m,
         }
 
-    except httpx.TimeoutException:
-        logger.warning(f"OSM Overpass timeout for ({lat}, {lon})")
-        return None
     except Exception as e:
         logger.warning(f"OSM Overpass error for ({lat}, {lon}): {e}")
         return None

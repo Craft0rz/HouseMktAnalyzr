@@ -935,7 +935,11 @@ async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
 
     Returns list of dicts with id, latitude, longitude for geo enrichment.
     Only returns listings where property_type is HOUSE, latitude/longitude
-    are present, and geo_enrichment key is absent from JSONB data.
+    are present, and geo_enrichment data is absent or incomplete.
+
+    Uses COALESCE for null-safe JSONB traversal (handles missing raw_data key).
+    Also skips houses where geo enrichment was attempted within the last 24 hours
+    to avoid hammering external APIs on persistent failures.
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -948,7 +952,17 @@ async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
               AND property_type = 'HOUSE'
               AND (data->>'latitude') IS NOT NULL
               AND (data->>'longitude') IS NOT NULL
-              AND (data->'raw_data'->'geo_enrichment') IS NULL
+              AND (
+                COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) = 'null'::jsonb
+                OR (
+                  -- Re-enrich if stored but missing key data (schools + parks both null)
+                  (data->'raw_data'->'geo_enrichment'->>'nearest_elementary_m') IS NULL
+                  AND COALESCE((data->'raw_data'->'geo_enrichment'->>'park_count_1km')::int, 0) = 0
+                  -- But only retry if last attempt was >24h ago
+                  AND COALESCE(data->'raw_data'->'geo_enrichment'->>'enriched_at', '2000-01-01')::timestamptz
+                      < ($1 - interval '24 hours')
+                )
+              )
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
