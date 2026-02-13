@@ -868,11 +868,10 @@ class ScraperWorker:
         )
 
     async def _enrich_geo_data(self):
-        """Enrich HOUSE listings with Quebec geo data (schools, flood zones, parks).
+        """Enrich residential listings with Quebec geo data (schools, flood zones, parks).
 
-        Processes batches in a loop until all eligible houses are enriched
-        (capped at max_batches to prevent runaway cycles). Uses semaphore-bounded
-        concurrency for throughput.
+        Covers HOUSE, DUPLEX, TRIPLEX, QUADPLEX, MULTIPLEX. Processes batches
+        in a loop (capped at max_batches). Uses semaphore-bounded concurrency.
         """
         from housemktanalyzr.enrichment.quebec_geo import (
             fetch_nearby_schools,
@@ -961,16 +960,16 @@ class ScraperWorker:
             try:
                 listings = await get_houses_without_geo_enrichment(limit=batch_size)
             except Exception:
-                logger.exception("Failed to query houses for geo enrichment")
+                logger.exception("Failed to query listings for geo enrichment")
                 break
 
             if not listings:
                 if batch_num == 1:
-                    logger.info("Geo enrichment: all houses already enriched")
+                    logger.info("Geo enrichment: all residential listings already enriched")
                 break
 
             logger.info(
-                f"Geo enrichment batch {batch_num}: processing {len(listings)} houses "
+                f"Geo enrichment batch {batch_num}: processing {len(listings)} listings "
                 f"(delay={delay}s, concurrency={concurrency})"
             )
             self._status["enrichment_progress"]["geo_enrichment"]["total"] = (

@@ -958,14 +958,14 @@ async def update_condition_score(
 
 
 async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
-    """Get HOUSE listings with coordinates but no geo enrichment data.
+    """Get residential listings with coordinates but no geo enrichment data.
 
     Returns list of dicts with id, latitude, longitude for geo enrichment.
-    Only returns listings where property_type is HOUSE, latitude/longitude
-    are present, and geo_enrichment data is absent or incomplete.
+    Includes HOUSE, DUPLEX, TRIPLEX, QUADPLEX, and MULTIPLEX listings where
+    latitude/longitude are present and geo_enrichment data is absent or incomplete.
 
     Uses COALESCE for null-safe JSONB traversal (handles missing raw_data key).
-    Also skips houses where geo enrichment was attempted within the last 24 hours
+    Also skips listings where geo enrichment was attempted within the last 24 hours
     to avoid hammering external APIs on persistent failures.
     """
     pool = get_pool()
@@ -976,7 +976,7 @@ async def get_houses_without_geo_enrichment(limit: int = 50) -> list[dict]:
             """
             SELECT id, data FROM properties
             WHERE expires_at > $1
-              AND property_type = 'HOUSE'
+              AND property_type IN ('HOUSE', 'DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX')
               AND (data->>'latitude') IS NOT NULL
               AND (data->>'longitude') IS NOT NULL
               AND (
@@ -2060,55 +2060,56 @@ async def get_data_quality_summary() -> dict:
 
 
 async def get_geo_enrichment_stats() -> dict:
-    """Get geo enrichment statistics for HOUSE listings.
+    """Get geo enrichment statistics for residential listings.
 
-    Returns counts of total houses, enriched, pending, incomplete, and
-    recently failed (attempted within last 24h but missing key data).
+    Returns counts of total residential (houses + plexes), enriched, pending,
+    incomplete, and recently failed.
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
+    geo_types = ('HOUSE', 'DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX')
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                 ) as total_houses,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NOT NULL
                       AND (data->>'longitude') IS NOT NULL
                 ) as with_coords,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NOT NULL
                       AND data->'raw_data'->'geo_enrichment' IS NOT NULL
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
                 ) as enriched,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NOT NULL
                       AND data->'raw_data'->'geo_enrichment' IS NOT NULL
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
                       AND (data->'raw_data'->'geo_enrichment'->>'nearest_elementary_m') IS NOT NULL
                 ) as has_schools,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NOT NULL
                       AND data->'raw_data'->'geo_enrichment' IS NOT NULL
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
                       AND COALESCE((data->'raw_data'->'geo_enrichment'->>'park_count_1km')::int, 0) > 0
                 ) as has_parks,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NOT NULL
                       AND data->'raw_data'->'geo_enrichment' IS NOT NULL
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
                       AND (data->'raw_data'->'geo_enrichment'->>'flood_zone') IS NOT NULL
                 ) as has_flood,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NOT NULL
                       AND data->'raw_data'->'geo_enrichment' IS NOT NULL
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
@@ -2116,14 +2117,14 @@ async def get_geo_enrichment_stats() -> dict:
                       AND COALESCE((data->'raw_data'->'geo_enrichment'->>'park_count_1km')::int, 0) = 0
                 ) as incomplete,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type = ANY($2)
                       AND (data->>'latitude') IS NULL
                       AND (data->>'walk_score_failed_at') IS NOT NULL
                 ) as geocoding_failed
             FROM properties
             WHERE expires_at > $1
             """,
-            now,
+            now, list(geo_types),
         )
 
     total = row["total_houses"]
@@ -2139,10 +2140,10 @@ async def get_geo_enrichment_stats() -> dict:
         action = None
     elif success_rate >= 70:
         status = "warning"
-        action = f"WARNING: Geo enrichment: {pending:,} houses pending ({success_rate}% coverage)"
+        action = f"WARNING: Geo enrichment: {pending:,} residential pending ({success_rate}% coverage)"
     elif success_rate >= 30:
         status = "warning"
-        action = f"WARNING: Geo enrichment backlog: {pending:,} of {with_coords:,} houses need enrichment ({success_rate}% coverage)"
+        action = f"WARNING: Geo enrichment backlog: {pending:,} of {with_coords:,} residential need enrichment ({success_rate}% coverage)"
     else:
         status = "critical"
         action = f"CRITICAL: Geo enrichment severely behind - only {enriched:,} of {with_coords:,} enriched ({success_rate}% coverage)"
@@ -2197,10 +2198,10 @@ async def get_enrichment_backlog() -> dict:
                     WHERE (data->>'condition_score') IS NOT NULL
                 ) as has_condition,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type IN ('HOUSE', 'DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX')
                 ) as total_houses,
                 COUNT(*) FILTER (
-                    WHERE property_type = 'HOUSE'
+                    WHERE property_type IN ('HOUSE', 'DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX')
                       AND (data->>'latitude') IS NOT NULL
                       AND data->'raw_data'->'geo_enrichment' IS NOT NULL
                       AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
@@ -2250,7 +2251,7 @@ async def get_enrichment_backlog() -> dict:
             _item("Walk Score", row["has_walk_score"], total),
             _item("Photos", row["has_photos"], total),
             _item("Condition Score", row["has_condition"], total),
-            _item("Geo Enrichment", row["has_geo"], row["total_houses"], "Houses only"),
+            _item("Geo Enrichment", row["has_geo"], row["total_houses"], "Residential"),
         ],
     }
 
