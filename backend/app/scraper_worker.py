@@ -765,10 +765,11 @@ class ScraperWorker:
         logger.info(f"Photo enrichment done: {enriched} enriched, {failed} failed")
 
     async def _enrich_condition_scores(self):
-        """Score property condition using Gemini for listings with photos.
+        """Score property condition using Gemini batch API for listings with photos.
 
-        Processes batches in a loop until all eligible listings are scored
-        (capped at max_batches to prevent runaway cycles).
+        Uses batch scoring (8 properties per API call) to maximize throughput
+        within Gemini free tier limits (250 RPD = ~2,000 properties/day).
+        Processes DB batches in a loop (capped at max_batches).
         """
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
@@ -776,11 +777,14 @@ class ScraperWorker:
             self._status["enrichment_progress"]["conditions"]["phase"] = "done"
             return
 
-        from housemktanalyzr.enrichment.condition_scorer import score_property_condition
+        from housemktanalyzr.enrichment.condition_scorer import score_properties_batch
 
-        batch_size = int(os.environ.get("CONDITION_BATCH_SIZE", 25))
+        # DB query batch size (how many listings to fetch per DB query)
+        db_batch_size = int(os.environ.get("CONDITION_BATCH_SIZE", 40))
         max_batches = int(os.environ.get("CONDITION_MAX_BATCHES", 10))
-        delay = float(os.environ.get("CONDITION_SCORE_DELAY", 6.0))
+        delay = float(os.environ.get("CONDITION_SCORE_DELAY", 6.5))
+        # How many properties per single Gemini API call
+        api_batch_size = int(os.environ.get("CONDITION_API_BATCH_SIZE", 8))
 
         total_scored = 0
         total_failed = 0
@@ -789,7 +793,7 @@ class ScraperWorker:
         while batch_num < max_batches:
             batch_num += 1
             try:
-                listings = await get_listings_without_condition_score(limit=batch_size)
+                listings = await get_listings_without_condition_score(limit=db_batch_size)
             except Exception:
                 logger.exception("Failed to query listings for condition scoring")
                 break
@@ -801,47 +805,60 @@ class ScraperWorker:
 
             logger.info(
                 f"Condition scoring batch {batch_num}: "
-                f"{len(listings)} listings (delay={delay}s)"
+                f"{len(listings)} listings (api_batch={api_batch_size}, delay={delay}s)"
             )
             self._status["enrichment_progress"]["conditions"]["total"] = (
                 total_scored + total_failed + len(listings)
             )
 
-            for item in listings:
+            # Process in sub-batches of api_batch_size (8 properties per API call)
+            for i in range(0, len(listings), api_batch_size):
+                chunk = listings[i:i + api_batch_size]
+                props = [
+                    {
+                        "photo_urls": item["photo_urls"],
+                        "property_type": item.get("property_type", "property"),
+                        "city": item.get("city", "Montreal"),
+                        "year_built": item.get("year_built"),
+                    }
+                    for item in chunk
+                ]
+
                 try:
-                    result = await score_property_condition(
-                        photo_urls=item["photo_urls"],
-                        property_type=item.get("property_type", "property"),
-                        city=item.get("city", "Montreal"),
-                        year_built=item.get("year_built"),
+                    results = await score_properties_batch(
+                        properties=props,
+                        max_photos_per_property=5,
+                        batch_size=api_batch_size,
                     )
-                    if result:
-                        await update_condition_score(
-                            listing_id=item["id"],
-                            condition_score=result.overall_score,
-                            condition_details={
-                                "kitchen": result.kitchen_score,
-                                "bathroom": result.bathroom_score,
-                                "floors": result.floors_score,
-                                "exterior": result.exterior_score,
-                                "renovation_needed": result.renovation_needed,
-                                "notes": result.notes,
-                            },
-                        )
-                        total_scored += 1
-                    else:
-                        total_failed += 1
+
+                    for item, result in zip(chunk, results):
+                        if result:
+                            await update_condition_score(
+                                listing_id=item["id"],
+                                condition_score=result.overall_score,
+                                condition_details={
+                                    "kitchen": result.kitchen_score,
+                                    "bathroom": result.bathroom_score,
+                                    "floors": result.floors_score,
+                                    "exterior": result.exterior_score,
+                                    "renovation_needed": result.renovation_needed,
+                                    "notes": result.notes,
+                                },
+                            )
+                            total_scored += 1
+                        else:
+                            total_failed += 1
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    logger.warning(f"Condition scoring failed for {item['id']}: {e}")
-                    total_failed += 1
+                    logger.warning(f"Batch condition scoring failed: {e}")
+                    total_failed += len(chunk)
+
                 self._status["enrichment_progress"]["conditions"]["done"] = total_scored
                 self._status["enrichment_progress"]["conditions"]["failed"] = total_failed
-
                 await asyncio.sleep(delay)
 
-            if len(listings) < batch_size:
+            if len(listings) < db_batch_size:
                 break
 
         self._status["enrichment_progress"]["conditions"]["phase"] = "done"
