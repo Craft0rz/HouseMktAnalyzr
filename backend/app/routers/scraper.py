@@ -88,6 +88,19 @@ async def trigger_scrape(request: Request, _admin: dict = Depends(get_admin_user
     return {"status": "triggered", "message": "Full scrape started"}
 
 
+@router.post("/trigger-enrichment", status_code=202)
+async def trigger_enrichment(request: Request, _admin: dict = Depends(get_admin_user)) -> dict:
+    """Manually trigger an independent enrichment cycle."""
+    worker = request.app.state.scraper_worker
+    if worker is None:
+        raise HTTPException(503, "Scraper not available (no database)")
+    if worker._enrichment_lock.locked():
+        raise HTTPException(409, "Enrichment already in progress")
+
+    asyncio.create_task(worker.run_enrichment_only())
+    return {"status": "triggered", "message": "Independent enrichment cycle started"}
+
+
 @router.get("/stats")
 async def scraper_stats(_admin: dict = Depends(get_admin_user)) -> dict:
     """Return per-region/type listing counts from the database."""

@@ -39,6 +39,9 @@ class ScraperWorker:
         self._max_pages = int(os.environ.get("SCRAPER_MAX_PAGES", 20))
         self._request_interval = float(os.environ.get("SCRAPER_REQUEST_INTERVAL", 1.2))
         self._task: asyncio.Task | None = None
+        self._enrichment_task: asyncio.Task | None = None
+        self._enrichment_lock = asyncio.Lock()
+        self._enrichment_interval_hours = float(os.environ.get("ENRICHMENT_INTERVAL_HOURS", 1))
         self._status: dict = {
             "is_running": False,
             "last_run_started": None,
@@ -71,26 +74,29 @@ class ScraperWorker:
         }
 
     async def start(self):
-        """Launch the background scrape loop."""
+        """Launch the background scrape loop and independent enrichment loop."""
         enabled = os.environ.get("SCRAPER_ENABLED", "true").lower()
         if enabled not in ("true", "1", "yes"):
             logger.info("Background scraper disabled via SCRAPER_ENABLED")
             return
         self._task = asyncio.create_task(self._loop())
+        self._enrichment_task = asyncio.create_task(self._enrichment_loop())
         logger.info(
             f"Scraper worker started (interval={self._interval_hours}h, "
-            f"ttl={self._ttl_hours}h, max_pages={self._max_pages})"
+            f"ttl={self._ttl_hours}h, max_pages={self._max_pages}, "
+            f"enrichment_interval={self._enrichment_interval_hours}h)"
         )
 
     async def stop(self):
-        """Cancel the background task."""
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            logger.info("Scraper worker stopped")
+        """Cancel background scrape and enrichment tasks."""
+        for name, task in [("scrape", self._task), ("enrichment", self._enrichment_task)]:
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+        logger.info("Scraper worker stopped")
 
     def get_status(self) -> dict:
         """Return current worker status."""
@@ -111,6 +117,76 @@ class ScraperWorker:
             next_run = (datetime.now(timezone.utc) + timedelta(hours=self._interval_hours)).isoformat()
             self._status["next_run_at"] = next_run
             await asyncio.sleep(self._interval_hours * 3600)
+
+    async def _enrichment_loop(self):
+        """Independent enrichment loop that runs between scrape cycles.
+
+        Waits 10 minutes on startup (let first scrape cycle get going),
+        then runs enrichment every `_enrichment_interval_hours`. Skips if
+        the scrape cycle is already doing enrichment (lock held).
+        """
+        await asyncio.sleep(600)  # 10 min startup delay
+        while True:
+            if self._enrichment_lock.locked():
+                logger.info("Enrichment loop: skipping, lock already held by scrape cycle")
+            else:
+                try:
+                    await self.run_enrichment_only()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Independent enrichment cycle failed")
+            await asyncio.sleep(self._enrichment_interval_hours * 3600)
+
+    async def run_enrichment_only(self):
+        """Run all enrichment phases independently of the scrape cycle."""
+        if self._enrichment_lock.locked():
+            logger.info("Enrichment skipped: lock already held")
+            return
+
+        async with self._enrichment_lock:
+            logger.info("Independent enrichment cycle starting")
+            start = datetime.now(timezone.utc)
+
+            # Reset enrichment progress for this cycle
+            for key in ("details", "walk_scores", "photos", "conditions", "geo_enrichment", "validation"):
+                self._status["enrichment_progress"][key] = {
+                    **{k: 0 for k in ("total", "done", "failed")},
+                    "phase": "pending",
+                }
+            if "corrections" in self._status["enrichment_progress"]["details"]:
+                self._status["enrichment_progress"]["details"]["corrections"] = 0
+            if "corrected" in self._status["enrichment_progress"]["validation"]:
+                self._status["enrichment_progress"]["validation"]["corrected"] = 0
+                self._status["enrichment_progress"]["validation"]["flagged"] = 0
+
+            self._status["current_phase"] = "enriching_details"
+            self._status["enrichment_progress"]["details"]["phase"] = "running"
+            await self._enrich_listing_details()
+
+            self._status["current_phase"] = "enriching_walk_scores"
+            self._status["enrichment_progress"]["walk_scores"]["phase"] = "running"
+            await self._enrich_walk_scores()
+
+            self._status["current_phase"] = "enriching_photos"
+            self._status["enrichment_progress"]["photos"]["phase"] = "running"
+            await self._enrich_photo_urls()
+
+            self._status["current_phase"] = "enriching_conditions"
+            self._status["enrichment_progress"]["conditions"]["phase"] = "running"
+            await self._enrich_condition_scores()
+
+            self._status["current_phase"] = "enriching_geo"
+            self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "running"
+            await self._enrich_geo_data()
+
+            self._status["current_phase"] = "validating_data"
+            self._status["enrichment_progress"]["validation"]["phase"] = "running"
+            await self._validate_data_quality()
+
+            duration = (datetime.now(timezone.utc) - start).total_seconds()
+            self._status["current_phase"] = None
+            logger.info(f"Independent enrichment cycle complete in {duration:.0f}s")
 
     async def run_full_scrape(self):
         """Execute one full scrape cycle across all region/type combos."""
@@ -258,35 +334,37 @@ class ScraperWorker:
         except Exception:
             logger.exception("Alert check failed after scrape cycle")
 
-        # Enrich listings with detail-page data (gross_revenue, postal_code, etc.)
-        self._status["current_phase"] = "enriching_details"
-        self._status["enrichment_progress"]["details"]["phase"] = "running"
-        await self._enrich_listing_details()
+        # Acquire enrichment lock so independent loop skips while scrape enriches
+        async with self._enrichment_lock:
+            # Enrich listings with detail-page data (gross_revenue, postal_code, etc.)
+            self._status["current_phase"] = "enriching_details"
+            self._status["enrichment_progress"]["details"]["phase"] = "running"
+            await self._enrich_listing_details()
 
-        # Enrich listings with Walk Scores
-        self._status["current_phase"] = "enriching_walk_scores"
-        self._status["enrichment_progress"]["walk_scores"]["phase"] = "running"
-        await self._enrich_walk_scores()
+            # Enrich listings with Walk Scores
+            self._status["current_phase"] = "enriching_walk_scores"
+            self._status["enrichment_progress"]["walk_scores"]["phase"] = "running"
+            await self._enrich_walk_scores()
 
-        # Enrich listings with photo URLs (for listings not already covered by detail enrichment)
-        self._status["current_phase"] = "enriching_photos"
-        self._status["enrichment_progress"]["photos"]["phase"] = "running"
-        await self._enrich_photo_urls()
+            # Enrich listings with photo URLs (for listings not already covered by detail enrichment)
+            self._status["current_phase"] = "enriching_photos"
+            self._status["enrichment_progress"]["photos"]["phase"] = "running"
+            await self._enrich_photo_urls()
 
-        # Enrich listings with AI condition scores
-        self._status["current_phase"] = "enriching_conditions"
-        self._status["enrichment_progress"]["conditions"]["phase"] = "running"
-        await self._enrich_condition_scores()
+            # Enrich listings with AI condition scores
+            self._status["current_phase"] = "enriching_conditions"
+            self._status["enrichment_progress"]["conditions"]["phase"] = "running"
+            await self._enrich_condition_scores()
 
-        # Enrich HOUSE listings with Quebec geo data (schools, flood zones, parks)
-        self._status["current_phase"] = "enriching_geo"
-        self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "running"
-        await self._enrich_geo_data()
+            # Enrich HOUSE listings with Quebec geo data (schools, flood zones, parks)
+            self._status["current_phase"] = "enriching_geo"
+            self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "running"
+            await self._enrich_geo_data()
 
-        # Validate and score data quality (runs LAST so all enrichment fields are available)
-        self._status["current_phase"] = "validating_data"
-        self._status["enrichment_progress"]["validation"]["phase"] = "running"
-        await self._validate_data_quality()
+            # Validate and score data quality (runs LAST so all enrichment fields are available)
+            self._status["current_phase"] = "validating_data"
+            self._status["enrichment_progress"]["validation"]["phase"] = "running"
+            await self._validate_data_quality()
 
         # Capture quality snapshot for historical tracking
         try:
@@ -550,40 +628,24 @@ class ScraperWorker:
         """Fetch walk/transit/bike scores for listings that don't have them.
 
         Processes batches in a loop until all listings are enriched (capped at
-        max_batches to prevent runaway cycles).
+        max_batches to prevent runaway cycles). Uses semaphore-bounded
+        concurrency for throughput.
         """
         from housemktanalyzr.enrichment.walkscore import enrich_with_walk_score
 
         batch_size = int(os.environ.get("WALKSCORE_BATCH_SIZE", 50))
         max_batches = int(os.environ.get("WALKSCORE_MAX_BATCHES", 10))
-        delay = float(os.environ.get("WALKSCORE_DELAY", 3.0))
+        delay = float(os.environ.get("WALKSCORE_DELAY", 2.0))
+        concurrency = int(os.environ.get("WALKSCORE_CONCURRENCY", 3))
 
+        sem = asyncio.Semaphore(concurrency)
         total_enriched = 0
         total_failed = 0
         batch_num = 0
 
-        while batch_num < max_batches:
-            batch_num += 1
-            try:
-                listings = await get_listings_without_walk_score(limit=batch_size)
-            except Exception:
-                logger.exception("Failed to query listings for Walk Score enrichment")
-                break
-
-            if not listings:
-                if batch_num == 1:
-                    logger.info("Walk Score: all listings already enriched")
-                break
-
-            logger.info(
-                f"Walk Score batch {batch_num}: "
-                f"{len(listings)} listings (delay={delay}s)"
-            )
-            self._status["enrichment_progress"]["walk_scores"]["total"] = (
-                total_enriched + total_failed + len(listings)
-            )
-
-            for item in listings:
+        async def _process_one_walkscore(item):
+            nonlocal total_enriched, total_failed
+            async with sem:
                 try:
                     result = await enrich_with_walk_score(
                         address=item["address"],
@@ -603,7 +665,6 @@ class ScraperWorker:
                         )
                         total_enriched += 1
                     else:
-                        # Mark failed so we don't retry every cycle (7-day cooldown)
                         await mark_walk_score_failed(item["id"])
                         total_failed += 1
                 except asyncio.CancelledError:
@@ -618,6 +679,31 @@ class ScraperWorker:
                 self._status["enrichment_progress"]["walk_scores"]["done"] = total_enriched
                 self._status["enrichment_progress"]["walk_scores"]["failed"] = total_failed
 
+        while batch_num < max_batches:
+            batch_num += 1
+            try:
+                listings = await get_listings_without_walk_score(limit=batch_size)
+            except Exception:
+                logger.exception("Failed to query listings for Walk Score enrichment")
+                break
+
+            if not listings:
+                if batch_num == 1:
+                    logger.info("Walk Score: all listings already enriched")
+                break
+
+            logger.info(
+                f"Walk Score batch {batch_num}: "
+                f"{len(listings)} listings (delay={delay}s, concurrency={concurrency})"
+            )
+            self._status["enrichment_progress"]["walk_scores"]["total"] = (
+                total_enriched + total_failed + len(listings)
+            )
+
+            # Process in chunks of `concurrency` size with delay between chunks
+            for i in range(0, len(listings), concurrency):
+                chunk = listings[i:i + concurrency]
+                await asyncio.gather(*[_process_one_walkscore(item) for item in chunk])
                 await asyncio.sleep(delay)
 
         self._status["enrichment_progress"]["walk_scores"]["phase"] = "done"
@@ -679,7 +765,11 @@ class ScraperWorker:
         logger.info(f"Photo enrichment done: {enriched} enriched, {failed} failed")
 
     async def _enrich_condition_scores(self):
-        """Score property condition using Gemini for listings with photos."""
+        """Score property condition using Gemini for listings with photos.
+
+        Processes batches in a loop until all eligible listings are scored
+        (capped at max_batches to prevent runaway cycles).
+        """
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
             logger.info("Condition scoring skipped: GEMINI_API_KEY not set")
@@ -689,70 +779,83 @@ class ScraperWorker:
         from housemktanalyzr.enrichment.condition_scorer import score_property_condition
 
         batch_size = int(os.environ.get("CONDITION_BATCH_SIZE", 25))
+        max_batches = int(os.environ.get("CONDITION_MAX_BATCHES", 10))
         delay = float(os.environ.get("CONDITION_SCORE_DELAY", 6.0))
 
-        try:
-            listings = await get_listings_without_condition_score(limit=batch_size)
-        except Exception:
-            logger.exception("Failed to query listings for condition scoring")
-            return
+        total_scored = 0
+        total_failed = 0
+        batch_num = 0
 
-        if not listings:
-            logger.info("Condition scoring: all eligible listings already scored")
-            self._status["enrichment_progress"]["conditions"]["phase"] = "done"
-            return
-
-        self._status["enrichment_progress"]["conditions"]["total"] = len(listings)
-        logger.info(
-            f"Condition scoring: processing {len(listings)} listings "
-            f"(delay={delay}s, ~{len(listings) * delay / 60:.1f}min)"
-        )
-        scored = 0
-        failed = 0
-
-        for item in listings:
+        while batch_num < max_batches:
+            batch_num += 1
             try:
-                result = await score_property_condition(
-                    photo_urls=item["photo_urls"],
-                    property_type=item.get("property_type", "property"),
-                    city=item.get("city", "Montreal"),
-                    year_built=item.get("year_built"),
-                )
-                if result:
-                    await update_condition_score(
-                        listing_id=item["id"],
-                        condition_score=result.overall_score,
-                        condition_details={
-                            "kitchen": result.kitchen_score,
-                            "bathroom": result.bathroom_score,
-                            "floors": result.floors_score,
-                            "exterior": result.exterior_score,
-                            "renovation_needed": result.renovation_needed,
-                            "notes": result.notes,
-                        },
-                    )
-                    scored += 1
-                else:
-                    failed += 1
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.warning(f"Condition scoring failed for {item['id']}: {e}")
-                failed += 1
-            self._status["enrichment_progress"]["conditions"]["done"] = scored
-            self._status["enrichment_progress"]["conditions"]["failed"] = failed
+                listings = await get_listings_without_condition_score(limit=batch_size)
+            except Exception:
+                logger.exception("Failed to query listings for condition scoring")
+                break
 
-            await asyncio.sleep(delay)
+            if not listings:
+                if batch_num == 1:
+                    logger.info("Condition scoring: all eligible listings already scored")
+                break
+
+            logger.info(
+                f"Condition scoring batch {batch_num}: "
+                f"{len(listings)} listings (delay={delay}s)"
+            )
+            self._status["enrichment_progress"]["conditions"]["total"] = (
+                total_scored + total_failed + len(listings)
+            )
+
+            for item in listings:
+                try:
+                    result = await score_property_condition(
+                        photo_urls=item["photo_urls"],
+                        property_type=item.get("property_type", "property"),
+                        city=item.get("city", "Montreal"),
+                        year_built=item.get("year_built"),
+                    )
+                    if result:
+                        await update_condition_score(
+                            listing_id=item["id"],
+                            condition_score=result.overall_score,
+                            condition_details={
+                                "kitchen": result.kitchen_score,
+                                "bathroom": result.bathroom_score,
+                                "floors": result.floors_score,
+                                "exterior": result.exterior_score,
+                                "renovation_needed": result.renovation_needed,
+                                "notes": result.notes,
+                            },
+                        )
+                        total_scored += 1
+                    else:
+                        total_failed += 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning(f"Condition scoring failed for {item['id']}: {e}")
+                    total_failed += 1
+                self._status["enrichment_progress"]["conditions"]["done"] = total_scored
+                self._status["enrichment_progress"]["conditions"]["failed"] = total_failed
+
+                await asyncio.sleep(delay)
+
+            if len(listings) < batch_size:
+                break
 
         self._status["enrichment_progress"]["conditions"]["phase"] = "done"
-        logger.info(f"Condition scoring done: {scored} scored, {failed} failed")
+        logger.info(
+            f"Condition scoring done ({batch_num} batch(es)): "
+            f"{total_scored} scored, {total_failed} failed"
+        )
 
     async def _enrich_geo_data(self):
         """Enrich HOUSE listings with Quebec geo data (schools, flood zones, parks).
 
         Processes batches in a loop until all eligible houses are enriched
-        (capped at max_batches to prevent runaway cycles). Stores results in
-        the listing's raw_data under a 'geo_enrichment' key.
+        (capped at max_batches to prevent runaway cycles). Uses semaphore-bounded
+        concurrency for throughput.
         """
         from housemktanalyzr.enrichment.quebec_geo import (
             fetch_nearby_schools,
@@ -761,47 +864,28 @@ class ScraperWorker:
         )
 
         batch_size = int(os.environ.get("GEO_ENRICH_BATCH_SIZE", 50))
-        max_batches = int(os.environ.get("GEO_ENRICH_MAX_BATCHES", 10))
-        delay = float(os.environ.get("GEO_ENRICH_DELAY", 1.0))
+        max_batches = int(os.environ.get("GEO_ENRICH_MAX_BATCHES", 20))
+        delay = float(os.environ.get("GEO_ENRICH_DELAY", 0.5))
+        concurrency = int(os.environ.get("GEO_ENRICH_CONCURRENCY", 5))
 
+        sem = asyncio.Semaphore(concurrency)
         total_enriched = 0
         total_failed = 0
         batch_num = 0
 
-        while batch_num < max_batches:
-            batch_num += 1
-            try:
-                listings = await get_houses_without_geo_enrichment(limit=batch_size)
-            except Exception:
-                logger.exception("Failed to query houses for geo enrichment")
-                break
-
-            if not listings:
-                if batch_num == 1:
-                    logger.info("Geo enrichment: all houses already enriched")
-                break
-
-            logger.info(
-                f"Geo enrichment batch {batch_num}: processing {len(listings)} houses "
-                f"(delay={delay}s, ~{len(listings) * delay / 60:.1f}min)"
-            )
-            self._status["enrichment_progress"]["geo_enrichment"]["total"] = (
-                total_enriched + total_failed + len(listings)
-            )
-
-            for item in listings:
+        async def _process_one_geo(item):
+            nonlocal total_enriched, total_failed
+            async with sem:
                 lat = item["latitude"]
                 lon = item["longitude"]
 
                 try:
-                    # Fetch all three geo data sources in parallel
                     schools_data, flood_data, parks_data = await asyncio.gather(
                         fetch_nearby_schools(lat, lon),
                         check_flood_zone(lat, lon),
                         fetch_nearby_parks(lat, lon),
                     )
 
-                    # Fetch safety_score from neighbourhood stats (DB only, no API)
                     safety_score = None
                     try:
                         from .geo_mapping import resolve_borough
@@ -811,9 +895,8 @@ class ScraperWorker:
                             if stats and stats.get("safety_score") is not None:
                                 safety_score = float(stats["safety_score"])
                     except Exception:
-                        pass  # Non-critical — score with None if unavailable
+                        pass
 
-                    # Build the geo enrichment data structure
                     geo_result: dict = {
                         "schools": None,
                         "nearest_elementary_m": None,
@@ -856,6 +939,31 @@ class ScraperWorker:
                 self._status["enrichment_progress"]["geo_enrichment"]["done"] = total_enriched
                 self._status["enrichment_progress"]["geo_enrichment"]["failed"] = total_failed
 
+        while batch_num < max_batches:
+            batch_num += 1
+            try:
+                listings = await get_houses_without_geo_enrichment(limit=batch_size)
+            except Exception:
+                logger.exception("Failed to query houses for geo enrichment")
+                break
+
+            if not listings:
+                if batch_num == 1:
+                    logger.info("Geo enrichment: all houses already enriched")
+                break
+
+            logger.info(
+                f"Geo enrichment batch {batch_num}: processing {len(listings)} houses "
+                f"(delay={delay}s, concurrency={concurrency})"
+            )
+            self._status["enrichment_progress"]["geo_enrichment"]["total"] = (
+                total_enriched + total_failed + len(listings)
+            )
+
+            # Process in chunks of `concurrency` size with delay between chunks
+            for i in range(0, len(listings), concurrency):
+                chunk = listings[i:i + concurrency]
+                await asyncio.gather(*[_process_one_geo(item) for item in chunk])
                 await asyncio.sleep(delay)
 
         self._status["enrichment_progress"]["geo_enrichment"]["phase"] = "done"
