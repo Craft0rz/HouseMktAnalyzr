@@ -167,6 +167,7 @@ async def fetch_nearby_schools(
                     "geometryType": "esriGeometryPoint",
                     "spatialRel": "esriSpatialRelIntersects",
                     "inSR": "4326",
+                    "outSR": "4326",  # Request output in lat/lon (not Web Mercator)
                     "outFields": "*",
                     "distance": str(radius_m),
                     "units": "esriSRUnit_Meter",

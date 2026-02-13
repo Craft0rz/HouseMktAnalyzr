@@ -46,6 +46,7 @@ def _normalize_address_for_geocoding(address: str, city: str) -> tuple[str, str]
 
     Handles:
     - Multi-number ranges: "3878 - 3882, Rue La Fontaine" → "3878 Rue La Fontaine"
+    - Unit suffixes with ranges: "16Z - 16AZ, Rue X" → "16 Rue X"
     - Unit/apt prefixes: "App. 3, 123 Rue Example" → "123 Rue Example"
     - French abbreviations: Boul. → Boulevard, Ave. → Avenue, Ch. → Chemin
     - Borough in city: "Montréal (Mercier/Hochelaga)" → "Montréal"
@@ -53,8 +54,10 @@ def _normalize_address_for_geocoding(address: str, city: str) -> tuple[str, str]
     """
     # Strip apartment/unit prefixes
     addr = re.sub(r"(?i)^(app\.?|apt\.?|unit[eé]?|suite|#)\s*\d+[a-zA-Z]?\s*[,\-]\s*", "", address)
-    # Multi-number ranges: keep first number only
-    addr = re.sub(r"(\d+)\s*[-–]\s*\d+", r"\1", addr)
+    # Multi-number ranges with letter suffixes: "16Z - 16AZ" → "16"
+    addr = re.sub(r"(\d+)[A-Z]*\s*[-–]\s*\d+[A-Z]*", r"\1", addr)
+    # Single unit suffixes at start: "16Z, Rue Example" → "16 Rue Example"
+    addr = re.sub(r"^(\d+)[A-Z]\b", r"\1", addr)
     # Remove leading commas after stripping
     addr = re.sub(r"^\s*,\s*", "", addr)
     # Expand common French street abbreviations
