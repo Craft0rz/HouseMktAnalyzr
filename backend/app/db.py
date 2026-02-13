@@ -1896,76 +1896,100 @@ async def get_scrape_job_history(limit: int = 20) -> list[dict]:
 
 
 async def get_data_freshness() -> dict:
-    """Get freshness (age in hours + last fetched timestamp) for all data sources."""
+    """Get freshness (age in hours + last fetched timestamp) for all data sources.
+
+    Includes severity indicators:
+    - ok: within threshold
+    - warning: 1.5x-2x threshold (stale but not critical)
+    - critical: >2x threshold (urgent action needed)
+    """
     pool = get_pool()
     now = datetime.now(timezone.utc)
     result = {}
+
+    def _assess_freshness(age_hours: float | None, threshold: int, name: str) -> dict:
+        """Add severity and action message based on freshness."""
+        base = {
+            "last_fetched": None,
+            "age_hours": age_hours,
+            "threshold_hours": threshold,
+        }
+
+        if age_hours is None:
+            return {
+                **base,
+                "status": "critical",
+                "action": f"CRITICAL: {name} has never been fetched - immediate action required",
+            }
+
+        if age_hours <= threshold:
+            return {
+                **base,
+                "status": "ok",
+                "action": None,
+            }
+        elif age_hours <= threshold * 1.5:
+            return {
+                **base,
+                "status": "warning",
+                "action": f"WARNING: {name} is getting stale ({age_hours:.0f}h old, refresh in {threshold * 1.5 - age_hours:.0f}h)",
+            }
+        elif age_hours <= threshold * 2:
+            return {
+                **base,
+                "status": "warning",
+                "action": f"WARNING: {name} is stale ({age_hours:.0f}h old, expected every {threshold}h)",
+            }
+        else:
+            missed_cycles = int(age_hours / threshold) - 1
+            return {
+                **base,
+                "status": "critical",
+                "action": f"CRITICAL: {name} hasn't updated in {age_hours:.0f}h ({missed_cycles} missed cycles) - check scraper",
+            }
 
     async with pool.acquire() as conn:
         # Market data
         row = await conn.fetchrow(
             "SELECT MAX(fetched_at) as latest FROM market_data WHERE series_id = 'boc_mortgage_5yr'"
         )
+        age = ((now - row["latest"]).total_seconds() / 3600) if row and row["latest"] else None
+        result["market_data"] = _assess_freshness(age, 24, "Market data")
         if row and row["latest"]:
-            age = (now - row["latest"]).total_seconds() / 3600
-            result["market_data"] = {
-                "last_fetched": row["latest"].isoformat(),
-                "age_hours": round(age, 1),
-                "threshold_hours": 24,
-            }
-        else:
-            result["market_data"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 24}
+            result["market_data"]["last_fetched"] = row["latest"].isoformat()
 
         # Rent data
         row = await conn.fetchrow("SELECT MAX(fetched_at) as latest FROM rent_data")
+        age = ((now - row["latest"]).total_seconds() / 3600) if row and row["latest"] else None
+        result["rent_data"] = _assess_freshness(age, 168, "Rent data")
         if row and row["latest"]:
-            age = (now - row["latest"]).total_seconds() / 3600
-            result["rent_data"] = {
-                "last_fetched": row["latest"].isoformat(),
-                "age_hours": round(age, 1),
-                "threshold_hours": 168,
-            }
-        else:
-            result["rent_data"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 168}
+            result["rent_data"]["last_fetched"] = row["latest"].isoformat()
 
         # Demographics
         row = await conn.fetchrow("SELECT MAX(fetched_at) as latest FROM demographics")
+        age = ((now - row["latest"]).total_seconds() / 3600) if row and row["latest"] else None
+        result["demographics"] = _assess_freshness(age, 720, "Demographics")
         if row and row["latest"]:
-            age = (now - row["latest"]).total_seconds() / 3600
-            result["demographics"] = {
-                "last_fetched": row["latest"].isoformat(),
-                "age_hours": round(age, 1),
-                "threshold_hours": 720,
-            }
-        else:
-            result["demographics"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 720}
+            result["demographics"]["last_fetched"] = row["latest"].isoformat()
 
         # Neighbourhood stats
         row = await conn.fetchrow("SELECT MAX(fetched_at) as latest FROM neighbourhood_stats")
+        age = ((now - row["latest"]).total_seconds() / 3600) if row and row["latest"] else None
+        result["neighbourhood"] = _assess_freshness(age, 168, "Neighbourhood")
         if row and row["latest"]:
-            age = (now - row["latest"]).total_seconds() / 3600
-            result["neighbourhood"] = {
-                "last_fetched": row["latest"].isoformat(),
-                "age_hours": round(age, 1),
-                "threshold_hours": 168,
-            }
-        else:
-            result["neighbourhood"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 168}
+            result["neighbourhood"]["last_fetched"] = row["latest"].isoformat()
 
         # Listings
         row = await conn.fetchrow(
             "SELECT MAX(fetched_at) as latest, COUNT(*) as total FROM properties WHERE status = 'active'"
         )
+        age = ((now - row["latest"]).total_seconds() / 3600) if row and row["latest"] else None
+        result["listings"] = _assess_freshness(age, 4, "Listings")
         if row and row["latest"]:
-            age = (now - row["latest"]).total_seconds() / 3600
-            result["listings"] = {
-                "last_fetched": row["latest"].isoformat(),
-                "age_hours": round(age, 1),
-                "threshold_hours": 4,
-                "total_active": row["total"],
-            }
+            result["listings"]["last_fetched"] = row["latest"].isoformat()
+            result["listings"]["total_active"] = row["total"]
         else:
-            result["listings"] = {"last_fetched": None, "age_hours": None, "threshold_hours": 4, "total_active": 0}
+            result["listings"]["total_active"] = 0
 
     return result
 
@@ -2107,6 +2131,21 @@ async def get_geo_enrichment_stats() -> dict:
     with_coords = row["with_coords"]
     pending = with_coords - enriched
     no_coords = total - with_coords
+    success_rate = round(enriched / with_coords * 100, 1) if with_coords > 0 else 0
+
+    # Assess severity based on success rate
+    if success_rate >= 90:
+        status = "ok"
+        action = None
+    elif success_rate >= 70:
+        status = "warning"
+        action = f"WARNING: Geo enrichment: {pending:,} houses pending ({success_rate}% coverage)"
+    elif success_rate >= 30:
+        status = "warning"
+        action = f"WARNING: Geo enrichment backlog: {pending:,} of {with_coords:,} houses need enrichment ({success_rate}% coverage)"
+    else:
+        status = "critical"
+        action = f"CRITICAL: Geo enrichment severely behind - only {enriched:,} of {with_coords:,} enriched ({success_rate}% coverage)"
 
     return {
         "total_houses": total,
@@ -2119,7 +2158,9 @@ async def get_geo_enrichment_stats() -> dict:
         "has_schools": row["has_schools"],
         "has_parks": row["has_parks"],
         "has_flood": row["has_flood"],
-        "success_rate": round(enriched / with_coords * 100, 1) if with_coords > 0 else 0,
+        "success_rate": success_rate,
+        "status": status,
+        "action": action,
     }
 
 
@@ -2173,12 +2214,31 @@ async def get_enrichment_backlog() -> dict:
     total = row["total"]
 
     def _item(label: str, done: int, of: int, note: str = "") -> dict:
+        coverage = round(done / of * 100, 1) if of > 0 else 0
+        missing = of - done
+
+        # Determine severity based on coverage percentage
+        if coverage >= 90:
+            status = "ok"
+            action = None
+        elif coverage >= 70:
+            status = "warning"
+            action = f"WARNING: {label}: {missing:,} items pending ({coverage}% coverage)"
+        elif coverage >= 50:
+            status = "warning"
+            action = f"WARNING: {label}: Large backlog - {missing:,} items need enrichment ({coverage}% coverage)"
+        else:
+            status = "critical"
+            action = f"CRITICAL: {label} severely behind - {missing:,} of {of:,} missing ({coverage}% coverage)"
+
         return {
             "label": label,
             "done": done,
-            "missing": of - done,
+            "missing": missing,
             "total": of,
-            "coverage": round(done / of * 100, 1) if of > 0 else 0,
+            "coverage": coverage,
+            "status": status,
+            "action": action,
             "note": note,
         }
 

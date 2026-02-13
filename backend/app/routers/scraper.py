@@ -14,24 +14,64 @@ logger = logging.getLogger(__name__)
 
 @router.get("/status")
 async def scraper_status(request: Request, _admin: dict = Depends(get_admin_user)) -> dict:
-    """Return the background scraper worker's current status."""
+    """Return the background scraper worker's current status with actionable alerts."""
     worker = request.app.state.scraper_worker
     if worker is None:
         return {"enabled": False, "message": "Scraper not available (no database)"}
+
     status = worker.get_status()
+    alerts = {
+        "critical": [],
+        "warnings": [],
+    }
+
+    # Add data quality stats
     try:
         from ..db import get_data_quality_summary
         status["data_quality"] = await get_data_quality_summary()
     except Exception:
         status["data_quality"] = {}
+
+    # Add geo enrichment stats with severity
     try:
-        status["geo_stats"] = await get_geo_enrichment_stats()
+        geo_stats = await get_geo_enrichment_stats()
+        status["geo_stats"] = geo_stats
+        if geo_stats.get("status") == "critical" and geo_stats.get("action"):
+            alerts["critical"].append(geo_stats["action"])
+        elif geo_stats.get("status") == "warning" and geo_stats.get("action"):
+            alerts["warnings"].append(geo_stats["action"])
     except Exception:
         status["geo_stats"] = {}
+
+    # Add enrichment backlog with severity
     try:
-        status["enrichment_backlog"] = await get_enrichment_backlog()
+        backlog = await get_enrichment_backlog()
+        status["enrichment_backlog"] = backlog
+        for item in backlog.get("datapoints", []):
+            if item.get("status") == "critical" and item.get("action"):
+                alerts["critical"].append(item["action"])
+            elif item.get("status") == "warning" and item.get("action"):
+                alerts["warnings"].append(item["action"])
     except Exception:
         status["enrichment_backlog"] = {}
+
+    # Add data freshness with severity
+    try:
+        freshness = await get_data_freshness()
+        status["data_freshness"] = freshness
+        for key, data in freshness.items():
+            if data.get("status") == "critical" and data.get("action"):
+                alerts["critical"].append(data["action"])
+            elif data.get("status") == "warning" and data.get("action"):
+                alerts["warnings"].append(data["action"])
+    except Exception:
+        status["data_freshness"] = {}
+
+    # Add consolidated alerts at top level for easy frontend access
+    status["alerts"] = alerts
+    status["has_critical_issues"] = len(alerts["critical"]) > 0
+    status["total_issues"] = len(alerts["critical"]) + len(alerts["warnings"])
+
     return status
 
 
