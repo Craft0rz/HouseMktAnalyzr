@@ -7,6 +7,9 @@ Rate limits (free tier):
     - 10 requests per minute (RPM)
     - 250 requests per day (RPD)
 
+BATCH OPTIMIZATION: Can score 5-10 properties per API call by combining photos,
+reducing time from 54 days to 5-11 days for full backlog.
+
 Env var: GEMINI_API_KEY (from Google AI Studio)
 """
 
@@ -41,7 +44,7 @@ def _get_client():
 
 
 class ConditionAssessment(BaseModel):
-    """Pydantic schema for Gemini structured JSON output."""
+    """Pydantic schema for Gemini structured JSON output (single property)."""
 
     overall: float = Field(ge=1, le=10, description="Overall condition 1-10")
     kitchen: float | None = Field(default=None, description="Kitchen condition 1-10, null if not visible")
@@ -53,6 +56,14 @@ class ConditionAssessment(BaseModel):
     )
     notes: str = Field(
         description="Brief summary of condition observations (2-3 sentences)"
+    )
+
+
+class BatchConditionAssessment(BaseModel):
+    """Pydantic schema for batch scoring multiple properties."""
+
+    properties: list[ConditionAssessment] = Field(
+        description="List of condition assessments, one per property in order"
     )
 
 
@@ -213,3 +224,160 @@ async def score_property_condition(
     except Exception as e:
         logger.error(f"Gemini condition scoring failed: {e}")
         return None
+
+
+async def score_properties_batch(
+    properties: list[dict],
+    max_photos_per_property: int = 5,
+    batch_size: int = 8,
+) -> list[Optional[ConditionScoreResult]]:
+    """Score multiple properties in a single API call for efficiency.
+
+    Args:
+        properties: List of property dicts with keys:
+            - photo_urls: list[str]
+            - property_type: str
+            - city: str
+            - year_built: int | None
+        max_photos_per_property: Max photos to include per property (default 5)
+        batch_size: Number of properties to score per API call (default 8)
+
+    Returns:
+        List of ConditionScoreResult or None for each property (maintains order)
+
+    Example:
+        properties = [
+            {"photo_urls": [...], "property_type": "HOUSE", "city": "Montreal", "year_built": 1990},
+            {"photo_urls": [...], "property_type": "DUPLEX", "city": "Laval", "year_built": 2005},
+        ]
+        results = await score_properties_batch(properties, batch_size=8)
+    """
+    if not properties or len(properties) > batch_size:
+        logger.warning(f"Batch size {len(properties)} exceeds max {batch_size}")
+        return [None] * len(properties)
+
+    try:
+        client = _get_client()
+    except RuntimeError as e:
+        logger.warning(f"Gemini not configured: {e}")
+        return [None] * len(properties)
+
+    from google.genai import types
+
+    # Build prompt with property sections
+    prompt_parts = [
+        f"You are analyzing {len(properties)} different properties. "
+        "For each property below, assess its condition independently.\n\n"
+    ]
+
+    property_metadata = []
+    all_parts = []
+    photo_count = 0
+
+    async with httpx.AsyncClient(timeout=15.0) as http:
+        for idx, prop in enumerate(properties):
+            photo_urls = prop.get("photo_urls", [])
+            if not photo_urls:
+                logger.debug(f"Property {idx} has no photos, skipping")
+                continue
+
+            property_type = prop.get("property_type", "property")
+            city = prop.get("city", "Montreal")
+            year_built = prop.get("year_built")
+            year_str = str(year_built) if year_built else "unknown year"
+
+            # Select diverse photos for this property
+            selected_urls = _select_diverse_photos(photo_urls, max_photos_per_property)
+
+            # Add property header
+            prompt_parts.append(
+                f"PROPERTY {idx + 1}: {property_type} in {city}, built {year_str}\n"
+                f"Photos for Property {idx + 1}:\n"
+            )
+
+            # Download and add photos
+            prop_photo_count = 0
+            for url in selected_urls:
+                try:
+                    resp = await http.get(url)
+                    resp.raise_for_status()
+                    content_type = resp.headers.get("content-type", "image/jpeg")
+                    mime = content_type.split(";")[0].strip()
+                    if not mime.startswith("image/"):
+                        mime = "image/jpeg"
+
+                    all_parts.append(
+                        types.Part.from_bytes(
+                            data=resp.content,
+                            mime_type=mime,
+                        )
+                    )
+                    prop_photo_count += 1
+                    photo_count += 1
+                except Exception as e:
+                    logger.debug(f"Skipping photo for property {idx}: {e}")
+
+            prompt_parts.append(f"({prop_photo_count} photos above)\n\n")
+            property_metadata.append({"index": idx, "photo_count": prop_photo_count})
+
+    if photo_count == 0:
+        logger.warning("No valid photos could be loaded for any property")
+        return [None] * len(properties)
+
+    # Build final prompt
+    full_prompt = "".join(prompt_parts) + f"""
+Rate each property's condition from 1 (terrible/needs full renovation) to 10 (pristine/newly renovated):
+- Overall: General impression (always score this)
+- Kitchen: Cabinets, countertops, appliances (null if not visible)
+- Bathroom: Fixtures, tiles, vanity (null if not visible)
+- Floors: Flooring condition (null if not visible)
+- Exterior: Facade, roof, windows (null if not visible)
+
+IMPORTANT: Only score categories you can SEE in each property's photos. Return null if not visible.
+
+Return a JSON array with {len(properties)} assessments in the SAME ORDER as the properties above.
+
+Be calibrated: 5 = average/functional but dated, 7 = good with minor wear, 9-10 = recently renovated.
+"""
+
+    # Combine text prompt + images
+    parts = [types.Part.from_text(text=full_prompt)] + all_parts
+
+    try:
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[types.Content(role="user", parts=parts)],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=BatchConditionAssessment,
+                temperature=0.2,
+            ),
+        )
+
+        batch_result = BatchConditionAssessment.model_validate_json(response.text)
+
+        # Convert to ConditionScoreResult objects
+        results = []
+        for assessment in batch_result.properties:
+            results.append(
+                ConditionScoreResult(
+                    overall_score=assessment.overall,
+                    kitchen_score=assessment.kitchen,
+                    bathroom_score=assessment.bathroom,
+                    floors_score=assessment.floors,
+                    exterior_score=assessment.exterior,
+                    renovation_needed=assessment.renovation_needed,
+                    notes=assessment.notes,
+                )
+            )
+
+        # Pad with None if we got fewer results than expected
+        while len(results) < len(properties):
+            results.append(None)
+
+        logger.info(f"Batch scored {len(results)} properties with {photo_count} total photos")
+        return results
+
+    except Exception as e:
+        logger.error(f"Batch condition scoring failed: {e}")
+        return [None] * len(properties)
