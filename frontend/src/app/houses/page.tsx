@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { housesApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice, formatNumber } from '@/lib/formatters';
 import { HouseDetail } from '@/components/HouseDetail';
+import { Pagination } from '@/components/Pagination';
 import type { HouseWithScore, FamilyBatchResponse, PropertyWithMetrics } from '@/lib/types';
 
 // Lazy-load the map component (same pattern as search page)
@@ -34,7 +35,6 @@ const PropertyMap = dynamic(mapImport, {
 if (typeof window !== 'undefined') mapImport();
 
 type SortOption = 'score' | 'price_asc' | 'price_desc' | 'bedrooms' | 'lot_size';
-const PAGE_SIZE = 24;
 
 function getScoreBadgeClasses(score: number): string {
   if (score >= 70) return 'bg-green-500 text-white';
@@ -77,6 +77,7 @@ export default function HousesPage() {
   const [sortBy, setSortBy] = useState<SortOption>('score');
   const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
   const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(24);
   const [selectedHouse, setSelectedHouse] = useState<HouseWithScore | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -158,10 +159,10 @@ export default function HousesPage() {
     return filtered;
   }, [results, sortBy, minBedrooms, minLotSize]);
 
-  const totalPages = Math.max(1, Math.ceil(displayResults.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(displayResults.length / pageSize));
   const pagedResults = useMemo(
-    () => displayResults.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
-    [displayResults, page],
+    () => displayResults.slice(page * pageSize, (page + 1) * pageSize),
+    [displayResults, page, pageSize],
   );
 
   // Adapt data for PropertyMap (it expects PropertyWithMetrics[])
@@ -413,32 +414,17 @@ export default function HousesPage() {
                   ))}
                 </div>
 
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-center gap-4 pt-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page === 0}
-                      onClick={() => setPage((p) => Math.max(0, p - 1))}
-                    >
-                      <ChevronLeft className="h-4 w-4 mr-1" />
-                      {t('admin.previous')}
-                    </Button>
-                    <span className="text-sm text-muted-foreground">
-                      {t('admin.pageInfo', { current: page + 1, total: totalPages })}
-                    </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= totalPages - 1}
-                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                    >
-                      {t('admin.next')}
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                )}
+                {/* Enhanced Pagination */}
+                <Pagination
+                  currentPage={page}
+                  totalPages={totalPages}
+                  totalItems={displayResults.length}
+                  pageSize={pageSize}
+                  pageSizeOptions={[24, 48, 96]}
+                  onPageChange={setPage}
+                  onPageSizeChange={setPageSize}
+                  t={t}
+                />
               </>
             )
           ) : (
