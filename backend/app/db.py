@@ -14,8 +14,10 @@ logger = logging.getLogger(__name__)
 _pool: Optional[asyncpg.Pool] = None
 
 # Cache TTL defaults
-SEARCH_CACHE_TTL_HOURS = 1
-DETAIL_CACHE_TTL_HOURS = 24
+# Real estate listings should persist long-term, not expire quickly
+# The scraper will update status to 'stale' or 'delisted' when they disappear
+SEARCH_CACHE_TTL_HOURS = 168  # 7 days (was 1 hour - too aggressive)
+DETAIL_CACHE_TTL_HOURS = 168  # 7 days (was 24 hours)
 
 
 async def init_pool() -> asyncpg.Pool:
