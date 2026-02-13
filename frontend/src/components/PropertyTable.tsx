@@ -33,6 +33,7 @@ import { usePortfolioContext } from '@/lib/portfolio-context';
 import { propertiesApi } from '@/lib/api';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice, formatCashFlow as formatCashFlowUtil } from '@/lib/formatters';
+import { Pagination } from '@/components/Pagination';
 import type { PropertyWithMetrics, PriceChangeMap, LifecycleMap } from '@/lib/types';
 
 export type StatusFilter = 'all' | 'active' | 'new' | 'stale' | 'delisted' | 'price_drop';
@@ -446,78 +447,17 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
         </Table>
       </div>
 
-      {/* Pagination */}
-      {table.getPageCount() > 1 && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>
-              {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
-              -
-              {Math.min(
-                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-                table.getFilteredRowModel().rows.length
-              )}
-              {' '}of {table.getFilteredRowModel().rows.length}
-            </span>
-            <Select
-              value={String(table.getState().pagination.pageSize)}
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="h-8 w-[100px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[25, 50, 100].map((size) => (
-                  <SelectItem key={size} value={String(size)}>
-                    {size} / page
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => table.setPageIndex(0)}
-              disabled={!table.getCanPreviousPage()}
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm px-2">
-              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-              disabled={!table.getCanNextPage()}
-            >
-              <ChevronsRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Enhanced Pagination */}
+      <Pagination
+        currentPage={table.getState().pagination.pageIndex}
+        totalPages={table.getPageCount()}
+        totalItems={table.getFilteredRowModel().rows.length}
+        pageSize={table.getState().pagination.pageSize}
+        pageSizeOptions={[25, 50, 100]}
+        onPageChange={(page) => table.setPageIndex(page)}
+        onPageSizeChange={(size) => table.setPageSize(size)}
+        t={t}
+      />
     </div>
   );
 }
