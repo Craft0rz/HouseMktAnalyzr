@@ -4,7 +4,7 @@
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile",
     "buildArgs": {
-      "INSTALL_PLAYWRIGHT": "true"
+      "INSTALL_PLAYWRIGHT": "false"
     }
   },
   "deploy": {

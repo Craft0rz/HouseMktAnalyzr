@@ -662,13 +662,15 @@ class CentrisScraper(DataSource):
         max_price: Optional[int] = None,
         limit: Optional[int] = None,
     ) -> list[PropertyListing]:
-        """Fetch property listings from Centris.ca.
+        """Fetch property listings from Centris.ca with pagination support.
+
+        Now uses AJAX pagination to fetch more than 20 results when limit > 20.
 
         Args:
             region: Geographic region (e.g., "montreal", "laval")
             property_types: Filter by types (e.g., ["DUPLEX", "TRIPLEX"])
             min_price: Minimum price in CAD
-            max_price: Maximum price in CAD
+            max_price: Optional[int] = None,
             limit: Maximum listings to return (default: 100)
 
         Returns:
@@ -683,12 +685,25 @@ class CentrisScraper(DataSource):
 
         logger.info(
             f"Fetching Centris listings: region={region}, "
-            f"types={property_types}, price={min_price}-{max_price}"
+            f"types={property_types}, price={min_price}-{max_price}, limit={limit}"
         )
 
-        # Note: Centris uses infinite scroll/AJAX for pagination, not URL params.
-        # For now, we only fetch the first page (20 listings).
-        # TODO: Implement AJAX-based pagination for more results.
+        # If limit > 20, delegate to fetch_listings_multi_type for pagination
+        # This uses AJAX pagination via fetch_all_listings to get multiple pages
+        if limit > 20:
+            result = await self.fetch_listings_multi_type(
+                region=region,
+                property_types=property_types,
+                enrich=False,
+                min_price=min_price,
+                max_price=max_price,
+                max_pages=min(20, (limit // 20) + 1),
+            )
+            result = result[:limit]
+            logger.info(f"Found {len(result)} listings from Centris (multi-page)")
+            return result
+
+        # Simple single-page fetch for limit <= 20
         page_listings = await self._fetch_search_page(
             region=region,
             property_types=property_types,
@@ -697,9 +712,8 @@ class CentrisScraper(DataSource):
             page=1,
         )
 
-        # Apply limit
         result = page_listings[:limit]
-        logger.info(f"Found {len(result)} listings from Centris")
+        logger.info(f"Found {len(result)} listings from Centris (single page)")
 
         return result
 
