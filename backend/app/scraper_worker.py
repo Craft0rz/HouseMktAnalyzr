@@ -131,6 +131,7 @@ class ScraperWorker:
             "walk_scores": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
             "photos": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
             "conditions": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
+            "geo_enrichment": {"total": 0, "done": 0, "failed": 0, "phase": "pending"},
             "validation": {"total": 0, "corrected": 0, "flagged": 0, "phase": "pending"},
         }
         self._status["refresh_progress"] = {

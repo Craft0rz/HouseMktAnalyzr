@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Play, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, MapPin } from 'lucide-react';
+import { Play, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2, MapPin, Database } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -15,7 +15,7 @@ import { QualityTrendChart, EnrichmentTrendChart } from '@/components/charts/Qua
 import { useScraperStatus, useScraperHistory, useDataFreshness, useTriggerScrape } from '@/hooks/useProperties';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { toast } from 'sonner';
-import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality, DataQualityStats, GeoEnrichmentStats } from '@/lib/types';
+import type { EnrichmentPhaseProgress, RefreshStatus, StepResult, DataSourceFreshness, DataWarning, DataQuality, DataQualityStats, GeoEnrichmentStats, EnrichmentBacklog, EnrichmentBacklogItem } from '@/lib/types';
 
 const PHASE_LABELS: Record<string, string> = {
   scraping: 'status.phaseScraping',
@@ -190,6 +190,68 @@ function DataQualityCard({
         ) : (
           <p className="text-sm text-muted-foreground">No data for this category</p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function EnrichmentBacklogCard({
+  backlog,
+  t,
+}: {
+  backlog: EnrichmentBacklog;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5 text-violet-500" />
+              Enrichment Backlog
+            </CardTitle>
+            <CardDescription>
+              Coverage across {backlog.total.toLocaleString()} active listings
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {backlog.datapoints.map((dp: EnrichmentBacklogItem) => {
+            const barColor =
+              dp.coverage >= 80 ? 'bg-green-500' :
+              dp.coverage >= 50 ? 'bg-amber-500' :
+              'bg-red-500';
+            return (
+              <div key={dp.label} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">
+                    {dp.label}
+                    {dp.note && (
+                      <span className="text-xs text-muted-foreground ml-1">({dp.note})</span>
+                    )}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    <span className="text-green-600 font-medium">{dp.done.toLocaleString()}</span>
+                    {' / '}
+                    {dp.total.toLocaleString()}
+                    <span className="ml-2 font-medium" style={{ color: dp.coverage >= 80 ? 'var(--color-green-600)' : dp.coverage >= 50 ? 'var(--color-amber-500)' : 'var(--color-red-500)' }}>
+                      {dp.coverage}%
+                    </span>
+                  </span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${barColor}`}
+                    style={{ width: `${dp.coverage}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </CardContent>
     </Card>
   );
@@ -450,6 +512,11 @@ function StatusContent() {
       {/* Data Quality Summary */}
       {status?.data_quality && status.data_quality.total > 0 && (
         <DataQualityCard dataQuality={status.data_quality} qualityFilter={qualityFilter} onFilterChange={setQualityFilter} t={t} />
+      )}
+
+      {/* Enrichment Backlog */}
+      {status?.enrichment_backlog && status.enrichment_backlog.total > 0 && (
+        <EnrichmentBacklogCard backlog={status.enrichment_backlog} t={t} />
       )}
 
       {/* Geo Enrichment Stats */}

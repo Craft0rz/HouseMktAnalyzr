@@ -509,6 +509,20 @@ export interface GeoEnrichmentStats {
   success_rate: number;
 }
 
+export interface EnrichmentBacklogItem {
+  label: string;
+  done: number;
+  missing: number;
+  total: number;
+  coverage: number;
+  note: string;
+}
+
+export interface EnrichmentBacklog {
+  total: number;
+  datapoints: EnrichmentBacklogItem[];
+}
+
 export interface ScraperStatus {
   enabled?: boolean;
   message?: string;
@@ -521,6 +535,7 @@ export interface ScraperStatus {
   data_warnings?: DataWarning[];
   data_quality?: DataQuality;
   geo_stats?: GeoEnrichmentStats;
+  enrichment_backlog?: EnrichmentBacklog;
   next_run_at: string | null;
   current_phase: string | null;
   current_step: number;

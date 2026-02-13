@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_admin_user
-from ..db import get_scraper_stats, get_scrape_job_history, get_data_freshness, get_geo_enrichment_stats, get_pool
+from ..db import get_scraper_stats, get_scrape_job_history, get_data_freshness, get_geo_enrichment_stats, get_enrichment_backlog, get_pool
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -28,6 +28,10 @@ async def scraper_status(request: Request, _admin: dict = Depends(get_admin_user
         status["geo_stats"] = await get_geo_enrichment_stats()
     except Exception:
         status["geo_stats"] = {}
+    try:
+        status["enrichment_backlog"] = await get_enrichment_backlog()
+    except Exception:
+        status["enrichment_backlog"] = {}
     return status
 
 

@@ -2123,6 +2123,78 @@ async def get_geo_enrichment_stats() -> dict:
     }
 
 
+async def get_enrichment_backlog() -> dict:
+    """Get per-datapoint enrichment backlog counts across all active listings.
+
+    Returns counts of how many listings have vs. are missing each enrichment
+    data point, enabling the status dashboard to show exact coverage.
+    """
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (
+                    WHERE (data->>'latitude') IS NOT NULL
+                      AND (data->>'longitude') IS NOT NULL
+                      AND (data->>'latitude') != '0'
+                      AND (data->>'longitude') != '0'
+                ) as has_coords,
+                COUNT(*) FILTER (
+                    WHERE (data->>'walk_score') IS NOT NULL
+                ) as has_walk_score,
+                COUNT(*) FILTER (
+                    WHERE (data->>'detail_enriched_at') IS NOT NULL
+                ) as has_details,
+                COUNT(*) FILTER (
+                    WHERE jsonb_array_length(COALESCE(data->'photo_urls', '[]'::jsonb)) > 0
+                ) as has_photos,
+                COUNT(*) FILTER (
+                    WHERE (data->>'condition_score') IS NOT NULL
+                ) as has_condition,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                ) as total_houses,
+                COUNT(*) FILTER (
+                    WHERE property_type = 'HOUSE'
+                      AND (data->>'latitude') IS NOT NULL
+                      AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+                      AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+                ) as has_geo
+            FROM properties
+            WHERE expires_at > $1 AND status = 'active'
+            """,
+            now,
+        )
+
+    total = row["total"]
+
+    def _item(label: str, done: int, of: int, note: str = "") -> dict:
+        return {
+            "label": label,
+            "done": done,
+            "missing": of - done,
+            "total": of,
+            "coverage": round(done / of * 100, 1) if of > 0 else 0,
+            "note": note,
+        }
+
+    return {
+        "total": total,
+        "datapoints": [
+            _item("Coordinates", row["has_coords"], total),
+            _item("Detail Enrichment", row["has_details"], total),
+            _item("Walk Score", row["has_walk_score"], total),
+            _item("Photos", row["has_photos"], total),
+            _item("Condition Score", row["has_condition"], total),
+            _item("Geo Enrichment", row["has_geo"], row["total_houses"], "Houses only"),
+        ],
+    }
+
+
 async def get_batch_price_drops(property_ids: list[str]) -> dict[str, list[dict]]:
     """Get price history for multiple listings in a single query.
 
