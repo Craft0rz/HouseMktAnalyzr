@@ -495,8 +495,18 @@ class ScraperWorker:
                             if not any(detail_fields) and detailed.address == "Unknown":
                                 logger.warning(
                                     f"Detail enrichment for {item['id']} returned "
-                                    f"empty data, skipping sentinel"
+                                    f"empty data, marking to skip"
                                 )
+                                try:
+                                    await update_listing_details(
+                                        item["id"],
+                                        {
+                                            "detail_enriched_at": datetime.now(timezone.utc).isoformat(),
+                                            "detail_fetch_failed": True,
+                                        },
+                                    )
+                                except Exception:
+                                    pass
                                 total_failed += 1
                                 self._status["enrichment_progress"]["details"]["done"] = total_enriched
                                 self._status["enrichment_progress"]["details"]["failed"] = total_failed
@@ -556,6 +566,19 @@ class ScraperWorker:
                                 )
                             total_enriched += 1
                         else:
+                            # Detail fetch returned None — listing is likely delisted.
+                            # Stamp detail_enriched_at so we don't retry every cycle.
+                            try:
+                                await update_listing_details(
+                                    item["id"],
+                                    {
+                                        "detail_enriched_at": datetime.now(timezone.utc).isoformat(),
+                                        "detail_fetch_failed": True,
+                                    },
+                                )
+                                logger.info(f"Detail fetch returned None for {item['id']} (delisted?), marked to skip")
+                            except Exception:
+                                pass
                             total_failed += 1
                     except asyncio.CancelledError:
                         raise
