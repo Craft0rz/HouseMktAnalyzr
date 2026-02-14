@@ -75,8 +75,8 @@ async def _check_single_alert(alert, now: datetime) -> dict:
     matched_ids = {listing.id for listing, _ in filtered}
     new_match_ids = await _find_new_matches(alert_id, matched_ids)
 
-    # Step 5: Check for price drops on matched listings
-    price_drops = await _find_price_drops(matched_ids, now)
+    # Step 5: Check for price drops on matched listings (since last check)
+    price_drops = await _find_price_drops(matched_ids, now, alert["last_checked"])
 
     # Step 6: Record new matches
     if new_match_ids:
@@ -243,14 +243,26 @@ async def _find_new_matches(alert_id: str, matched_ids: set[str]) -> set[str]:
 
 
 async def _find_price_drops(
-    property_ids: set[str], now: datetime
+    property_ids: set[str], now: datetime, last_checked: Optional[datetime] = None
 ) -> list[dict]:
-    """Find recent price drops for the given properties."""
+    """Find recent price drops for the given properties.
+
+    Uses the alert's last_checked timestamp to avoid re-notifying the same
+    price drops across consecutive scrape cycles. Falls back to 8h lookback
+    if the alert has never been checked before.
+    """
     if not property_ids:
         return []
 
     pool = get_pool()
-    since = now - timedelta(hours=8)  # Look for drops since last scrape cycle
+    # Use last_checked to only find drops since the previous alert run,
+    # preventing the same price drop from triggering emails on consecutive cycles.
+    # Cap at 24h to avoid flooding after a long outage.
+    if last_checked is not None:
+        max_lookback = now - timedelta(hours=24)
+        since = max(last_checked, max_lookback)
+    else:
+        since = now - timedelta(hours=8)
 
     async with pool.acquire() as conn:
         placeholders = ", ".join(f"${i+2}" for i in range(len(property_ids)))

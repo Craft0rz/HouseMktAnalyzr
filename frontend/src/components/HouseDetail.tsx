@@ -406,14 +406,22 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
               const total = fields.length;
               const pct = total > 0 ? Math.round((available / total) * 100) : 0;
               const missing = fields.filter(([, v]) => !v).map(([k]) => k);
+              const missingPct = total > 0 ? Math.round((missing.length / total) * 100) : 0;
               if (pct >= 100) return null;
+              const isCritical = missingPct > 30;
               return (
-                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 px-3 py-2">
-                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                <div className={`mt-2 rounded-md border px-3 py-2 ${isCritical ? 'border-orange-300 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800' : 'border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800'}`}>
+                  {isCritical && (
+                    <p className="text-xs font-medium text-orange-700 dark:text-orange-400 flex items-center gap-1 mb-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      {t('houses.lowDataWarning', { pct: String(missingPct) })}
+                    </p>
+                  )}
+                  <p className={`text-xs ${isCritical ? 'text-orange-600 dark:text-orange-500' : 'text-amber-700 dark:text-amber-400'}`}>
                     {t('houses.dataCompleteness', { pct: String(pct), available: String(available), total: String(total) })}
                   </p>
                   {missing.length > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+                    <p className={`text-xs mt-0.5 ${isCritical ? 'text-orange-600 dark:text-orange-500' : 'text-amber-600 dark:text-amber-500'}`}>
                       {t('houses.missingData')}: {missing.map(k => t(`houses.field_${k}`)).join(', ')}
                     </p>
                   )}

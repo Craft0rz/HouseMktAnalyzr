@@ -595,23 +595,37 @@ function HouseCard({
           </div>
         )}
 
-        {/* Risk flags */}
-        {(fm.flood_zone || fm.contaminated_nearby) && (
-          <div className="flex gap-1">
-            {fm.flood_zone && (
-              <Badge variant="destructive" className="text-[10px] gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                {t('houses.floodZoneWarning')}
-              </Badge>
-            )}
-            {fm.contaminated_nearby && (
-              <Badge variant="destructive" className="text-[10px] gap-1">
-                <AlertTriangle className="h-3 w-3" />
-                {t('houses.contaminatedWarning')}
-              </Badge>
-            )}
-          </div>
-        )}
+        {/* Risk flags + low data warning */}
+        {(() => {
+          const dc = fm.data_completeness;
+          const missingCount = dc ? Object.values(dc).filter(v => !v).length : 0;
+          const totalCount = dc ? Object.keys(dc).length : 0;
+          const lowData = totalCount > 0 && (missingCount / totalCount) > 0.3;
+          const hasRisk = fm.flood_zone || fm.contaminated_nearby;
+          if (!hasRisk && !lowData) return null;
+          return (
+            <div className="flex flex-wrap gap-1">
+              {fm.flood_zone && (
+                <Badge variant="destructive" className="text-[10px] gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {t('houses.floodZoneWarning')}
+                </Badge>
+              )}
+              {fm.contaminated_nearby && (
+                <Badge variant="destructive" className="text-[10px] gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {t('houses.contaminatedWarning')}
+                </Badge>
+              )}
+              {lowData && (
+                <Badge variant="outline" className="text-[10px] gap-1 border-orange-300 text-orange-600 dark:border-orange-700 dark:text-orange-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  {t('houses.lowData')}
+                </Badge>
+              )}
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );
