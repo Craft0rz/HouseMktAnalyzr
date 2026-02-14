@@ -1,16 +1,18 @@
 """AI-based property condition scoring using Google Gemini.
 
-Uses Gemini 2.5 Flash to analyze listing photos and assess property condition
+Uses Gemini Flash Lite to analyze listing photos and assess property condition
 on a 1-10 scale across multiple categories. No credit card required.
 
-Rate limits (free tier):
-    - 10 requests per minute (RPM)
-    - 250 requests per day (RPD)
+Rate limits (free tier, gemini-2.5-flash-lite):
+    - 15 requests per minute (RPM)
+    - 1,000 requests per day (RPD)
 
-BATCH OPTIMIZATION: Can score 5-10 properties per API call by combining photos,
-reducing time from 54 days to 5-11 days for full backlog.
+BATCH OPTIMIZATION: Can score 8 properties per API call by combining photos.
+At 1,000 req/day * 8 props/req = 8,000 properties/day.
 
-Env var: GEMINI_API_KEY (from Google AI Studio)
+Env vars:
+    GEMINI_API_KEY (from Google AI Studio)
+    GEMINI_MODEL (default: gemini-2.5-flash-lite)
 """
 
 import logging
@@ -22,6 +24,9 @@ import httpx
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+# Model selection: flash-lite has 1,000 RPD free tier vs flash's 20 RPD
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 # Lazy-initialized Gemini client
 _client = None
@@ -200,7 +205,7 @@ async def score_property_condition(
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             contents=[types.Content(role="user", parts=parts)],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -345,7 +350,7 @@ Be calibrated: 5 = average/functional but dated, 7 = good with minor wear, 9-10 
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_MODEL,
             contents=[types.Content(role="user", parts=parts)],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

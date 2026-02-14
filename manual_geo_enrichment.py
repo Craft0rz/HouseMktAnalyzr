@@ -4,17 +4,20 @@
 Processes the geo enrichment backlog for residential properties that have
 coordinates but no geo enrichment data (schools, parks, flood zones).
 
-Uses the same APIs as the background worker:
-- MEES API for nearby schools
-- CEHQ API for flood zones
-- OpenStreetMap Overpass API for parks
+Strategy: Schools + flood zones are fast APIs. Parks (OSM Overpass) is slow
+and rate-limited. We enrich schools + flood zones first for all properties,
+then add parks data in a separate pass with lower concurrency.
 
-Usage: python manual_geo_enrichment.py
+Usage:
+    python manual_geo_enrichment.py              # Full enrichment (schools+flood+parks)
+    python manual_geo_enrichment.py --skip-parks  # Fast pass: schools+flood only
+    python manual_geo_enrichment.py --parks-only   # Slow pass: add parks to enriched properties
 """
 
 import asyncio
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -35,17 +38,23 @@ from housemktanalyzr.enrichment.quebec_geo import (
 )
 
 
-async def enrich_one(item: dict) -> bool:
+async def enrich_one(item: dict, skip_parks: bool = False) -> bool:
     """Enrich a single property with geo data. Returns True on success."""
     lat = item["latitude"]
     lon = item["longitude"]
 
     try:
-        schools_data, flood_data, parks_data = await asyncio.gather(
-            fetch_nearby_schools(lat, lon),
-            check_flood_zone(lat, lon),
-            fetch_nearby_parks(lat, lon),
-        )
+        # Schools and flood zones are fast - always fetch
+        schools_task = fetch_nearby_schools(lat, lon)
+        flood_task = check_flood_zone(lat, lon)
+
+        if skip_parks:
+            schools_data, flood_data = await asyncio.gather(schools_task, flood_task)
+            parks_data = None
+        else:
+            schools_data, flood_data, parks_data = await asyncio.gather(
+                schools_task, flood_task, fetch_nearby_parks(lat, lon)
+            )
 
         geo_result = {
             "schools": None,
@@ -77,6 +86,9 @@ async def enrich_one(item: dict) -> bool:
             geo_result["park_count_1km"] = parks_data.get("park_count", 0)
             geo_result["nearest_park_m"] = parks_data.get("nearest_park_m")
 
+        if skip_parks:
+            geo_result["parks_pending"] = True
+
         await update_geo_enrichment(item["id"], geo_result)
         return True
 
@@ -85,14 +97,99 @@ async def enrich_one(item: dict) -> bool:
         return False
 
 
+async def enrich_parks_only(item: dict) -> bool:
+    """Add parks data to an already-enriched property."""
+    lat = item["latitude"]
+    lon = item["longitude"]
+
+    try:
+        parks_data = await fetch_nearby_parks(lat, lon)
+
+        # Read existing geo data and update parks fields
+        pool = get_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT data FROM properties WHERE id = $1", item["id"]
+            )
+            if not row:
+                return False
+
+            data = json.loads(row["data"])
+            geo = data.get("raw_data", {}).get("geo_enrichment", {})
+            if not geo:
+                return False
+
+            if parks_data:
+                geo["park_count_1km"] = parks_data.get("park_count", 0)
+                geo["nearest_park_m"] = parks_data.get("nearest_park_m")
+            geo.pop("parks_pending", None)
+            geo["enriched_at"] = datetime.now(timezone.utc).isoformat()
+
+            data["raw_data"]["geo_enrichment"] = geo
+            await conn.execute(
+                "UPDATE properties SET data = $1::jsonb WHERE id = $2",
+                json.dumps(data), item["id"],
+            )
+        return True
+
+    except Exception as e:
+        print(f"  ERROR parks for {item['id']}: {str(e)[:100]}")
+        return False
+
+
+async def get_properties_needing_parks(limit: int = 50) -> list[dict]:
+    """Get properties that have geo enrichment but are missing parks data."""
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT id, data FROM properties
+            WHERE expires_at > $1 AND status = 'active'
+              AND property_type IN ('HOUSE','DUPLEX','TRIPLEX','QUADPLEX','MULTIPLEX')
+              AND data->'raw_data'->'geo_enrichment' IS NOT NULL
+              AND COALESCE(data->'raw_data'->'geo_enrichment', 'null'::jsonb) != 'null'::jsonb
+              AND (data->'raw_data'->'geo_enrichment'->>'parks_pending')::boolean IS TRUE
+            ORDER BY fetched_at DESC
+            LIMIT $2
+        """, now, limit)
+
+    results = []
+    for row in rows:
+        data = json.loads(row["data"])
+        lat = data.get("latitude")
+        lon = data.get("longitude")
+        if lat is not None and lon is not None:
+            results.append({
+                "id": row["id"],
+                "latitude": float(lat),
+                "longitude": float(lon),
+            })
+    return results
+
+
 async def run_geo_enrichment():
     """Run geo enrichment on the backlog."""
     await init_pool()
 
+    skip_parks = "--skip-parks" in sys.argv
+    parks_only = "--parks-only" in sys.argv
+
     batch_size = int(os.getenv("GEO_BATCH_SIZE", "50"))
     max_batches = int(os.getenv("GEO_MAX_BATCHES", "300"))
-    concurrency = int(os.getenv("GEO_CONCURRENCY", "5"))
-    delay = float(os.getenv("GEO_DELAY", "1.0"))
+    delay = float(os.getenv("GEO_DELAY", "0.5"))
+
+    if parks_only:
+        concurrency = int(os.getenv("GEO_CONCURRENCY", "2"))
+        delay = float(os.getenv("GEO_DELAY", "3.0"))
+        mode = "PARKS ONLY (adding to enriched properties)"
+    elif skip_parks:
+        concurrency = int(os.getenv("GEO_CONCURRENCY", "10"))
+        mode = "FAST MODE (schools + flood zones only, skipping parks)"
+    else:
+        concurrency = int(os.getenv("GEO_CONCURRENCY", "3"))
+        delay = float(os.getenv("GEO_DELAY", "2.0"))
+        mode = "FULL (schools + flood zones + parks)"
 
     total_enriched = 0
     total_failed = 0
@@ -101,6 +198,7 @@ async def run_geo_enrichment():
     print("=" * 70)
     print("MANUAL GEO ENRICHMENT - PROCESSING BACKLOG")
     print("=" * 70)
+    print(f"Mode: {mode}")
     print(f"Batch size: {batch_size} properties per DB query")
     print(f"Max batches: {max_batches} (up to {batch_size * max_batches:,} properties)")
     print(f"Concurrency: {concurrency} parallel API calls")
@@ -114,7 +212,10 @@ async def run_geo_enrichment():
             batch_num += 1
 
             try:
-                properties = await get_houses_without_geo_enrichment(limit=batch_size)
+                if parks_only:
+                    properties = await get_properties_needing_parks(limit=batch_size)
+                else:
+                    properties = await get_houses_without_geo_enrichment(limit=batch_size)
             except Exception as e:
                 print(f"\nERROR: Failed to query properties: {e}")
                 break
@@ -131,14 +232,16 @@ async def run_geo_enrichment():
             # Process in concurrent chunks
             sem = asyncio.Semaphore(concurrency)
 
-            async def _bounded_enrich(item):
+            async def _bounded(item):
                 async with sem:
-                    return await enrich_one(item)
+                    if parks_only:
+                        return await enrich_parks_only(item)
+                    return await enrich_one(item, skip_parks=skip_parks)
 
             for i in range(0, len(properties), concurrency):
                 chunk = properties[i:i + concurrency]
                 results = await asyncio.gather(
-                    *[_bounded_enrich(p) for p in chunk],
+                    *[_bounded(p) for p in chunk],
                     return_exceptions=True,
                 )
                 for r in results:

@@ -101,8 +101,8 @@ async def run_batch_scoring():
 
     # Configuration
     batch_size = int(os.getenv("CONDITION_BATCH_SIZE", 8))  # Properties per API call
-    max_batches = int(os.getenv("CONDITION_MAX_BATCHES", 250))  # API calls per run
-    delay = float(os.getenv("CONDITION_DELAY", 6.5))  # Seconds between calls (10/min = 6s + buffer)
+    max_batches = int(os.getenv("CONDITION_MAX_BATCHES", 900))  # API calls per run (flash-lite: 1000 RPD)
+    delay = float(os.getenv("CONDITION_DELAY", 4.5))  # Seconds between calls (15/min = 4s + buffer)
 
     total_scored = 0
     total_failed = 0

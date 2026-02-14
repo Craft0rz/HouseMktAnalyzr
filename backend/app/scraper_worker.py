@@ -781,8 +781,8 @@ class ScraperWorker:
 
         # DB query batch size (how many listings to fetch per DB query)
         db_batch_size = int(os.environ.get("CONDITION_BATCH_SIZE", 40))
-        max_batches = int(os.environ.get("CONDITION_MAX_BATCHES", 10))
-        delay = float(os.environ.get("CONDITION_SCORE_DELAY", 6.5))
+        max_batches = int(os.environ.get("CONDITION_MAX_BATCHES", 50))
+        delay = float(os.environ.get("CONDITION_SCORE_DELAY", 4.5))
         # How many properties per single Gemini API call
         api_batch_size = int(os.environ.get("CONDITION_API_BATCH_SIZE", 8))
 
