@@ -7,13 +7,17 @@ structured data. Failures are handled gracefully (return None/defaults).
 Data sources:
 - Schools: Quebec MEES ArcGIS endpoint (DonneesOuvertes/SW_MEES layers)
 - Flood zones: CEHQ via Donnees Quebec public themes MapServer
-- Parks: OpenStreetMap Overpass API (works for all Quebec regions)
+- Parks: Local data from data/quebec_parks.json (bulk OSM download),
+         with fallback to Overpass API if local file not found
 """
 
 import asyncio
+import json
 import logging
 import math
 import os
+from collections import defaultdict
+from pathlib import Path
 
 import httpx
 
@@ -31,6 +35,107 @@ _RETRY_DELAY = 2.0  # seconds between retries
 _schools_cache: dict[tuple[float, float], list[dict]] = {}
 _flood_cache: dict[tuple[float, float], dict] = {}
 _parks_cache: dict[tuple[float, float], dict] = {}
+
+
+# ---------------------------------------------------------------------------
+# Local Parks Spatial Index
+# ---------------------------------------------------------------------------
+# Instead of hitting the rate-limited Overpass API per-property, we load all
+# Quebec parks from a pre-downloaded JSON file and build a grid-based spatial
+# index for instant O(1) lookups.
+#
+# Grid cell size: 0.01° ≈ 1.1 km. For a 1 km radius search, we check the
+# property's cell + 8 surrounding cells (3×3 grid).
+
+_PARKS_FILE = Path(__file__).parent.parent.parent.parent / "data" / "quebec_parks.json"
+_GRID_SIZE = 0.01  # degrees (~1.1 km at 45°N latitude)
+
+# Lazy-loaded: dict mapping (grid_row, grid_col) → list of (lat, lon, type)
+_parks_grid: dict[tuple[int, int], list[tuple[float, float, str]]] | None = None
+
+
+def _grid_cell(lat: float, lon: float) -> tuple[int, int]:
+    """Map coordinates to a grid cell index."""
+    return (int(lat / _GRID_SIZE), int(lon / _GRID_SIZE))
+
+
+def _load_parks_index() -> bool:
+    """Load the local parks file and build the spatial grid index.
+
+    Returns True if the file was loaded successfully, False otherwise.
+    """
+    global _parks_grid
+
+    if _parks_grid is not None:
+        return True  # Already loaded
+
+    if not _PARKS_FILE.exists():
+        logger.info(f"Local parks file not found at {_PARKS_FILE}, will use Overpass API")
+        _parks_grid = {}  # Empty dict = loaded but no data
+        return False
+
+    try:
+        data = json.loads(_PARKS_FILE.read_text())
+        parks_list = data.get("parks", [])
+
+        grid: dict[tuple[int, int], list[tuple[float, float, str]]] = defaultdict(list)
+        for p in parks_list:
+            lat, lon = p["lat"], p["lon"]
+            cell = _grid_cell(lat, lon)
+            grid[cell].append((lat, lon, p["type"]))
+
+        _parks_grid = dict(grid)
+        total = sum(len(v) for v in _parks_grid.values())
+        logger.info(f"Loaded {total:,} parks/playgrounds into {len(_parks_grid):,} grid cells")
+        return True
+
+    except Exception as e:
+        logger.warning(f"Failed to load parks file: {e}")
+        _parks_grid = {}
+        return False
+
+
+def _query_parks_local(
+    lat: float, lon: float, radius_m: int = 1000
+) -> dict | None:
+    """Query the local parks spatial index for parks near a coordinate.
+
+    Returns the same dict shape as the Overpass API version:
+    {park_count, playground_count, nearest_park_m}.
+    """
+    if _parks_grid is None or not _parks_grid:
+        return None  # No local data
+
+    center_cell = _grid_cell(lat, lon)
+    # Check 3×3 grid of cells (covers ~3.3 km, enough for 1 km radius)
+    cells_to_check = [
+        (center_cell[0] + dr, center_cell[1] + dc)
+        for dr in (-1, 0, 1)
+        for dc in (-1, 0, 1)
+    ]
+
+    park_count = 0
+    playground_count = 0
+    nearest_park_m: float | None = None
+
+    for cell in cells_to_check:
+        for p_lat, p_lon, p_type in _parks_grid.get(cell, []):
+            dist = haversine_distance(lat, lon, p_lat, p_lon)
+            if dist > radius_m:
+                continue
+
+            if p_type == "park":
+                park_count += 1
+                if nearest_park_m is None or dist < nearest_park_m:
+                    nearest_park_m = round(dist)
+            elif p_type == "playground":
+                playground_count += 1
+
+    return {
+        "park_count": park_count,
+        "playground_count": playground_count,
+        "nearest_park_m": nearest_park_m,
+    }
 
 
 def _cache_key(lat: float, lon: float) -> tuple[float, float]:
@@ -320,10 +425,10 @@ async def check_flood_zone(lat: float, lon: float) -> dict | None:
 async def fetch_nearby_parks(
     lat: float, lon: float, radius_m: int = 1000
 ) -> dict | None:
-    """Fetch nearby parks and playgrounds using OpenStreetMap Overpass API.
+    """Fetch nearby parks and playgrounds.
 
-    Works for all Quebec regions (Montreal, Laval, Longueuil, etc.)
-    without needing region-specific data sources.
+    Uses local pre-downloaded data (data/quebec_parks.json) for instant
+    lookups. Falls back to the Overpass API if the local file is not found.
 
     Args:
         lat: Latitude of the property.
@@ -338,7 +443,13 @@ async def fetch_nearby_parks(
     if key in _parks_cache:
         return _parks_cache[key]
 
-    result = await _fetch_parks_osm(lat, lon, radius_m)
+    # Try local data first (instant, no rate limits)
+    _load_parks_index()
+    result = _query_parks_local(lat, lon, radius_m)
+
+    # Fall back to Overpass API if no local data
+    if result is None:
+        result = await _fetch_parks_osm(lat, lon, radius_m)
 
     if result is not None:
         _parks_cache[key] = result

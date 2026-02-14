@@ -870,11 +870,28 @@ class ScraperWorker:
                             )
                             total_scored += 1
                         else:
+                            # Mark attempt so we don't retry for 24h
+                            try:
+                                await update_listing_details(
+                                    item["id"],
+                                    {"condition_score_attempted_at": datetime.now(timezone.utc).isoformat()},
+                                )
+                            except Exception:
+                                pass
                             total_failed += 1
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     logger.warning(f"Batch condition scoring failed: {e}")
+                    # Mark all items in chunk as attempted
+                    for item in chunk:
+                        try:
+                            await update_listing_details(
+                                item["id"],
+                                {"condition_score_attempted_at": datetime.now(timezone.utc).isoformat()},
+                            )
+                        except Exception:
+                            pass
                     total_failed += len(chunk)
 
                 self._status["enrichment_progress"]["conditions"]["done"] = total_scored

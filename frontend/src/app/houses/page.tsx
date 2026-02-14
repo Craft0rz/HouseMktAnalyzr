@@ -548,9 +548,9 @@ function HouseCard({
 
         {/* Pillar mini-bars */}
         <div className="space-y-1.5">
-          <PillarBar label={t('houses.livability')} value={fm.livability_score} max={40} color="bg-blue-500" />
+          <PillarBar label={t('houses.livability')} value={fm.livability_score} max={35} color="bg-blue-500" />
           <PillarBar label={t('houses.value')} value={fm.value_score} max={35} color="bg-green-500" />
-          <PillarBar label={t('houses.spaceComfort')} value={fm.space_score} max={25} color="bg-purple-500" />
+          <PillarBar label={t('houses.spaceComfort')} value={fm.space_score} max={30} color="bg-purple-500" />
         </div>
 
         {/* Monthly cost */}

@@ -316,10 +316,10 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="text-muted-foreground">{t('houses.livability')}</span>
-                    <span className="font-medium tabular-nums">{fm.livability_score.toFixed(0)} / 40</span>
+                    <span className="font-medium tabular-nums">{fm.livability_score.toFixed(0)} / 35</span>
                   </div>
                   <div className="relative h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="absolute inset-y-0 left-0 rounded-full bg-blue-500 transition-all" style={{ width: `${(fm.livability_score / 40) * 100}%` }} />
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-blue-500 transition-all" style={{ width: `${(fm.livability_score / 35) * 100}%` }} />
                   </div>
                 </div>
                 <div>
@@ -334,10 +334,10 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                 <div>
                   <div className="flex items-center justify-between text-xs mb-1">
                     <span className="text-muted-foreground">{t('houses.spaceComfort')}</span>
-                    <span className="font-medium tabular-nums">{fm.space_score.toFixed(0)} / 25</span>
+                    <span className="font-medium tabular-nums">{fm.space_score.toFixed(0)} / 30</span>
                   </div>
                   <div className="relative h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="absolute inset-y-0 left-0 rounded-full bg-purple-500 transition-all" style={{ width: `${(fm.space_score / 25) * 100}%` }} />
+                    <div className="absolute inset-y-0 left-0 rounded-full bg-purple-500 transition-all" style={{ width: `${(fm.space_score / 30) * 100}%` }} />
                   </div>
                 </div>
               </div>
@@ -363,7 +363,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
             <div className="grid grid-cols-3 gap-4">
               <Card>
                 <CardContent className="p-3 space-y-2">
-                  <CircularScore value={fm.livability_score} max={40} label={t('houses.livability')} colorClass="text-blue-500" />
+                  <CircularScore value={fm.livability_score} max={35} label={t('houses.livability')} colorClass="text-blue-500" />
                   <div className="space-y-1">
                     <SubScoreRow label={t('houses.walkScore')} value={fm.walk_score_pts} detail={listing.walk_score != null ? `${listing.walk_score} / 100` : undefined} />
                     <SubScoreRow label={t('houses.transitScore')} value={fm.transit_score_pts} detail={listing.transit_score != null ? `${listing.transit_score} / 100` : undefined} />
@@ -388,7 +388,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
 
               <Card>
                 <CardContent className="p-3 space-y-2">
-                  <CircularScore value={fm.space_score} max={25} label={t('houses.spaceComfort')} colorClass="text-purple-500" />
+                  <CircularScore value={fm.space_score} max={30} label={t('houses.spaceComfort')} colorClass="text-purple-500" />
                   <div className="space-y-1">
                     <SubScoreRow label={t('houses.lotSize')} value={fm.lot_size_pts} detail={listing.lot_sqft != null ? `${formatNumber(listing.lot_sqft, locale as 'en' | 'fr')} sqft` : undefined} />
                     <SubScoreRow label={t('houses.bedrooms')} value={fm.bedroom_pts} detail={`${listing.bedrooms} ${listing.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`} />

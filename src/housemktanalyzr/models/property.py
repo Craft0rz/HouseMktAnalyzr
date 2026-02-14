@@ -123,29 +123,29 @@ class FamilyHomeMetrics(BaseModel):
     family_score: float = Field(ge=0, le=100)
     score_breakdown: dict[str, float] = Field(default_factory=dict)
 
-    # Livability Pillar (0-40)
-    livability_score: float = Field(ge=0, le=40)
+    # Livability Pillar (0-35, normalized from available data)
+    livability_score: float = Field(ge=0, le=35)
     walk_score_pts: float | None = None       # 0-8 from walk_score
-    transit_score_pts: float | None = None     # 0-8 from transit_score
+    transit_score_pts: float | None = None     # 0-7 from transit_score
     safety_pts: float | None = None            # 0-8 from safety_score
-    school_proximity_pts: float | None = None  # 0-10 (future: geo data)
-    parks_pts: float | None = None             # 0-6 (future: geo data)
+    school_proximity_pts: float | None = None  # 0-8 from geo enrichment
+    parks_pts: float | None = None             # 0-5 from geo enrichment
 
-    # Value Pillar (0-35)
+    # Value Pillar (0-35, normalized from available data)
     value_score: float = Field(ge=0, le=35)
     price_vs_assessment_pts: float | None = None  # 0-10
     price_per_sqft: float | None = None
     price_per_sqft_pts: float | None = None       # 0-8
     monthly_cost_estimate: int | None = None      # mortgage + taxes + insurance + energy
     affordability_pts: float | None = None        # 0-10
-    market_trajectory_pts: float | None = None    # 0-7 (future: price history trend)
+    market_trajectory_pts: float | None = None    # 0-7
 
-    # Space & Comfort Pillar (0-25)
-    space_score: float = Field(ge=0, le=25)
+    # Space & Comfort Pillar (0-30, normalized from available data)
+    space_score: float = Field(ge=0, le=30)
     lot_size_pts: float | None = None         # 0-8
-    bedroom_pts: float | None = None          # 0-7
-    condition_pts: float | None = None        # 0-6 from condition_score
-    age_pts: float | None = None              # 0-4 from year_built
+    bedroom_pts: float | None = None          # 0-8
+    condition_pts: float | None = None        # 0-8 from condition_score
+    age_pts: float | None = None              # 0-4 (gentle curve, heritage-friendly)
 
     # Cost of ownership breakdown
     estimated_monthly_mortgage: int | None = None
@@ -170,7 +170,7 @@ class FamilyHomeMetrics(BaseModel):
         default_factory=dict,
         description=(
             "Map of data field → whether real data was available. "
-            "Fields with False were scored as 0 (no fallback guessing)."
+            "Missing fields are excluded from scoring (normalized out)."
         ),
     )
 

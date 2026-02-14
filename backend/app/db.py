@@ -901,6 +901,8 @@ async def get_listings_without_condition_score(limit: int = 25) -> list[dict]:
     """Get cached listings that have photos but no condition score.
 
     Only returns listings where photo_urls exist and condition_score is null.
+    Skips listings where condition scoring was attempted in the last 24 hours
+    (to avoid hammering Gemini API on persistent failures).
     """
     pool = get_pool()
     now = datetime.now(timezone.utc)
@@ -912,6 +914,10 @@ async def get_listings_without_condition_score(limit: int = 25) -> list[dict]:
             WHERE expires_at > $1
               AND (data->>'condition_score') IS NULL
               AND jsonb_array_length(COALESCE(data->'photo_urls', '[]'::jsonb)) > 0
+              AND (
+                  (data->>'condition_score_attempted_at') IS NULL
+                  OR (data->>'condition_score_attempted_at')::timestamptz < $1 - INTERVAL '24 hours'
+              )
             ORDER BY fetched_at DESC
             LIMIT $2
             """,
@@ -949,6 +955,7 @@ async def update_condition_score(
         data = json.loads(row["data"])
         data["condition_score"] = condition_score
         data["condition_details"] = condition_details
+        data["condition_scored_at"] = datetime.now(timezone.utc).isoformat()
 
         await conn.execute(
             "UPDATE properties SET data = $1::jsonb WHERE id = $2",
