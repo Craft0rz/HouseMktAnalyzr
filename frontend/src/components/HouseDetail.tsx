@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   ExternalLink, AlertTriangle, Footprints, Bus, Bike, ChevronLeft, ChevronRight,
   DollarSign, Shield, Users, Sparkles, Hammer, Building, TrendingUp, TrendingDown, Minus,
-  MapPin, Home, Landmark, Calculator,
+  MapPin, Home, Landmark, Calculator, Loader2,
 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { Badge } from '@/components/ui/badge';
@@ -148,6 +148,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
   const [photoIndex, setPhotoIndex] = useState(0);
   const [enrichedListing, setEnrichedListing] = useState<PropertyListing | null>(null);
   const [enrichedMetrics, setEnrichedMetrics] = useState<FamilyHomeMetrics | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [priceHistory, setPriceHistory] = useState<PriceHistoryResponse | null>(null);
   const [demographics, setDemographics] = useState<DemographicProfile | null>(null);
   const [neighbourhood, setNeighbourhood] = useState<NeighbourhoodResponse | null>(null);
@@ -163,10 +164,12 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
     setNeighbourhood(null);
 
     if (!house) {
+      setDetailLoading(false);
       return;
     }
 
     let cancelled = false;
+    setDetailLoading(true);
     const { listing } = house;
 
     // Fetch full details (triggers on-demand condition scoring + walk score)
@@ -178,7 +181,9 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
           if (!cancelled) setEnrichedMetrics(metrics);
         }).catch(() => {});
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      if (!cancelled) setDetailLoading(false);
+    });
 
     propertiesApi.getPriceHistory(listing.id).then((data) => {
       if (!cancelled) setPriceHistory(data);
@@ -542,6 +547,28 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                     </div>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* 6. AI Condition Score — loading state */}
+          {detailLoading && house.listing.condition_score == null && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  {t('detail.propertyCondition')}
+                  <Badge variant="outline" className="text-[10px] ml-auto font-normal gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    {t('detail.aiAnalysis')}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 justify-center text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">{t('detail.analyzingCondition')}</span>
+                </div>
               </CardContent>
             </Card>
           )}

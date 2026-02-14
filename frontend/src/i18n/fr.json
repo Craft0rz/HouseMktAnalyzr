@@ -437,6 +437,7 @@
   "detail.almostAllCar": "Presque toutes les courses nécessitent une voiture",
   "detail.propertyCondition": "État de la propriété",
   "detail.aiAnalysis": "Analyse IA",
+  "detail.analyzingCondition": "Analyse de l'état de la propriété...",
   "detail.conditionExcellent": "Excellent",
   "detail.conditionGood": "Bon",
   "detail.conditionFair": "Passable",

@@ -1129,6 +1129,28 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
             </Card>
           )}
 
+          {/* AI Condition Score — loading state */}
+          {detailLoading && property.listing.condition_score == null && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  {t('detail.propertyCondition')}
+                  <Badge variant="outline" className="text-[10px] ml-auto font-normal gap-1">
+                    <Sparkles className="h-3 w-3" />
+                    {t('detail.aiAnalysis')}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3 justify-center text-muted-foreground py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm">{t('detail.analyzingCondition')}</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* AI Condition Score */}
           {!detailLoading && listing.condition_score != null && listing.condition_details && (
             <Card>

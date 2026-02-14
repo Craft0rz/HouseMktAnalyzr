@@ -437,6 +437,7 @@
   "detail.almostAllCar": "Almost All Errands Require a Car",
   "detail.propertyCondition": "Property Condition",
   "detail.aiAnalysis": "AI Analysis",
+  "detail.analyzingCondition": "Analyzing property condition...",
   "detail.conditionExcellent": "Excellent",
   "detail.conditionGood": "Good",
   "detail.conditionFair": "Fair",
