@@ -180,9 +180,10 @@ async def run_geo_enrichment():
     delay = float(os.getenv("GEO_DELAY", "0.5"))
 
     if parks_only:
-        concurrency = int(os.getenv("GEO_CONCURRENCY", "2"))
-        delay = float(os.getenv("GEO_DELAY", "3.0"))
-        mode = "PARKS ONLY (adding to enriched properties)"
+        # Parks lookups use local data (data/quebec_parks.json) — no API rate limits
+        concurrency = int(os.getenv("GEO_CONCURRENCY", "50"))
+        delay = float(os.getenv("GEO_DELAY", "0"))
+        mode = "PARKS ONLY (local data, no API calls)"
     elif skip_parks:
         concurrency = int(os.getenv("GEO_CONCURRENCY", "10"))
         mode = "FAST MODE (schools + flood zones only, skipping parks)"
