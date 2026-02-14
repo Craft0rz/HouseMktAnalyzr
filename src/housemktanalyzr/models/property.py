@@ -159,6 +159,12 @@ class FamilyHomeMetrics(BaseModel):
     flood_zone: bool | None = None            # future: CEHQ API
     contaminated_nearby: bool | None = None   # future: ESRI API
 
+    # Raw input values (pass-through for frontend tooltip display)
+    raw_school_distance_m: float | None = None
+    raw_park_count_1km: int | None = None
+    raw_safety_score: float | None = None
+    raw_days_on_market: int | None = None
+
     # Data completeness — shows which scores have real data vs are missing
     data_completeness: dict[str, bool] = Field(
         default_factory=dict,

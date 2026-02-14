@@ -6,7 +6,7 @@ import {
   DollarSign, Shield, Users, Sparkles, Hammer, Building, TrendingUp, TrendingDown, Minus,
   MapPin, Home, Landmark, Calculator, Loader2,
 } from 'lucide-react';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,6 +18,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useTranslation } from '@/i18n/LanguageContext';
 import { formatPrice, formatNumber } from '@/lib/formatters';
 import { propertiesApi, marketApi, housesApi } from '@/lib/api';
@@ -116,7 +117,7 @@ function CircularScore({ value, max, label, colorClass }: { value: number; max: 
   );
 }
 
-function SubScoreRow({ label, value }: { label: string; value: number | null }) {
+function SubScoreRow({ label, value, detail }: { label: string; value: number | null; detail?: string }) {
   const { t } = useTranslation();
   if (value == null) return (
     <div className="flex justify-between text-xs">
@@ -124,11 +125,18 @@ function SubScoreRow({ label, value }: { label: string; value: number | null }) 
       <span className="text-muted-foreground">{t('houses.dataNotAvailable')}</span>
     </div>
   );
-  return (
-    <div className="flex justify-between text-xs">
+  const row = (
+    <div className={`flex justify-between text-xs${detail ? ' cursor-help' : ''}`}>
       <span className="text-muted-foreground">{label}</span>
-      <span className="font-medium tabular-nums">{value.toFixed(1)}</span>
+      <span className="font-medium tabular-nums">{value.toFixed(1)}{detail ? <span className="ml-1 text-muted-foreground">ⓘ</span> : null}</span>
     </div>
+  );
+  if (!detail) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent>{detail}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -357,11 +365,11 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                 <CardContent className="p-3 space-y-2">
                   <CircularScore value={fm.livability_score} max={40} label={t('houses.livability')} colorClass="text-blue-500" />
                   <div className="space-y-1">
-                    <SubScoreRow label={t('houses.walkScore')} value={fm.walk_score_pts} />
-                    <SubScoreRow label={t('houses.transitScore')} value={fm.transit_score_pts} />
-                    <SubScoreRow label={t('houses.safety')} value={fm.safety_pts} />
-                    <SubScoreRow label={t('houses.schoolProximity')} value={fm.school_proximity_pts} />
-                    <SubScoreRow label={t('houses.parks')} value={fm.parks_pts} />
+                    <SubScoreRow label={t('houses.walkScore')} value={fm.walk_score_pts} detail={listing.walk_score != null ? `${listing.walk_score} / 100` : undefined} />
+                    <SubScoreRow label={t('houses.transitScore')} value={fm.transit_score_pts} detail={listing.transit_score != null ? `${listing.transit_score} / 100` : undefined} />
+                    <SubScoreRow label={t('houses.safety')} value={fm.safety_pts} detail={fm.raw_safety_score != null ? `${fm.raw_safety_score.toFixed(1)} / 10` : undefined} />
+                    <SubScoreRow label={t('houses.schoolProximity')} value={fm.school_proximity_pts} detail={fm.raw_school_distance_m != null ? `${formatNumber(Math.round(fm.raw_school_distance_m), locale as 'en' | 'fr')} m` : undefined} />
+                    <SubScoreRow label={t('houses.parks')} value={fm.parks_pts} detail={fm.raw_park_count_1km != null ? `${fm.raw_park_count_1km} ${fm.raw_park_count_1km === 1 ? 'park' : 'parks'} < 1 km` : undefined} />
                   </div>
                 </CardContent>
               </Card>
@@ -370,10 +378,10 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                 <CardContent className="p-3 space-y-2">
                   <CircularScore value={fm.value_score} max={35} label={t('houses.value')} colorClass="text-green-500" />
                   <div className="space-y-1">
-                    <SubScoreRow label={t('houses.priceVsAssessment')} value={fm.price_vs_assessment_pts} />
-                    <SubScoreRow label={t('houses.pricePerSqft')} value={fm.price_per_sqft_pts} />
-                    <SubScoreRow label={t('houses.affordability')} value={fm.affordability_pts} />
-                    <SubScoreRow label={t('houses.marketTrajectory')} value={fm.market_trajectory_pts} />
+                    <SubScoreRow label={t('houses.priceVsAssessment')} value={fm.price_vs_assessment_pts} detail={listing.municipal_assessment != null ? `${formatPrice(listing.municipal_assessment, locale as 'en' | 'fr')} (${(listing.price / listing.municipal_assessment).toFixed(2)}x)` : undefined} />
+                    <SubScoreRow label={t('houses.pricePerSqft')} value={fm.price_per_sqft_pts} detail={fm.price_per_sqft != null ? `${formatPrice(Math.round(fm.price_per_sqft), locale as 'en' | 'fr')} / sqft` : undefined} />
+                    <SubScoreRow label={t('houses.affordability')} value={fm.affordability_pts} detail={fm.monthly_cost_estimate != null ? `${formatPrice(fm.monthly_cost_estimate, locale as 'en' | 'fr')} / ${t('detail.monthly').toLowerCase()}` : undefined} />
+                    <SubScoreRow label={t('houses.marketTrajectory')} value={fm.market_trajectory_pts} detail={fm.raw_days_on_market != null ? `${fm.raw_days_on_market} ${locale === 'fr' ? 'jours' : 'days'}` : undefined} />
                   </div>
                 </CardContent>
               </Card>
@@ -382,10 +390,10 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                 <CardContent className="p-3 space-y-2">
                   <CircularScore value={fm.space_score} max={25} label={t('houses.spaceComfort')} colorClass="text-purple-500" />
                   <div className="space-y-1">
-                    <SubScoreRow label={t('houses.lotSize')} value={fm.lot_size_pts} />
-                    <SubScoreRow label={t('houses.bedrooms')} value={fm.bedroom_pts} />
-                    <SubScoreRow label={t('houses.condition')} value={fm.condition_pts} />
-                    <SubScoreRow label={t('houses.propertyAge')} value={fm.age_pts} />
+                    <SubScoreRow label={t('houses.lotSize')} value={fm.lot_size_pts} detail={listing.lot_sqft != null ? `${formatNumber(listing.lot_sqft, locale as 'en' | 'fr')} sqft` : undefined} />
+                    <SubScoreRow label={t('houses.bedrooms')} value={fm.bedroom_pts} detail={`${listing.bedrooms} ${listing.bedrooms === 1 ? 'bedroom' : 'bedrooms'}`} />
+                    <SubScoreRow label={t('houses.condition')} value={fm.condition_pts} detail={listing.condition_score != null ? `${listing.condition_score.toFixed(1)} / 10` : undefined} />
+                    <SubScoreRow label={t('houses.propertyAge')} value={fm.age_pts} detail={listing.year_built != null ? `${listing.year_built} (${new Date().getFullYear() - listing.year_built} ${t('detail.years')})` : undefined} />
                   </div>
                 </CardContent>
               </Card>
@@ -702,7 +710,7 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} />
                       <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} stroke="var(--border)" tickLine={false} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} domain={['auto', 'auto']} />
-                      <Tooltip
+                      <RechartsTooltip
                         contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--popover)', color: 'var(--popover-foreground)' }}
                         formatter={(value) => [formatPrice(value as number, locale as 'en' | 'fr'), t('detail.askingPrice')]}
                       />

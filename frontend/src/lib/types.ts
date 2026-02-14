@@ -728,6 +728,12 @@ export interface FamilyHomeMetrics {
   flood_zone: boolean | null;
   contaminated_nearby: boolean | null;
 
+  // Raw input values for tooltip display
+  raw_school_distance_m: number | null;
+  raw_park_count_1km: number | null;
+  raw_safety_score: number | null;
+  raw_days_on_market: number | null;
+
   // Data completeness — which data fields had real data available
   data_completeness: Record<string, boolean>;
 }

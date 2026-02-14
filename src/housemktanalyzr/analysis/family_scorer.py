@@ -182,6 +182,11 @@ class FamilyHomeScorer:
             # Risk flags
             flood_zone=flood_zone,
             contaminated_nearby=contaminated_nearby,
+            # Raw input values for frontend tooltip display
+            raw_school_distance_m=school_distance_m,
+            raw_park_count_1km=park_count_1km,
+            raw_safety_score=safety_score,
+            raw_days_on_market=days_on_market,
             # Data completeness
             data_completeness=completeness,
         )
