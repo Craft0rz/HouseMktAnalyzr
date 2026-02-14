@@ -199,13 +199,15 @@ export function PropertyDetail({ property, open, onOpenChange }: PropertyDetailP
 
   // Fetch enriched detail data (walk score, condition score) when sheet opens
   useEffect(() => {
+    // Always clear stale data first (prevents showing previous property)
+    setEnrichedListing(null);
+    setDetailError(null);
+    setRentTrend(null);
+    setDemographics(null);
+    setNeighbourhood(null);
+    setPriceHistory(null);
+
     if (!open || !property) {
-      setEnrichedListing(null);
-      setDetailError(null);
-      setRentTrend(null);
-      setDemographics(null);
-      setNeighbourhood(null);
-      setPriceHistory(null);
       return;
     }
 

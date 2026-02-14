@@ -155,12 +155,14 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
   const intlLocale = locale === 'fr' ? 'fr-CA' : 'en-CA';
 
   useEffect(() => {
+    // Always clear stale data first (prevents showing previous house)
+    setEnrichedListing(null);
+    setEnrichedMetrics(null);
+    setPriceHistory(null);
+    setDemographics(null);
+    setNeighbourhood(null);
+
     if (!house) {
-      setEnrichedListing(null);
-      setEnrichedMetrics(null);
-      setPriceHistory(null);
-      setDemographics(null);
-      setNeighbourhood(null);
       return;
     }
 
