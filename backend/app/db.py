@@ -476,6 +476,7 @@ async def get_cached_listings(
     min_price: Optional[int] = None,
     max_price: Optional[int] = None,
     region: Optional[str] = None,
+    city: Optional[str] = None,
     limit: int = 100,
     include_stale: bool = False,
     new_only: bool = False,
@@ -506,6 +507,11 @@ async def get_cached_listings(
     if region is not None:
         conditions.append(f"p.region = ${idx}")
         params.append(region)
+        idx += 1
+
+    if city is not None:
+        conditions.append(f"p.city = ${idx}")
+        params.append(city)
         idx += 1
 
     if property_types:

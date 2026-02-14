@@ -417,6 +417,7 @@ export const housesApi = {
   search: async (params: PropertySearchParams): Promise<FamilyBatchResponse> => {
     const searchParams = new URLSearchParams();
     if (params.region) searchParams.set('region', params.region);
+    if (params.city) searchParams.set('city', params.city);
     if (params.min_price) searchParams.set('min_price', String(params.min_price));
     if (params.max_price) searchParams.set('max_price', String(params.max_price));
     if (params.limit) searchParams.set('limit', String(params.limit));
@@ -426,6 +427,10 @@ export const housesApi = {
     return fetchApi<FamilyBatchResponse>(
       `/api/analysis/family-search?${searchParams}`,
     );
+  },
+
+  getCities: async (region: string): Promise<{ cities: { value: string; label: string; count: number }[] }> => {
+    return fetchApi(`/api/analysis/region-cities?region=${encodeURIComponent(region)}`);
   },
 };
 

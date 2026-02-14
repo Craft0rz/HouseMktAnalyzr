@@ -142,6 +142,8 @@
   "search.noGeocodedListings": "No geocoded listings to display on map",
 
   "filters.region": "Region",
+  "filters.city": "City",
+  "filters.allCities": "All cities",
   "filters.minPrice": "Min Price",
   "filters.maxPrice": "Max Price",
   "filters.search": "Search",

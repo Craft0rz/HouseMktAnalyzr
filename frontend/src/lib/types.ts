@@ -190,6 +190,7 @@ export interface CreateAlertRequest {
 // Search parameters
 export interface PropertySearchParams {
   region?: string;
+  city?: string;
   property_types?: string;
   min_price?: number;
   max_price?: number;

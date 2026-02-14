@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +65,7 @@ export default function HousesPage() {
     }
     return 'montreal';
   });
+  const [city, setCity] = useState<string>('all');
   const [minPrice, setMinPrice] = useState<string>('');
   const [maxPrice, setMaxPrice] = useState<string>('');
   const [minBedrooms, setMinBedrooms] = useState<string>('');
@@ -99,10 +100,26 @@ export default function HousesPage() {
     { value: 'lot_size', label: t('houses.sortByLotSize') },
   ];
 
+  // Fetch cities for selected region
+  const citiesQuery = useQuery({
+    queryKey: ['region-cities', region],
+    queryFn: () => housesApi.getCities(region),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const handleRegionChange = useCallback((newRegion: string) => {
+    setRegion(newRegion);
+    setCity('all');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hmka-region', newRegion);
+    }
+  }, []);
+
   const searchMutation = useMutation({
     mutationFn: async () => {
       const response = await housesApi.search({
         region,
+        city: city !== 'all' ? city : undefined,
         min_price: minPrice ? parseInt(minPrice) : undefined,
         max_price: maxPrice ? parseInt(maxPrice) : undefined,
         new_only: newOnly || undefined,
@@ -215,17 +232,35 @@ export default function HousesPage() {
       {/* Filters */}
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             {/* Region */}
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('filters.region')}</label>
-              <Select value={region} onValueChange={setRegion}>
+              <Select value={region} onValueChange={handleRegionChange}>
                 <SelectTrigger>
                   <SelectValue placeholder={t('regions.selectRegion')} />
                 </SelectTrigger>
                 <SelectContent>
                   {REGIONS.map((r) => (
                     <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* City */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t('filters.city')}</label>
+              <Select value={city} onValueChange={setCity}>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('filters.allCities')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('filters.allCities')}</SelectItem>
+                  {citiesQuery.data?.cities.map((c) => (
+                    <SelectItem key={c.value} value={c.value}>
+                      {c.label} ({c.count})
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

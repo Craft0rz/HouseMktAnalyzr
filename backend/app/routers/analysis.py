@@ -860,9 +860,41 @@ async def family_score_batch(request: AnalyzeBatchRequest) -> FamilyBatchRespons
         )
 
 
+@router.get("/region-cities")
+async def region_cities(
+    region: str = Query(default="montreal"),
+):
+    """Get distinct cities with house counts for a region."""
+    from ..db import get_pool
+    from datetime import datetime, timezone
+
+    pool = get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT city, COUNT(*) as count
+            FROM properties
+            WHERE region = $1
+              AND expires_at > $2
+              AND status = 'active'
+              AND property_type = 'HOUSE'
+              AND city IS NOT NULL AND city != ''
+            GROUP BY city
+            ORDER BY city
+        """, region, now)
+
+    cities = [
+        {"value": row["city"], "label": row["city"], "count": row["count"]}
+        for row in rows
+    ]
+    return {"cities": cities}
+
+
 @router.get("/family-search", response_model=FamilyBatchResponse)
 async def family_search(
     region: str = Query(default="montreal"),
+    city: Optional[str] = Query(default=None),
     min_price: Optional[int] = Query(default=None),
     max_price: Optional[int] = Query(default=None),
     new_only: bool = Query(default=False),
@@ -888,6 +920,7 @@ async def family_search(
             min_price=min_price,
             max_price=max_price,
             region=region,
+            city=city,
             limit=0,  # No limit — return all matching houses
             new_only=new_only,
             price_drops_only=price_drops_only,

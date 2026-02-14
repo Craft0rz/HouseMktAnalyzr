@@ -142,6 +142,8 @@
   "search.noGeocodedListings": "Aucune propriété géocodée à afficher sur la carte",
 
   "filters.region": "Région",
+  "filters.city": "Ville",
+  "filters.allCities": "Toutes les villes",
   "filters.minPrice": "Prix minimum",
   "filters.maxPrice": "Prix maximum",
   "filters.search": "Rechercher",
