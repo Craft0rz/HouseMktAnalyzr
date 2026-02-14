@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 class ScraperWorker:
     """Background worker that periodically scrapes all region/type combinations."""
 
-    def __init__(self, pool, interval_hours: int = 4, ttl_hours: int = 6):
+    def __init__(self, pool, interval_hours: int = 4, ttl_hours: int = 48):
         self._pool = pool
         self._interval_hours = int(os.environ.get("SCRAPER_INTERVAL_HOURS", interval_hours))
         self._ttl_hours = int(os.environ.get("SCRAPER_TTL_HOURS", ttl_hours))
