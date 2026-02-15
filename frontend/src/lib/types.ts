@@ -42,6 +42,7 @@ export interface PropertyListing {
   listing_date: string | null;
   url: string;
   raw_data: Record<string, unknown> | null;
+  is_new_construction: boolean;
 }
 
 export interface RateSensitivity {

@@ -399,6 +399,16 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
               </Card>
             </div>
 
+            {/* New construction badge */}
+            {listing.is_new_construction && (
+              <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 dark:bg-sky-950/20 dark:border-sky-800 px-3 py-2">
+                <p className="text-xs font-medium text-sky-700 dark:text-sky-400 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  {t('houses.newConstructionNote')}
+                </p>
+              </div>
+            )}
+
             {/* Data completeness indicator */}
             {fm.data_completeness && (() => {
               const fields = Object.entries(fm.data_completeness);
@@ -408,7 +418,8 @@ export function HouseDetail({ house, open, onOpenChange }: HouseDetailProps) {
               const missing = fields.filter(([, v]) => !v).map(([k]) => k);
               const missingPct = total > 0 ? Math.round((missing.length / total) * 100) : 0;
               if (pct >= 100) return null;
-              const isCritical = missingPct > 30;
+              // Don't show the critical low-data warning for new constructions (expected to miss data)
+              const isCritical = !listing.is_new_construction && missingPct > 30;
               return (
                 <div className={`mt-2 rounded-md border px-3 py-2 ${isCritical ? 'border-orange-300 bg-orange-50 dark:bg-orange-950/20 dark:border-orange-800' : 'border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800'}`}>
                   {isCritical && (

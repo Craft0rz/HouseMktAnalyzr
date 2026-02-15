@@ -45,6 +45,7 @@ export default function SearchPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [mlsNumber, setMlsNumber] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<'table' | 'map'>('table');
 
   const idLookupMutation = useMutation({
@@ -188,7 +189,7 @@ export default function SearchPage() {
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-1">
                 {STATUS_FILTERS.map((f) => (
                   <Button
@@ -201,6 +202,30 @@ export default function SearchPage() {
                     {f.label}
                   </Button>
                 ))}
+              </div>
+              <div className="flex items-center gap-1 border-l pl-3">
+                {(['DUPLEX', 'TRIPLEX', 'QUADPLEX', 'MULTIPLEX', 'HOUSE'] as const).map((pt) => {
+                  const active = typeFilter.length === 0 || typeFilter.includes(pt);
+                  return (
+                    <Button
+                      key={pt}
+                      variant={active ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setTypeFilter((prev) => {
+                        if (prev.length === 0) return [pt]; // first click: show only this type
+                        if (prev.includes(pt)) {
+                          const next = prev.filter((t) => t !== pt);
+                          return next.length === 0 ? [] : next; // if none left, reset to all
+                        }
+                        return [...prev, pt];
+                      })}
+                      onDoubleClick={() => setTypeFilter([])} // double-click resets
+                    >
+                      {t(`propertyTypes.${pt}`)}
+                    </Button>
+                  );
+                })}
               </div>
               <div className="flex items-center gap-1 border-l pl-3">
                 <Button
@@ -233,6 +258,7 @@ export default function SearchPage() {
               onRowClick={handleRowClick}
               isLoading={searchMutation.isPending}
               statusFilter={statusFilter}
+              typeFilter={typeFilter}
             />
           ) : (
             <PropertyMap

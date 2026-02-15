@@ -44,6 +44,7 @@ interface PropertyTableProps {
   isLoading?: boolean;
   showCompareColumn?: boolean;
   statusFilter?: StatusFilter;
+  typeFilter?: string[];
 }
 
 const formatPercent = (value: number | null | undefined) => {
@@ -57,7 +58,7 @@ const getScoreColor = (score: number) => {
   return 'bg-red-500';
 };
 
-export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn = true, statusFilter = 'all' }: PropertyTableProps) {
+export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn = true, statusFilter = 'all', typeFilter }: PropertyTableProps) {
   const { t, locale } = useTranslation();
   const [sorting, setSorting] = useState<SortingState>([
     { id: 'metrics_score', desc: true },
@@ -79,10 +80,15 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
       .catch(() => {});
   }, [data.length]);
 
-  // Filter data based on status filter
+  // Filter data based on status filter and property type filter
   const filteredData = useMemo(() => {
-    if (statusFilter === 'all') return data;
     return data.filter((item) => {
+      // Property type filter
+      if (typeFilter && typeFilter.length > 0 && !typeFilter.includes(item.listing.property_type)) {
+        return false;
+      }
+      // Status filter
+      if (statusFilter === 'all') return true;
       const lc = lifecycle[item.listing.id];
       const pc = priceChanges[item.listing.id];
       switch (statusFilter) {
@@ -100,7 +106,7 @@ export function PropertyTable({ data, onRowClick, isLoading, showCompareColumn =
           return true;
       }
     });
-  }, [data, statusFilter, lifecycle, priceChanges]);
+  }, [data, statusFilter, typeFilter, lifecycle, priceChanges]);
 
   const handleCompareToggle = (e: React.MouseEvent, property: PropertyWithMetrics) => {
     e.stopPropagation();

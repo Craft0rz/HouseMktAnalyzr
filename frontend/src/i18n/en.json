@@ -807,6 +807,8 @@
   "houses.totalCashNeeded": "Total Cash Needed",
   "houses.floodZoneWarning": "This property is in a flood zone",
   "houses.contaminatedWarning": "Contaminated site nearby",
+  "houses.newConstruction": "New construction",
+  "houses.newConstructionNote": "New/pre-construction — some data points (assessment, condition, lot) are not yet available",
   "houses.lowData": "Low data",
   "houses.dataNotAvailable": "Data not yet available",
   "houses.sortByScore": "Family Score",

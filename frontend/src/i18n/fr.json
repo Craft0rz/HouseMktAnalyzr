@@ -807,6 +807,8 @@
   "houses.totalCashNeeded": "Mise de Fonds Totale",
   "houses.floodZoneWarning": "Cette propriété est en zone inondable",
   "houses.contaminatedWarning": "Site contaminé à proximité",
+  "houses.newConstruction": "Construction neuve",
+  "houses.newConstructionNote": "Neuf/pré-construction — certaines données (évaluation, condition, terrain) ne sont pas encore disponibles",
   "houses.lowData": "Données limitées",
   "houses.dataNotAvailable": "Données pas encore disponibles",
   "houses.sortByScore": "Score Familial",

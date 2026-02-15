@@ -102,6 +102,25 @@ class PropertyListing(BaseModel):
         default=None, description="Original API response data"
     )
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_new_construction(self) -> bool:
+        """Detect new construction / pre-construction properties.
+
+        Heuristic: year_built >= current year, OR year_built is missing together
+        with municipal assessment (pre-construction projects have neither).
+        """
+        current_year = date.today().year
+        if self.year_built is not None and self.year_built >= current_year:
+            return True
+        if (
+            self.year_built is None
+            and self.municipal_assessment is None
+            and self.lot_sqft is None
+        ):
+            return True
+        return False
+
     model_config = {
         "str_strip_whitespace": True,
         "validate_assignment": True,

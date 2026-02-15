@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle } from 'lucide-react';
+import { Loader2, Search, LayoutGrid, Map, BedDouble, Ruler, ExternalLink, AlertTriangle, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -595,16 +595,23 @@ function HouseCard({
           </div>
         )}
 
-        {/* Risk flags + low data warning */}
+        {/* Badges: new construction, risk flags, low data warning */}
         {(() => {
+          const isNew = listing.is_new_construction;
           const dc = fm.data_completeness;
           const missingCount = dc ? Object.values(dc).filter(v => !v).length : 0;
           const totalCount = dc ? Object.keys(dc).length : 0;
-          const lowData = totalCount > 0 && (missingCount / totalCount) > 0.3;
+          const lowData = !isNew && totalCount > 0 && (missingCount / totalCount) > 0.3;
           const hasRisk = fm.flood_zone || fm.contaminated_nearby;
-          if (!hasRisk && !lowData) return null;
+          if (!isNew && !hasRisk && !lowData) return null;
           return (
             <div className="flex flex-wrap gap-1">
+              {isNew && (
+                <Badge variant="outline" className="text-[10px] gap-1 border-sky-300 text-sky-600 dark:border-sky-700 dark:text-sky-400">
+                  <Sparkles className="h-3 w-3" />
+                  {t('houses.newConstruction')}
+                </Badge>
+              )}
               {fm.flood_zone && (
                 <Badge variant="destructive" className="text-[10px] gap-1">
                   <AlertTriangle className="h-3 w-3" />
