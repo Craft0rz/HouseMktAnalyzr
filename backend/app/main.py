@@ -105,7 +105,9 @@ app = FastAPI(
 # CORS for frontend
 allowed_origins = [
     "http://localhost:3000",  # Next.js dev
+    "http://localhost:3001",  # Next.js dev (fallback port)
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
 ]
 # Add production frontend URL from env var
 frontend_url = os.environ.get("FRONTEND_URL")
